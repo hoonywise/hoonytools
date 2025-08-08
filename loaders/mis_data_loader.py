@@ -62,7 +62,7 @@ def parse_fixed_width_file(file_path, layout, file_code=None):
 
                 try:
                     # Special handling for FA and SF files
-                    if file_code in ["FA", "SF"]:
+                    if file_code in ["FA", "SF", "SB"]:
                         # Create a row with all fields initialized to empty strings
                         row = {name: "" for name, _, _ in layout}
                         
@@ -81,7 +81,7 @@ def parse_fixed_width_file(file_path, layout, file_code=None):
                 except Exception as e:
                     print(f"❌ Error parsing line {i}: {e}")
                     print(f"🔍 Line content: {repr(line)}")
-                    if file_code in ["FA", "SF"]:
+                    if file_code in ["FA", "SF", "SB"]:
                         # For FA/SF files, continue with best-effort parsing
                         print(f"⚠️ Continuing with best-effort parsing for {file_code} file")
                         continue
@@ -125,7 +125,7 @@ def load_to_oracle(df, table_name, annual_code, conn, cursor, layout, file_code=
         print(f"✅ Table exists? {exists}")
     except Exception as e:
         print(f"❌ Error checking if table exists: {e}")
-        if file_code in ["FA", "SF"]:
+        if file_code in ["FA", "SF", "SB"]:
             print(f"⚠️ Continuing despite error for {file_code} file")
             exists = False
         else:
@@ -153,7 +153,7 @@ def load_to_oracle(df, table_name, annual_code, conn, cursor, layout, file_code=
             logger.info(f"🆕 Created table {table_name} and granted SELECT to PUBLIC.")
         except Exception as e:
             logger.error(f"❌ Failed to create table {table_name}: {e}")
-            if file_code in ["FA", "SF"]:
+            if file_code in ["FA", "SF", "SB"]:
                 logger.warning(f"⚠️ Continuing despite table creation error for {file_code} file")
             else:
                 return False
@@ -183,7 +183,7 @@ def load_to_oracle(df, table_name, annual_code, conn, cursor, layout, file_code=
         insert_sql = f'INSERT INTO DWH.{table_name.upper()} ({columns}) VALUES ({values})'
     except Exception as e:
         logger.error(f"❌ Error preparing INSERT SQL: {e}")
-        if file_code in ["FA", "SF"]:
+        if file_code in ["FA", "SF", "SB"]:
             logger.warning(f"⚠️ Cannot continue with {file_code} file due to SQL preparation error")
             return False
         else:
@@ -198,7 +198,7 @@ def load_to_oracle(df, table_name, annual_code, conn, cursor, layout, file_code=
 
     # Special handling for required fields validation based on file type
     try:
-        if file_code in ["FA", "SF"]:
+        if file_code in ["FA", "SF", "SB"]:
             # For FA/SF files, use a more lenient approach
             logger.info(f"🔧 Using lenient validation for {file_code} file")
             df = df.fillna('')  # Replace NaN with empty string
@@ -218,7 +218,7 @@ def load_to_oracle(df, table_name, annual_code, conn, cursor, layout, file_code=
             df = df.astype(str)
         except Exception as e2:
             logger.error(f"❌ Even fallback validation failed: {e2}")
-            if file_code in ["FA", "SF"]:
+            if file_code in ["FA", "SF", "SB"]:
                 logger.warning(f"⚠️ Cannot continue with {file_code} file due to validation errors")
                 return False
             else:
@@ -246,7 +246,7 @@ def load_to_oracle(df, table_name, annual_code, conn, cursor, layout, file_code=
             print(f"❌ INSERT ERROR: {e}")
             print(f"🧪 Row content: {row.to_dict()}")
             
-            if file_code in ["FA", "SF"]:
+            if file_code in ["FA", "SF", "SB"]:
                 # For FA/SF files, log the error but continue with other rows
                 logger.warning(f"⚠️ Error inserting row for {file_code} file, continuing: {e}")
                 continue
@@ -356,7 +356,7 @@ def run_mis_loader(existing_conn=None):
                     traceback.print_exc()
                     logger.error(f"🔥 Failed while parsing {filename}: {e}")
                     
-                    if file_code in ["FA", "SF"]:
+                    if file_code in ["FA", "SF", "SB"]:
                         # For FA/SF files, log the error but continue with other files
                         logger.warning(f"⚠️ Error parsing {file_code} file, continuing with other files: {e}")
                         error_count += 1
@@ -377,7 +377,7 @@ def run_mis_loader(existing_conn=None):
                 except Exception as e:
                     logger.error(f"❌ Error loading {filename}: {e}")
                     
-                    if file_code in ["FA", "SF"]:
+                    if file_code in ["FA", "SF", "SB"]:
                         # For FA/SF files, log the error but continue with other files
                         logger.warning(f"⚠️ Error loading {file_code} file, continuing with other files: {e}")
                         error_count += 1
