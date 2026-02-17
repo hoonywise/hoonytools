@@ -60,7 +60,7 @@ After unzipping `HoonyTools_v1.0.2_python.zip`, you should see:
 HoonyTools/
 ├── HoonyTools.pyw         # Main launcher (double-click this)
 ├── config.py              # Handles path logic
-├── setup_config.py        # Setup script for DWH login
+├── libs/setup_config.py   # Setup script for DWH login
 ├── README.txt             # Windows user guide
 ├── README.md              # This file (GitHub format)
 ├── LICENSE.md             # Licensing terms
