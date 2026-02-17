@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from config import PROJECT_PATH as BASE_PATH
+from libs.paths import PROJECT_PATH as BASE_PATH
 import oracledb
 import logging
 from tkinter import Toplevel, Label, Checkbutton, IntVar, Button, messagebox, simpledialog, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, Y, BOTH

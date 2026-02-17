@@ -2,7 +2,6 @@
 __pycache__/
 *.py[cod]
 RELEASE/
-build_*.bat
 *.zip
 *.dat
 
@@ -28,7 +27,6 @@ assets/*.png
 assets/*.ico
 
 # Local build scripts/logs
-build_script.*
 *.log
 
 # VS Code workspace/settings

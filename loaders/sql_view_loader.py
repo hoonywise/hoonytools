@@ -4,7 +4,7 @@ import logging
 from libs.oracle_db_connector import get_db_connection
 from libs import session
 import ctypes
-from config import ASSETS_PATH
+from libs.paths import ASSETS_PATH
 
 logger = logging.getLogger(__name__)
 

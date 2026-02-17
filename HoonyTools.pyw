@@ -28,8 +28,7 @@ logger = logging.getLogger(__name__)
 logger.debug(f"Project root resolved as: {path}")
 
 # Add shared HoonyTools path manually
-from config import PROJECT_PATH as base_path
-from config import ASSETS_PATH
+from libs.paths import PROJECT_PATH as base_path, ASSETS_PATH
 for p in [path, base_path]:
     if str(p) not in sys.path:
         sys.path.append(str(p))
