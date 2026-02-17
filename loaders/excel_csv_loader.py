@@ -8,7 +8,7 @@ from pathlib import Path
 from libs.table_utils import create_index_if_columns_exist
 
 # Add path to shared connector
-from config import PROJECT_PATH as base_path
+from libs.paths import PROJECT_PATH as base_path
 
 # Logging setup
 logger = logging.getLogger(__name__)

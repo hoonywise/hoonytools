@@ -6,7 +6,7 @@ import threading
 from libs import session
 import queue
 from configparser import ConfigParser
-from config import PROJECT_PATH as BASE_PATH
+from libs.paths import PROJECT_PATH as BASE_PATH
 
 config = ConfigParser()
 config.read(BASE_PATH / "libs" / "config.ini")
@@ -34,7 +34,7 @@ def show_error_safe(title, message):
 
 def _show_login_dialog(hardcoded_user=None, hardcoded_dsn="DWHDB_DB"):
     import ctypes
-    from config import ASSETS_PATH
+    from libs.paths import ASSETS_PATH
     import tkinter as tk
     from tkinter import messagebox, Toplevel
     
