@@ -33,10 +33,7 @@ OR
 ----------------------------------------
 📦 TOOLS INCLUDED
 ----------------------------------------
-- SCFF Loader (with ACYR conversion + auto-indexing)
-- MIS Loader (TERM-detected, auto-indexing)
 - Excel/CSV Loader (index-aware if PIDM/TERM/STUDENT_ID exist)
-- SCFF/MIS/Table Cleanup
 - Tray + Taskbar icon branding
 
 All logs are visible in the GUI log window.

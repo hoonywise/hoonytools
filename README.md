@@ -15,7 +15,7 @@ Originally built for institutional data teams, it has since been expanded into a
 
 Designed with front-end users in mind, HoonyTools features an intuitive GUI that makes it easy to load data into Oracle as tables or views, run batch imports, and perform record-level cleanup.
 
-With built-in support for SCFF, MIS, Excel, and CSV formats, and customizable database connections via user-defined DSNs, HoonyTools is ideal for daily ETL, research, and reporting workflows.
+With built-in support for Excel and CSV formats, and customizable database connections via user-defined DSNs, HoonyTools is ideal for daily ETL, research, and reporting workflows.
 
 > 💝 **Now open source and available for public use and modification — our gift to the world of analysts who work with data, not database management.**
 
@@ -60,17 +60,9 @@ HoonyTools/
 ├── requirements.txt       # (Optional) Python modules if running from source)
 ├── libs/                  # Shared utility modules (Oracle, config, logging, etc.)
 │   └── config.ini         # Created at first login if "Save password" is checked
-├── loaders/               # SCFF, MIS, and Excel loaders
+├── loaders/               # Loaders (Excel, CSV, SQL, etc.)
 ├── tools/                 # Table cleanup tools and extractors
 ├── assets/                # Icons and splash images
-├── SCFF/
-│   ├── Downloads/         # Holds SCFF zip downloads (e.g. scff860.zip)
-│   └── SCFF_Data/         # Organized by academic year (ACYR)
-│       ├── <ACYR>/        # e.g. 2324/
-│       │   ├── Latest/    # Fresh extracts go here
-│       │   └── Archive/   # Older extracts are auto-archived here
-└── MIS/
-    └── .dat input files   # Place your MIS .dat files here
 ```
 
 ---
@@ -157,8 +149,7 @@ This file opens without a terminal window and starts the GUI immediately.
 
 On first launch:
 
-- You’ll be prompted to **create `SCFF/` and `MIS/` folders** if they don’t exist
-- These folders are used to manage incoming SCFF ZIP files and MIS `.dat` inputs
+The launcher does not require domain-specific folders at startup. Tools that need folders will create them when run.
 
 ✅ These directories **do not affect production** — HoonyTools only uploads to your authorized DWH schema.
 
@@ -168,10 +159,9 @@ On first launch:
 
 Once launched, the GUI gives access to all tools via an intuitive interface:
 
-- Load SCFF and MIS files
-- Clean tables or delete old records
 - Load Excel and CSV files
-- Load SQL queries as views
+- Create SQL views from SQL files
+- Clean tables or delete old records
 - View console logs and abort operations gracefully
 
 You can run as often as needed — no admin rights or elevated privileges required.
@@ -180,33 +170,18 @@ You can run as often as needed — no admin rights or elevated privileges requir
 
 ## 🛠 Available Tools
 
-- **SCFF Loader**  
-  Load SCFF TXT files into Oracle from `SCFF/SCFF_Data/<ACYR>/Latest`.  
-  Automatically converts folder names like `2324` into `2023` ACYR to align with `STVTERM_ACYR_CODE` used in Banner.  
-  Prompts for DWH password once and saves it.
-
-- **MIS Loader**  
-  Load MIS `.dat` files from the `MIS/` folder into Oracle. Prompts for DWH login.  
-  Supports dynamic layout parsing and full rollback on failure.
 
 - **SQL View Loader**  
-  Instantly create Oracle views from SQL files placed in the `views/` folder.  
-  Useful for versioned Banner views or department-specific logic. Supports both user schema and DWH.
+  - Instantly create Oracle views from SQL files placed in the `views/` folder.  
+  - Useful for versioned Banner views or department-specific logic. Supports both user schema and DWH.
 
 - **Excel/CSV Loader**  
-  Load Excel or CSV files into Oracle from a local file picker.  
-  Auto-maps column headers and preserves datatypes.
-
-- **SCFF Extractor**  
-  Extract SCFF ZIP files from `SCFF/Downloads/` into the correct `SCFF_Data/<ACYR>/Latest` folder.
+  - Load Excel or CSV files into Oracle from a local file picker.  
+  - Auto-maps column headers and preserves datatypes.
 
 - **Table Cleanup**  
-  Selectively delete rows or drop tables from your Oracle schema.  
-  Works with user schema or DWH, depending on the tool settings.
-
-- **SCFF/MIS Cleanup**  
-  Targeted deletion based on `ACYR` (SCFF) or `TERM` (MIS) within DWH schema.  
-  Only affects rows, not entire tables.
+  - Selectively delete rows or drop tables from your Oracle schema.  
+  - Works with user schema or DWH, depending on the tool settings.
 
 
 ### 📈 Automatic Indexing (PIDM / TERM / STUDENT_ID)
@@ -217,8 +192,7 @@ To optimize query performance, **HoonyTools automatically creates indexes** on c
 
 | Loader         | Columns Automatically Indexed                                          |
 |----------------|------------------------------------------------------------------------|
-| SCFF Loader    | `STUDENT_ID`, `ACYR`                                                   |
-| MIS Loader     | `GI90_RECORD_CODE`, `GI01_DISTRICT_COLLEGE_ID`, `GI03_TERM_ID`        |
+| Excel/CSV      | `PIDM`, `TERM`, `STUDENT_ID`                                           |
 | Excel/CSV      | `PIDM`, `TERM`, `STUDENT_ID`                                           |
 
 Indexes are created after the table is generated. If the table already exists, HoonyTools safely skips duplicate index creation.
@@ -236,10 +210,10 @@ If Oracle cannot create the index due to a key size limit (e.g., `VARCHAR2(4000)
 - All tools require a valid Oracle **DSN (Data Source Name)** such as `DWHDB_DB`. You may define your own DSN in `tnsnames.ora` to point to your organization’s database.
 - The first time you run a tool that connects to Oracle, you will be prompted for your **username, password, and DSN**.  
   A **"Save password"** checkbox is available in the login popup. If checked, your credentials will be saved in `libs/config.ini` for future use. If unchecked, the login prompt will appear every time.
-- **Use caution when working with production databases**. Certain tools (e.g., SCFF and MIS loaders, Table Cleanup) can delete and overwrite data.
+-- **Use caution when working with production databases**. Certain tools (e.g., loaders and Table Cleanup) can delete and overwrite data.
 - For best results, always review your files before running a loader, and monitor the logging window for any errors or warnings.
 
-> 🧠 **Note:** This toolset interacts directly with the Oracle Data Warehouse (DWH). Ensure you understand the impact of any actions, particularly when loading SCFF/MIS files or using cleanup tools.
+> 🧠 **Note:** This toolset interacts directly with the Oracle Data Warehouse (DWH). Ensure you understand the impact of any actions, particularly when loading data with loaders or using cleanup tools.
 
 💡 **Tip:** To reset your saved DWH credentials (e.g., if the DSN or password changes), simply delete the `libs/config.ini` file.  
 The next time you launch a DWH-related tool, HoonyTools will prompt you to enter new login information and ask whether to save it again.
@@ -322,11 +296,11 @@ def safe_exit():
 
 ---
 
-### 🐞 Entry #2: MIS Loader Crash (FA/SF files) and Tkinter Thread Violation
+### 🐞 Entry #2: Loader crash (FA/SF files) and Tkinter thread violation
 
 #### What Happened
 
-When loading FA or SF `.dat` files using the MIS Loader, HoonyTools crashed with errors like:
+When loading FA or SF `.dat` files using a loader, HoonyTools crashed with errors like:
 
 > ❌ `Login prompt must be called from the main thread.`  
 > ❌ `Toplevel()` window creation failed due to threading issues
@@ -337,12 +311,12 @@ This happened because the loader attempted to open a Tkinter login window (`Topl
 
 - **Tkinter GUI elements must always be created from the main thread.**
 - **`Toplevel()` windows used in login prompts must be attached to the `_default_root`.**
-- Background loaders like `run_mis_loader()` must receive the Oracle connection object **after login**, not initiate the login themselves.
+- Background loaders must receive the Oracle connection object **after login**, not initiate the login themselves.
 
 #### Fix Implemented
 
-- Moved the call to `get_db_connection()` into the **main thread** (within `run_selected()` in `launcher_gui.pyw`).
-- The returned `conn` object is passed into `run_mis_loader(existing_conn=conn)` inside the thread — solving the crash.
+- Moved the call to `get_db_connection()` into the **main thread** (within `run_selected()` in `HoonyTools.pyw`).
+- The returned `conn` object is passed into the background loader thread — solving the crash.
 
 ---
 
