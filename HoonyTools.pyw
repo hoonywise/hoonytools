@@ -14,7 +14,7 @@ import json
 import random
 import webbrowser
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 
 # Safely climb until we find the project root folder
 project_name = "HoonyTools"
@@ -44,25 +44,96 @@ should_abort = False
 auto_scroll_enabled = True
 is_gui_running = True
 
-# Load Bible JSON from libs/en_kjv.json
+# Load Bible JSON from libs/en_kjv.json with robust lookup (works in dev and PyInstaller bundles)
 BIBLE_VERSES = []
-try:
-    with open(base_path / "libs" / "en_kjv.json", encoding="utf-8-sig") as f:
-        books = json.load(f)
-        for book in books:
-            book_abbrev = book.get("abbrev", "").lower()
-            book_name = book_lookup.get(book_abbrev, book_abbrev.upper())
-            chapters = book.get("chapters", [])
-            for chapter_index, chapter in enumerate(chapters, start=1):
-                if not isinstance(chapter, list):
-                    continue
-                for verse_index, verse in enumerate(chapter, start=1):
-                    BIBLE_VERSES.append(
-                        f"{book_name} {chapter_index}:{verse_index} - {verse}"
-                    )
-        logger.info(f"📖 Loaded {len(BIBLE_VERSES)} Bible verses.")
-except Exception as e:
-    logger.warning(f"⚠️ Could not load Bible verses: {e}")
+
+def _find_data_file(name):
+    """Return the first existing candidate Path for the data file or None.
+
+    Order of candidates:
+    - PyInstaller temp folder (sys._MEIPASS) when frozen
+    - PROJECT_PATH / libs (base_path)
+    - the script directory /libs
+    - current working directory /libs
+    """
+    candidates = []
+    try:
+        if getattr(sys, 'frozen', False):
+            # PyInstaller extracted temp folder
+            meipass = getattr(sys, '_MEIPASS', None)
+            if meipass:
+                candidates.append(Path(meipass) / name)
+                candidates.append(Path(meipass) / 'libs' / name)
+    except Exception:
+        pass
+
+    # base_path from config (PROJECT_PATH) should point to the project root in dev
+    try:
+        candidates.append(base_path / 'libs' / name)
+    except Exception:
+        pass
+
+    # Also check the exe directory (useful for non-extracted builds or when running from dist folder)
+    try:
+        candidates.append(Path(sys.executable).parent / 'libs' / name)
+    except Exception:
+        pass
+
+    candidates.append(Path(__file__).resolve().parent / 'libs' / name)
+    candidates.append(Path.cwd() / 'libs' / name)
+
+    for p in candidates:
+        try:
+            if p.exists():
+                logger.info(f"Found data file {name} at: {p}")
+                return p
+        except Exception:
+            continue
+
+    logger.warning(f"Data file {name} not found in candidates: {candidates}")
+    return None
+
+
+json_path = _find_data_file('en_kjv.json')
+if json_path is not None:
+    try:
+        with open(json_path, encoding='utf-8-sig') as f:
+            books = json.load(f)
+            for book in books:
+                book_abbrev = book.get('abbrev', '').lower()
+                book_name = book_lookup.get(book_abbrev, book_abbrev.upper())
+                chapters = book.get('chapters', [])
+                for chapter_index, chapter in enumerate(chapters, start=1):
+                    if not isinstance(chapter, list):
+                        continue
+                    for verse_index, verse in enumerate(chapter, start=1):
+                        BIBLE_VERSES.append(f"{book_name} {chapter_index}:{verse_index} - {verse}")
+        logger.info(f"Loaded {len(BIBLE_VERSES)} Bible verses from {json_path}.")
+    except Exception as e:
+        logger.exception(f"Failed to load Bible verses from {json_path}: {e}")
+else:
+    logger.warning('Bible JSON not found; bible features disabled.')
+    # Try pkgutil fallback (useful when en_kjv.json was bundled as a package resource)
+    try:
+        import pkgutil
+        data = pkgutil.get_data('libs', 'en_kjv.json')
+        if data:
+            try:
+                books = json.loads(data.decode('utf-8-sig'))
+                for book in books:
+                    book_abbrev = book.get('abbrev', '').lower()
+                    book_name = book_lookup.get(book_abbrev, book_abbrev.upper())
+                    chapters = book.get('chapters', [])
+                    for chapter_index, chapter in enumerate(chapters, start=1):
+                        if not isinstance(chapter, list):
+                            continue
+                        for verse_index, verse in enumerate(chapter, start=1):
+                            BIBLE_VERSES.append(f"{book_name} {chapter_index}:{verse_index} - {verse}")
+                logger.info(f"Loaded {len(BIBLE_VERSES)} Bible verses from package resource libs/en_kjv.json")
+            except Exception as e:
+                logger.exception(f"pkgutil fallback: failed to parse en_kjv.json: {e}")
+    except Exception:
+        pass
 
 def get_random_verse():
     return random.choice(BIBLE_VERSES) if BIBLE_VERSES else "📖 Verse not available"
@@ -430,10 +501,8 @@ def launch_tool_gui():
     for mod in [
         "abort_manager",
         "oracle_db_connector",
-        "table_utils",        
+        "table_utils",
         "excel_csv_loader",
-        "mis_data_loader",
-        "scff_data_loader",
         "sql_view_loader",
         "table_cleanup_gui",
     ]:
