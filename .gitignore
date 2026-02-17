@@ -28,7 +28,7 @@ assets/*.png
 assets/*.ico
 
 # Local build scripts/logs
-build_script.*
+*.bat
 *.log
 
 # VS Code workspace/settings
