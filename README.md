@@ -59,8 +59,6 @@ After unzipping `HoonyTools_v1.0.2_python.zip`, you should see:
 ```
 HoonyTools/
 ├── HoonyTools.pyw         # Main launcher (double-click this)
-├── config.py              # Handles path logic
-├── libs/setup_config.py   # Setup script for DWH login
 ├── README.txt             # Windows user guide
 ├── README.md              # This file (GitHub format)
 ├── LICENSE.md             # Licensing terms
@@ -68,6 +66,8 @@ HoonyTools/
 ├── requirements.txt       # (Optional) Python modules if running from source)
 ├── libs/                  # Shared utility modules (Oracle, config, logging, etc.)
 │   └── config.ini         # Created at first login if "Save password" is checked
+│   └── setup_config.py    # Setup script for login
+│   └── paths.py           # Filepaths for domain-specific folders
 ├── loaders/               # Loaders (Excel, CSV, SQL, etc.)
 ├── tools/                 # Table cleanup tools and extractors
 ├── assets/                # Icons and splash images
