@@ -37,10 +37,7 @@ for p in [path, base_path]:
 from libs import abort_manager
 from loaders.excel_csv_loader import load_multiple_files
 from loaders.sql_view_loader import run_sql_view_loader
-from loaders.scff_data_loader import run_scff_loader
-from loaders.mis_data_loader import run_mis_loader
 from tools.table_cleanup_gui import drop_user_tables, delete_dwh_rows
-from tools.scff_data_extractor import main as run_scff_extractor
 from libs.bible_books import book_lookup
 
 should_abort = False
@@ -71,29 +68,7 @@ def get_random_verse():
     return random.choice(BIBLE_VERSES) if BIBLE_VERSES else "📖 Verse not available"
 
 def validate_required_folders():
-    from tkinter import messagebox
-    required = [
-        base_path / "SCFF" / "Downloads",
-        base_path / "SCFF" / "SCFF_Data",
-        base_path / "MIS"
-    ]
-    missing = [p for p in required if not p.exists()]
-
-    if missing:
-        msg = "⚠️ The following required folders are missing:\n\n" + \
-              "\n".join(str(p) for p in missing) + \
-              "\n\nWould you like to create them now?"
-
-        confirm = messagebox.askyesno("Missing Folders", msg)
-        if confirm:
-            for folder in missing:
-                folder.mkdir(parents=True, exist_ok=True)
-                logger.info(f"📁 Created folder: {folder}")
-            messagebox.showinfo("Folders Created", "✅ All missing folders have been created.")
-        else:
-            messagebox.showwarning("Setup Incomplete", "❌ Folders are required to run SCFF and MIS tools.\n\nPlease create them before continuing.")
-            return False
-
+    # Startup should be clean; loaders that need folders should create them when executed.
     return True
 
 def center_window(window, width, height):
@@ -136,28 +111,7 @@ def run_selected():
         threading.Thread(target=threaded_excel, daemon=True).start()
         return
 
-    if tool_name == "🔒 SCFF Loader":
-        from libs.oracle_db_connector import get_db_connection
-        conn = get_db_connection(force_shared=True)
-        if not conn:
-            return
-        threading.Thread(target=lambda: run_and_update_with_conn(conn), daemon=True).start()
-        return
     
-    elif tool_name == "🔒 MIS Loader":
-        from libs.oracle_db_connector import get_db_connection
-        from tkinter import _default_root
-        from loaders.mis_data_loader import run_mis_loader
-
-        conn = get_db_connection(force_shared=True, root=_default_root)
-        if not conn:
-            return
-
-        threading.Thread(
-            target=lambda: run_mis_loader(existing_conn=conn),
-            daemon=True
-        ).start()
-        return
 
     # For everything else
     def run_and_update():
@@ -481,7 +435,6 @@ def launch_tool_gui():
         "mis_data_loader",
         "scff_data_loader",
         "sql_view_loader",
-        "scff_data_extractor",        
         "table_cleanup_gui",
     ]:
         logging.getLogger(mod).propagate = True
@@ -558,15 +511,8 @@ TOOLS = {
     "☑ Excel/CSV Loader": load_multiple_files,
     "☑ Table/View Dropper": drop_user_tables,
     "☑ SQL View Loader": run_sql_view_loader,
-    "📁 SCFF Extractor": run_scff_extractor,
-    "🔒 SCFF Loader": run_scff_loader,        # accepts optional conn
-    "🔒 SCFF Record Cleanup": lambda: delete_dwh_rows(
-        "SCFF_%", "ACYR", "Enter ACYR to delete from selected SCFF tables:", root
-    ),
-    "🔒 MIS Loader": run_mis_loader,          # accepts optional conn
-    "🔒 MIS Record Cleanup": lambda: delete_dwh_rows(
-        "MIS_%_IN", "TERM", "Enter TERM to delete from selected MIS tables:", root
-    ),
+    
+    # the repository for later separation.
 }
 
 if __name__ == "__main__":
