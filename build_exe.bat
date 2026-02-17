@@ -57,6 +57,16 @@ echo Command: %PYINST_CMD% --noconfirm --windowed --onefile --name HoonyTools %I
 %PYINST_CMD% --noconfirm --windowed --onefile --name HoonyTools %ICON_ARG% %ADDS% "%LAUNCHER%"
 
 echo.
+:: If build produced the EXE, remove the generated spec file to keep the repo clean
+if exist "%SOURCE_DIR%dist\HoonyTools.exe" (
+    if exist "%SOURCE_DIR%HoonyTools.spec" (
+        del /f /q "%SOURCE_DIR%HoonyTools.spec"
+        echo Removed HoonyTools.spec
+    )
+) else (
+    echo Warning: HoonyTools.exe not found in dist\ - leaving HoonyTools.spec for inspection.
+)
+
 echo Build finished. Check dist\ for HoonyTools.exe (if created).
 
 pause
