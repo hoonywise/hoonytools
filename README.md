@@ -188,8 +188,8 @@ You can run as often as needed — no admin rights or elevated privileges requir
   - Auto-maps column headers and preserves datatypes.
 
 - **Table Cleanup**  
-  - Selectively delete rows or drop tables from your Oracle schema.  
-  - Works with user schema or DWH, depending on the tool settings.
+  - Drops table from your schema or DWH shared schema.  
+  - Use with caution — this is irreversible.
 
 
 ### 📈 Automatic Indexing (PIDM / TERM / STUDENT_ID)

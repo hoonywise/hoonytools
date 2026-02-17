@@ -1,4 +1,4 @@
-🛠️ HoonyTools v1.0.2 – Python Version (No EXE)
+🛠️ HoonyTools v1.1.2
 
 Built by: hoonywise  
 https://github.com/hoonywise/HoonyTools
@@ -24,17 +24,19 @@ Only required once per machine
 ▶️ TO RUN
 ----------------------------------------
 - Double-click: `HoonyTools.pyw`  
-  (No terminal window will appear)
 
 OR
 
-- python HoonyTools.pyw
+- Double-click: `HoonyTools.exe`
+
+(No terminal window will appear)
 
 ----------------------------------------
 📦 TOOLS INCLUDED
 ----------------------------------------
 - Excel/CSV Loader (index-aware if PIDM/TERM/STUDENT_ID exist)
-- Tray + Taskbar icon branding
+- SQL View Loader
+- Table Cleanup
 
 All logs are visible in the GUI log window.
 
