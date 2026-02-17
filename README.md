@@ -4,6 +4,10 @@
     <td><h1 style="margin-left: 10px;">HoonyTools</h1></td>
   </tr>
 </table>
+Lightweight Python-based toolkit for loading, transforming, and cleaning data in Oracle databases.
+
+Created by Jihoon Ahn [@hoonywise](https://github.com/hoonywise)  
+Contact: hoonywise@proton.me
 
 [![](https://img.shields.io/badge/license-Custom-gold)](LICENSE.md)
 [![](https://img.shields.io/badge/Donate-PayPal-blue)](https://www.paypal.com/donate/?hosted_button_id=NJSTAENDWQLXS)
@@ -23,9 +27,9 @@ With built-in support for Excel and CSV formats, and customizable database conne
 
 ## 🧑‍💻 Quick Start
 
-### Python Required (No EXE)
+### Both EXE and Python PYW Versions Available
 
-HoonyTools now runs directly as a Python GUI app — just unzip and run pyw.
+HoonyTools now runs either as a standalone exe or directly as a Python GUI app — just unzip and run pyw or download and run the exe from releases.
 
 **First-Time Setup:**
 
@@ -38,6 +42,10 @@ HoonyTools now runs directly as a Python GUI app — just unzip and run pyw.
 4. Launch the app by double-clicking `HoonyTools.pyw' or running:
    ```
    python HoonyTools.pyw
+   ```
+   or
+   ```
+   HoonyTools.exe
    ```
 
 ✅ This launches the GUI with **no terminal window**
@@ -139,7 +147,7 @@ If you can connect via `sqlplus`, HoonyTools will work too.
 
 ## 🚀 How to Launch
 
-Simply double-click `HoonyTools.pyw` to launch the application.
+Simply double-click `HoonyTools.pyw` or 'HoonyTools.exe' to launch the application.
 
 This file opens without a terminal window and starts the GUI immediately.
 
@@ -160,8 +168,8 @@ The launcher does not require domain-specific folders at startup. Tools that nee
 Once launched, the GUI gives access to all tools via an intuitive interface:
 
 - Load Excel and CSV files
+- Delete tables from your Oracle schema or DWH shared schema.
 - Create SQL views from SQL files
-- Clean tables or delete old records
 - View console logs and abort operations gracefully
 
 You can run as often as needed — no admin rights or elevated privileges required.
