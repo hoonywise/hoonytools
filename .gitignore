@@ -42,3 +42,11 @@ libs/config.ini
 # OS files
 Thumbs.db
 .DS_Store
+
+# Jetbrains
+.idea/
+*.iml
+
+# Virtual environments
+.venv/
+venv/
