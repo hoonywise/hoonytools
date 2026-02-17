@@ -4,6 +4,19 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🚀 v1.1.2 – Remove SCFF/MIS from Launcher (2026-02-17)
+
+This release removes SCFF and MIS loader functionality from the main HoonyTools launcher and simplifies the launcher startup behavior.
+
+### Changes
+
+- Remove SCFF and MIS entries from the launcher UI and tools menu
+- Stop checking/creating `SCFF/` and `MIS/` folders at startup (launcher starts cleanly)
+- Clean up logger-module references and make logging robust to non-ASCII characters
+- Update requirements with pillow 12.1.1 (security fix)
+
+---
+
 ## 🔖 v1.1.1 — Credential Isolation Update (2025-04-21)
 
 This release completes a foundational enhancement for multi-schema workflows across all HoonyTools utilities.
@@ -35,22 +48,6 @@ This release completes a foundational enhancement for multi-schema workflows acr
 - Added **"Check for Updates"** menu item under Help, linking to the GitHub Releases page
 - Cleaned up the **About HoonyTools** popup (removed internal dev notes for a cleaner look)
 - Confirmed keyboard shortcut **Alt + H** works to access Help menu (underline behavior is system-controlled)
-
----
-
-## 🚀 v1.1.2 – Remove SCFF/MIS from Launcher (2026-02-17)
-
-This release removes SCFF and MIS loader functionality from the main HoonyTools launcher and simplifies the launcher startup behavior. SCFF/MIS loaders and extractors have been moved out of the launcher UI; loader files remain in repository history or can be archived separately.
-
-### Changes
-
-- Remove SCFF and MIS entries from the launcher UI and tools menu
-- Stop checking/creating `SCFF/` and `MIS/` folders at startup (launcher starts cleanly)
-- Clean up logger-module references and make logging robust to non-ASCII characters
-
-### Notes
-
-- The separate SCFF/MIS loader files were removed from the `main` branch and are preserved in commit history. If needed, retrieve them from the feature branch or backup branch.
 
 ---
 
