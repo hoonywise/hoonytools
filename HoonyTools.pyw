@@ -418,19 +418,54 @@ def launch_tool_gui():
     log_text.config(yscrollcommand=lambda *args: [on_scroll(*args), log_text.yview_moveto(args[0])])
     
     # Setup root logger
+    # Ensure stdout/stderr use UTF-8 where supported to avoid encode errors
+    import sys as _sys
+    if hasattr(_sys.stdout, "reconfigure"):
+        try:
+            _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+    # Setup root logger
     log_stream = StringIO()
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    # GUI handler
+    # Defensive filter to sanitize log messages for handlers that may use
+    # legacy encodings (prevents UnicodeEncodeError when messages contain emoji)
+    class SafeLogFilter(logging.Filter):
+        def __init__(self, encoding="utf-8"):
+            super().__init__()
+            self.encoding = encoding
+
+        def sanitize(self, s: str) -> str:
+            try:
+                s.encode(self.encoding)
+                return s
+            except Exception:
+                return s.encode(self.encoding, "replace").decode(self.encoding)
+
+        def filter(self, record: logging.LogRecord) -> bool:
+            try:
+                # Convert the rendered message and place it in record.msg
+                record.msg = self.sanitize(str(record.getMessage()))
+                record.args = ()
+            except Exception:
+                pass
+            return True
+
+    # GUI handler (writes to in-memory stream)
     stream_handler = logging.StreamHandler(log_stream)
     stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    
-    # File handler
+    stream_handler.addFilter(SafeLogFilter())
+
+    # File handler (explicitly use UTF-8)
     log_file = base_path / "HoonyTools.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    file_handler = logging.FileHandler(log_file)
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    file_handler.addFilter(SafeLogFilter())
 
 
     # Reset handlers to avoid duplicates
