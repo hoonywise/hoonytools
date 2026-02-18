@@ -610,7 +610,21 @@ def show_sql_preview(parent, title, summary, sql):
     except Exception:
         pass
     pv.title(title)
+    # Withdraw briefly so window manager does not place it at a default offset
+    try:
+        pv.withdraw()
+    except Exception:
+        pass
+    # Ensure geometry is calculated and then center on the screen
+    try:
+        pv.update_idletasks()
+    except Exception:
+        pass
     center_window(pv, 720, 520)
+    try:
+        pv.deiconify()
+    except Exception:
+        pass
     Label(pv, text=f"{summary}", font=("Arial", 10, "bold")).pack(pady=6)
     txt_frame = Frame(pv)
     txt_frame.pack(fill=BOTH, expand=True, padx=8, pady=6)
@@ -665,7 +679,13 @@ def show_sql_preview(parent, title, summary, sql):
         pv.protocol("WM_DELETE_WINDOW", _do_cancel)
         pv.bind('<Return>', lambda e: _do_exec())
         pv.bind('<Escape>', lambda e: _do_cancel())
-        pv.lift(); pv.focus_force()
+        # ensure the window is visible and on top, then focus
+        try:
+            pv.lift()
+            pv.update()
+            pv.focus_force()
+        except Exception:
+            pass
         exec_btn = btns.winfo_children()[0]
         try:
             exec_btn.focus_force()
