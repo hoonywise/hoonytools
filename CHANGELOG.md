@@ -4,16 +4,40 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
-## 🚀 v1.1.2 – Remove SCFF/MIS from Launcher (2026-02-17)
+## 🚀 v1.2.1 — Fix: Preserve saved user creds & session DWH reuse (2026-02-18)
 
-This release removes SCFF and MIS loader functionality from the main HoonyTools launcher and simplifies the launcher startup behavior.
+Small but important fixes to ensure credentials are not accidentally overwritten and that DWH logins are reused in-memory during a GUI session.
 
-### Changes
+### Fixes
 
-- Remove SCFF and MIS entries from the launcher UI and tools menu
-- Stop checking/creating `SCFF/` and `MIS/` folders at startup (launcher starts cleanly)
-- Clean up logger-module references and make logging robust to non-ASCII characters
-- Update requirements with pillow 12.1.1 (security fix)
+- Prevent `libs/config.ini` from being clobbered when saving DWH credentials by re-reading and merging the on-disk config before writing.
+- Ensure the GUI login populates `session.user_credentials` so user-scoped tools don't re-prompt within the same session.
+- Allow in-memory reuse of DWH credentials for the running session even when "Save password" is unchecked (so users are not repeatedly prompted during the same GUI run).
+
+### Notes
+
+- `libs/setup_config.py` now merges DWH changes into an existing `libs/config.ini` by default; `--force` still overwrites the file.
+
+---
+
+## 🚀 v1.2.0 – Formatted SQL Preview, Copy & Save (2026-02-18)
+
+This release adds a formatted SQL preview for loader operations with convenient copy and save actions, and robustness improvements to the preview UI.
+
+### Enhancements
+
+- Add formatted SQL preview for `APPEND` / `REPLACE` / `UPSERT` flows in the Excel/CSV loader
+- Preview is shown by default (Preview SQL checkbox default: checked)
+- Preview window displays readable, line-broken SQL with monospace font and scrollbars
+- Add `Copy SQL` button to copy formatted SQL to clipboard
+- Add `Save to .sql` button to persist the preview to a file via Save dialog
+- Upsert flow now loads a temporary staging table and runs `merge_with_checks(..., dry_run=True)` to produce accurate counts and MERGE SQL; staging is dropped after preview or execution
+- Avoid fragile `grab_set()` usage; preview windows and selectors are resilient to focus/grab failures and are centered on the primary monitor
+
+### Fixes
+
+- Prevent crashes caused by `grab_set()` failures on some platforms by wrapping grab calls in try/except
+- Ensure preview Toplevels are centered (withdraw/deiconify pattern) so they appear reliably on the primary display
 
 ---
 
