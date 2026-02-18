@@ -604,6 +604,7 @@ def format_sql_for_display(sql: str) -> str:
 
 def show_sql_preview(parent, title, summary, sql):
     from tkinter import Toplevel, Text, Scrollbar, RIGHT, Y, BOTH, END, Label, Button, Frame, HORIZONTAL, X
+    from tkinter import filedialog, messagebox
     pv = Toplevel(parent) if parent is not None else Toplevel()
     try:
         pv.transient(parent)
@@ -644,6 +645,33 @@ def show_sql_preview(parent, title, summary, sql):
     btns.pack(pady=8)
     confirmed = {"val": False}
 
+    def _do_copy():
+        try:
+            pv.clipboard_clear()
+            pv.clipboard_append(formatted)
+            # ensure clipboard content persists after window closes
+            pv.update()
+            try:
+                messagebox.showinfo("Copied", "SQL copied to clipboard.", parent=pv)
+            except Exception:
+                logger.info("SQL copied to clipboard.")
+        except Exception as e:
+            logger.warning(f"Could not copy SQL to clipboard: {e}")
+
+    def _do_save():
+        try:
+            fname = filedialog.asksaveasfilename(parent=pv, defaultextension='.sql', filetypes=[('SQL file', '*.sql'), ('Text file', '*.txt')], title='Save SQL to file')
+            if not fname:
+                return
+            with open(fname, 'w', encoding='utf-8') as fh:
+                fh.write(formatted)
+            try:
+                messagebox.showinfo("Saved", f"SQL saved to: {fname}", parent=pv)
+            except Exception:
+                logger.info(f"SQL saved to: {fname}")
+        except Exception as e:
+            logger.error(f"Failed to save SQL to file: {e}")
+
     def _do_exec():
         confirmed["val"] = True
         try:
@@ -666,8 +694,10 @@ def show_sql_preview(parent, title, summary, sql):
         except Exception:
             pass
 
-    Button(btns, text="Execute", width=16, command=_do_exec).pack(side="left", padx=8)
-    Button(btns, text="Cancel", width=10, command=_do_cancel).pack(side="left")
+    Button(btns, text="Execute", width=12, command=_do_exec).pack(side="left", padx=6)
+    Button(btns, text="Copy SQL", width=12, command=_do_copy).pack(side="left", padx=6)
+    Button(btns, text="Save to .sql", width=12, command=_do_save).pack(side="left", padx=6)
+    Button(btns, text="Cancel", width=10, command=_do_cancel).pack(side="left", padx=6)
     # Avoid using grab_set(); it often fails when other apps hold the input grab.
     # Instead make the window topmost briefly and focus it so the user sees it,
     # then wait for the window to be closed. This is more reliable across OSes.
