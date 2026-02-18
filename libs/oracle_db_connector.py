@@ -192,7 +192,6 @@ def get_db_connection(force_shared=False, root=None):
             if (
                 not session.dwh_credentials
                 or session.dwh_credentials.get("username", "").lower() != "dwh"
-                or not session.dwh_credentials.get("save", False)
             ):
                 if root:
                     result_holder = {}
