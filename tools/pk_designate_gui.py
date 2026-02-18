@@ -181,10 +181,15 @@ def main(parent=None):
     main_frame = tk.Frame(win)
     main_frame.pack(fill=BOTH, expand=True, padx=8, pady=8)
 
+    # cache for table statistics to avoid repeated heavy queries
+    table_stats = {}
+    # maintain table order mapping: list index -> real table name
+    table_order = []
+
     left_frame = tk.Frame(main_frame)
     left_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=(0,6))
 
-    center_frame = tk.Frame(main_frame, width=220)
+    center_frame = tk.Frame(main_frame, width=300)
     center_frame.pack(side=LEFT, fill='y', padx=(6,6))
 
     right_frame = tk.Frame(main_frame)
@@ -213,6 +218,11 @@ def main(parent=None):
     def _on_threshold_toggle():
         state = 'normal' if threshold_enabled.get() else 'disabled'
         threshold_entry.config(state=state)
+        # refresh indicator for currently selected table
+        try:
+            update_table_indicator()
+        except Exception:
+            pass
 
     th_frame = tk.Frame(ctrl)
     th_frame.pack(pady=(0,6))
@@ -236,13 +246,23 @@ def main(parent=None):
     cname_entry = Entry(ctrl, textvariable=constraint_name_var, width=28)
     cname_entry.pack()
     # Button to restore full column list after detect filtered it
-    Button(ctrl, text='Show All Columns', command=lambda: on_table_select(), width=20).pack(pady=(6,0))
+    def show_all_columns():
+        try:
+            on_table_select()
+        except Exception:
+            pass
+        try:
+            detect_button.config(state='normal')
+        except Exception:
+            pass
+
+    Button(ctrl, text='Show All Columns', command=show_all_columns, width=20).pack(pady=(6,0))
     # Help text explaining threshold logic
     help_text = (
         "Threshold behavior: when 'Use row threshold' is checked, DISTINCT checks run only if table rows <= threshold.\n"
         "If unchecked, DISTINCT checks are always performed. Threshold and checkbox state are saved between runs."
     )
-    Label(ctrl, text=help_text, wraplength=220, justify='left', fg='#333').pack(pady=(6,0))
+    Label(ctrl, text=help_text, wraplength=280, justify='left', fg='#333').pack(pady=(6,0))
 
     # Settings persistence
     settings_file = Path(base_path) / 'libs' / 'pk_designate_settings.json'
@@ -281,8 +301,17 @@ def main(parent=None):
             cur.execute('SELECT table_name FROM all_tables WHERE owner = :own ORDER BY table_name', [owner])
             rows = cur.fetchall()
             tbl_list.delete(0, END)
+            table_order.clear()
+            # reset cached stats
+            table_stats.clear()
             for r in rows:
-                tbl_list.insert(END, r[0])
+                name = r[0]
+                tbl_list.insert(END, name)
+                table_order.append(name)
+            try:
+                detect_button.config(state='normal')
+            except Exception:
+                pass
         except Exception as e:
             logger.exception('Failed to list tables: %s', e)
             messagebox.showerror('Error', f'Failed to list tables: {e}')
@@ -294,7 +323,17 @@ def main(parent=None):
         col_list.delete(0, END)
         if not sel:
             return
-        tbl = tbl_list.get(sel[0])
+        idx = sel[0]
+        # map listbox index to real table name
+        try:
+            tbl = table_order[idx]
+        except Exception:
+            tbl = tbl_list.get(idx).split('  (rows:')[0]
+
+        # ensure table_stats structure
+        if tbl not in table_stats:
+            table_stats[tbl] = {'rowcount': None, 'columns': {}}
+
         cur = conn.cursor()
         try:
             cur.execute('''
@@ -302,12 +341,32 @@ def main(parent=None):
                 WHERE owner = :own AND table_name = :tbl
                 ORDER BY column_id
             ''', [owner, tbl])
-            for col, nullable in cur.fetchall():
+            cols = cur.fetchall()
+            for col, nullable in cols:
                 label = f"{col} {'(NULLABLE)' if nullable == 'Y' else ''}"
                 col_list.insert(END, col)
+                # cache nullable info
+                table_stats[tbl]['columns'][col] = {'nullable': nullable, 'distinct': None}
+            # fetch and cache rowcount for tooltip/threshold logic
+            if table_stats[tbl]['rowcount'] is None:
+                try:
+                    rc_cur = conn.cursor()
+                    rc_sql = f'SELECT COUNT(*) FROM {_quote_ident(owner)}.{_quote_ident(tbl)}'
+                    rc_cur.execute(rc_sql)
+                    rc = rc_cur.fetchone()[0]
+                    table_stats[tbl]['rowcount'] = rc
+                    rc_cur.close()
+                except Exception:
+                    table_stats[tbl]['rowcount'] = -1
+                    logger.exception('Failed to fetch rowcount for %s', tbl)
             # pre-generate a sane constraint name
             cname = _sanitize_constraint_name(f'PK_{tbl}')
             constraint_name_var.set(cname)
+            # ensure detect availability updated after loading columns
+            try:
+                update_table_indicator()
+            except Exception:
+                pass
         except Exception as e:
             logger.exception('Failed to list columns: %s', e)
             messagebox.showerror('Error', f'Failed to list columns: {e}')
@@ -316,12 +375,133 @@ def main(parent=None):
 
     tbl_list.bind('<<ListboxSelect>>', on_table_select)
 
+    # simple tooltip implementation
+    tooltip = None
+    def _show_tooltip(widget, text, x, y):
+        nonlocal tooltip
+        if tooltip:
+            try:
+                tooltip.destroy()
+            except Exception:
+                pass
+        tooltip = Toplevel(widget)
+        tooltip.wm_overrideredirect(True)
+        label = Label(tooltip, text=text, bg='#ffffe0', relief='solid', bd=1, padx=4, pady=2)
+        label.pack()
+        tooltip.wm_geometry(f'+{x}+{y}')
+
+    def _hide_tooltip(event=None):
+        nonlocal tooltip
+        if tooltip:
+            try:
+                tooltip.destroy()
+            except Exception:
+                pass
+            tooltip = None
+
+    def on_tbl_motion(event):
+        # show rows tooltip for the item under cursor
+        idx = tbl_list.nearest(event.y)
+        if idx is None:
+            _hide_tooltip()
+            return
+        try:
+            item = tbl_list.get(idx)
+        except Exception:
+            _hide_tooltip()
+            return
+        # map index to real table name when possible
+        try:
+            name = table_order[idx]
+        except Exception:
+            name = item.split('  (rows:')[0]
+        rc = table_stats.get(name, {}).get('rowcount')
+        if rc is None:
+            text = 'rows: unknown'
+        else:
+            text = f'rows: {rc}'
+        x = widget_root_x = win.winfo_rootx() + tbl_list.winfo_x() + 20
+        y = win.winfo_rooty() + tbl_list.winfo_y() + event.y + 20
+        _show_tooltip(tbl_list, text, x, y)
+
+    tbl_list.bind('<Motion>', on_tbl_motion)
+    tbl_list.bind('<Leave>', lambda e: _hide_tooltip())
+
+    def update_table_indicator():
+        # Update selected table label to indicate whether DISTINCT will run or be skipped
+        sel = tbl_list.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        # determine real name from table_order if available
+        try:
+            name = table_order[idx]
+        except Exception:
+            item = tbl_list.get(idx)
+            name = item.split('  (rows:')[0]
+        stats = table_stats.get(name, {})
+        rc = stats.get('rowcount')
+        try:
+            thr = int(threshold_var.get()) if threshold_var.get().isdigit() else 10000
+        except Exception:
+            thr = 10000
+        if rc is None:
+            # rowcount unknown; try to load columns/rowcount
+            try:
+                on_table_select()
+            except Exception:
+                pass
+            return
+        # decide
+        if threshold_enabled.get() and rc > thr:
+            label = f"{name}  (rows: {rc} — DISTINCT skipped)"
+            try:
+                detect_button.config(state='disabled')
+            except Exception:
+                pass
+        else:
+            label = f"{name}  (rows: {rc})"
+            try:
+                detect_button.config(state='normal')
+            except Exception:
+                pass
+        # update display
+        try:
+            tbl_list.delete(idx)
+            tbl_list.insert(idx, label)
+            tbl_list.selection_set(idx)
+        except Exception:
+            pass
+
+    # Update when threshold var changes
+    try:
+        threshold_enabled.trace_add('write', lambda *args: update_table_indicator())
+    except Exception:
+        try:
+            threshold_enabled.trace('w', lambda *args: update_table_indicator())
+        except Exception:
+            pass
+    # Also update when the threshold number itself changes so button state updates immediately
+    try:
+        threshold_var.trace_add('write', lambda *args: update_table_indicator())
+    except Exception:
+        try:
+            threshold_var.trace('w', lambda *args: update_table_indicator())
+        except Exception:
+            pass
+
     def detect_candidates():
         sel = tbl_list.curselection()
         if not sel:
             messagebox.showwarning('Select table', 'Please select a table first')
             return
-        tbl = tbl_list.get(sel[0])
+        idx = sel[0]
+        try:
+            orig_tbl = table_order[idx]
+        except Exception:
+            tbl = tbl_list.get(idx)
+            orig_tbl = tbl.split('  (rows:')[0].strip()
+        tbl = orig_tbl
         # ensure columns are loaded in case user didn't click the table list
         if col_list.size() == 0:
             on_table_select()
@@ -390,6 +570,15 @@ def main(parent=None):
                 for c in candidates:
                     col_list.insert(END, c)
                 col_list.selection_set(0)
+                # mark the selected table in the table list to indicate DISTINCT ran
+                try:
+                    sel_idx = idx
+                    label = f"{orig_tbl}  (rows: {total} — DISTINCT run)"
+                    tbl_list.delete(sel_idx)
+                    tbl_list.insert(sel_idx, label)
+                    tbl_list.selection_set(sel_idx)
+                except Exception:
+                    pass
             else:
                 logger.info('No PK candidates found for %s.%s; candidates list empty', owner, tbl)
                 messagebox.showinfo('No candidates', 'No single-column PK candidates detected. You can still select columns for a composite PK.')
@@ -404,7 +593,12 @@ def main(parent=None):
         if not sel:
             messagebox.showwarning('Select table', 'Please select a table first')
             return
-        tbl = tbl_list.get(sel[0])
+        idx = sel[0]
+        try:
+            tbl = table_order[idx]
+        except Exception:
+            # fallback: strip any UI suffix
+            tbl = tbl_list.get(idx).split('  (rows:')[0].strip()
         cols_idx = col_list.curselection()
         if not cols_idx:
             messagebox.showwarning('Select columns', 'Select one or more columns for the primary key')
@@ -415,7 +609,9 @@ def main(parent=None):
         cur = conn.cursor()
         try:
             null_where = ' OR '.join([f'{_quote_ident(c)} IS NULL' for c in cols])
-            cur.execute(f'SELECT COUNT(*) FROM {_quote_ident(owner)}.{_quote_ident(tbl)} WHERE {null_where}')
+            null_sql = f'SELECT COUNT(*) FROM {_quote_ident(owner)}.{_quote_ident(tbl)} WHERE {null_where}'
+            logger.info('Running null check SQL: %s', null_sql)
+            cur.execute(null_sql)
             nulls = cur.fetchone()[0]
             if nulls > 0:
                 if not messagebox.askyesno('Nulls found', f'{nulls} row(s) have NULL in selected column(s). Proceed?'):
@@ -424,6 +620,7 @@ def main(parent=None):
             # duplicate check
             group_cols = ', '.join([_quote_ident(c) for c in cols])
             dup_sql = f'SELECT COUNT(*) FROM (SELECT {group_cols} FROM {_quote_ident(owner)}.{_quote_ident(tbl)} GROUP BY {group_cols} HAVING COUNT(*) > 1)'
+            logger.info('Running duplicate check SQL: %s', dup_sql)
             cur.execute(dup_sql)
             dups = cur.fetchone()[0]
             if dups > 0:
@@ -451,10 +648,24 @@ def main(parent=None):
             cur.close()
 
     # Buttons
+    # Move Detect button to center ctrl area (near threshold)
+    detect_button = Button(ctrl, text='Detect PK Candidates', command=detect_candidates, width=28)
+    detect_button.pack(pady=(8,2))
+    # Force detect button (runs detect even when threshold would skip it)
+    def force_detect():
+        # Temporarily disable threshold enforcement and run detect
+        prev = threshold_enabled.get()
+        threshold_enabled.set(0)
+        _on_threshold_toggle()
+        detect_candidates()
+        threshold_enabled.set(prev)
+        _on_threshold_toggle()
+
+    Button(ctrl, text='Force Detect (override threshold)', command=force_detect, width=28).pack(pady=(0,8))
+
     btn_frame = tk.Frame(win)
     btn_frame.pack(fill='x', pady=6)
     Button(btn_frame, text='Reload Tables', command=load_tables, width=14).pack(side=LEFT, padx=6)
-    Button(btn_frame, text='Detect PK Candidates', command=detect_candidates, width=18).pack(side=LEFT, padx=6)
     Button(btn_frame, text='Add PRIMARY KEY', command=add_primary_key, width=16).pack(side=LEFT, padx=6)
     Button(btn_frame, text='Close', command=win.destroy, width=10).pack(side=RIGHT, padx=6)
 
