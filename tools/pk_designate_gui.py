@@ -212,6 +212,8 @@ def main(parent=None):
     Label(ctrl, text='Constraint name:').pack(pady=(0,4))
     cname_entry = Entry(ctrl, textvariable=constraint_name_var, width=28)
     cname_entry.pack()
+    # Button to restore full column list after detect filtered it
+    Button(ctrl, text='Show All Columns', command=lambda: on_table_select(), width=20).pack(pady=(6,0))
 
     def load_tables():
         cur = conn.cursor()
@@ -312,15 +314,14 @@ def main(parent=None):
                     # assume candidate if non-nullable and small table unknown
                     candidates.append(col)
 
-            # select candidate columns in listbox
-            col_list.selection_clear(0, END)
-            for i in range(col_list.size()):
-                name = col_list.get(i)
-                if name in candidates:
-                    col_list.selection_set(i)
-            if not candidates:
+            # If candidates were found, replace the column list with only candidates
+            if candidates:
+                col_list.delete(0, END)
+                for c in candidates:
+                    col_list.insert(END, c)
+                col_list.selection_set(0)
+            else:
                 logger.info('No PK candidates found for %s.%s; candidates list empty', owner, tbl)
-                # Show a helpful dialog with debug hint
                 messagebox.showinfo('No candidates', 'No single-column PK candidates detected. You can still select columns for a composite PK.')
         except Exception as e:
             logger.exception('Candidate detection failed: %s', e)
