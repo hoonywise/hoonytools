@@ -129,19 +129,40 @@ def drop_user_tables():
     schema = "DWH" if schema_choice == "dwh" else conn.username.upper()
     cursor = conn.cursor()
 
+    # Retrieve object names and types, include materialized views
     cursor.execute("""
-        SELECT object_name FROM all_objects 
-        WHERE owner = :owner 
-        AND object_type IN ('TABLE', 'VIEW') 
+        SELECT object_name, object_type FROM all_objects
+        WHERE owner = :owner
+        AND object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW')
         ORDER BY object_name
     """, [schema])
-    objects = [row[0] for row in cursor.fetchall()]
+    rows = cursor.fetchall()
 
-    if not objects:
-        messagebox.showinfo("No Objects", f"No tables or views found in schema {schema}")
+    if not rows:
+        messagebox.showinfo("No Objects", f"No tables, views or materialized views found in schema {schema}")
         return
 
-    selected = select_tables_gui(objects, f"Select tables/views to drop from schema: {schema}")
+    # Prepare display strings for the GUI and a mapping back to name/type
+    # If a MATERIALIZED VIEW and a TABLE share the same name, prefer the MATERIALIZED VIEW
+    mv_names = {name.upper() for name, obj_type in rows if obj_type == 'MATERIALIZED VIEW'}
+
+    display_map = {}
+    display_list = []
+    for name, obj_type in rows:
+        # Skip table entry when a materialized view of the same name exists
+        if obj_type == 'TABLE' and name.upper() in mv_names:
+            continue
+        disp = f"{name} ({obj_type})"
+        # avoid duplicates if any
+        if disp in display_map:
+            continue
+        display_map[disp] = (name, obj_type)
+        display_list.append(disp)
+
+    # deterministic order
+    display_list.sort()
+
+    selected = select_tables_gui(display_list, f"Select objects to drop from schema: {schema}")
     if not selected:
         messagebox.showinfo("Cancelled", "No objects selected.")
         return
@@ -149,19 +170,31 @@ def drop_user_tables():
     if not messagebox.askyesno("Confirm", f"Drop {len(selected)} object(s) from schema {schema}?"):
         return
 
-    for obj in selected:
+    for disp in selected:
+        name, obj_type = display_map.get(disp, (disp, None))
         try:
-            cursor.execute(f'DROP TABLE "{schema}"."{obj}" PURGE')
-            logger.info(f"🗑️ Dropped table: {schema}.{obj}")
-        except oracledb.DatabaseError as e:
-            if "ORA-00942" in str(e) or "ORA-00955" in str(e):
-                try:
-                    cursor.execute(f'DROP VIEW "{schema}"."{obj}"')
-                    logger.info(f"🗑️ Dropped view: {schema}.{obj}")
-                except Exception as e2:
-                    logger.warning(f"⚠️ Could not drop {obj} as view: {e2}")
+            if obj_type == 'TABLE':
+                cursor.execute(f'DROP TABLE "{schema}"."{name}" PURGE')
+                logger.info(f"🗑️ Dropped table: {schema}.{name}")
+            elif obj_type == 'VIEW':
+                cursor.execute(f'DROP VIEW "{schema}"."{name}"')
+                logger.info(f"🗑️ Dropped view: {schema}.{name}")
+            elif obj_type == 'MATERIALIZED VIEW':
+                cursor.execute(f'DROP MATERIALIZED VIEW "{schema}"."{name}"')
+                logger.info(f"🗑️ Dropped materialized view: {schema}.{name}")
             else:
-                logger.warning(f"⚠️ Could not drop {obj}: {e}")
+                # Fallback: try drop table then view
+                try:
+                    cursor.execute(f'DROP TABLE "{schema}"."{name}" PURGE')
+                    logger.info(f"🗑️ Dropped (fallback table): {schema}.{name}")
+                except Exception:
+                    try:
+                        cursor.execute(f'DROP VIEW "{schema}"."{name}"')
+                        logger.info(f"🗑️ Dropped (fallback view): {schema}.{name}")
+                    except Exception as e2:
+                        logger.warning(f"⚠️ Could not drop {name}: {e2}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not drop {name} ({obj_type}): {e}")
 
     conn.commit()
     cursor.close()

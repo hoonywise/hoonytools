@@ -36,6 +36,8 @@ for p in [path, base_path]:
 from libs import abort_manager
 from loaders.excel_csv_loader import load_multiple_files
 from loaders.sql_view_loader import run_sql_view_loader
+from loaders.sql_mv_loader import run_sql_mv_loader
+from tools.mv_refresh_gui import run_mv_refresh_gui
 from tools.table_cleanup_gui import drop_user_tables, delete_dwh_rows
 from libs.bible_books import book_lookup
 
@@ -585,6 +587,8 @@ TOOLS = {
     "☑ Excel/CSV Loader": load_multiple_files,
     "☑ Table/View Dropper": drop_user_tables,
     "☑ SQL View Loader": run_sql_view_loader,
+    "☑ SQL Materialized View Loader": run_sql_mv_loader,
+    "☑ MV Refresh / Manager": run_mv_refresh_gui,
     
     # the repository for later separation.
 }
