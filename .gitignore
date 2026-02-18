@@ -51,3 +51,5 @@ venv/
 
 # Test SQL
 test_sql/
+test_exe/
+test_zip/
