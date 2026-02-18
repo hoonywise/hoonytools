@@ -36,6 +36,7 @@ assets/*.ico
 # ensitive or machine-specific config
 libs/config.ini
 *.env
+libs/*.json
 
 # OS files
 Thumbs.db

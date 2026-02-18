@@ -1,8 +1,11 @@
 import re
 import logging
+import json
 import tkinter as tk
+from pathlib import Path
 from tkinter import Toplevel, Listbox, Scrollbar, Button, Label, Entry, StringVar, Checkbutton, IntVar, messagebox
 from tkinter.constants import MULTIPLE, END, LEFT, RIGHT, Y, BOTH
+from libs.paths import PROJECT_PATH as base_path
 
 from libs.oracle_db_connector import get_db_connection
 
@@ -205,8 +208,28 @@ def main(parent=None):
     ctrl = tk.Frame(center_frame)
     ctrl.pack(pady=8)
 
-    expensive_var = IntVar(value=0)
-    Checkbutton(ctrl, text='Allow expensive DISTINCT checks', variable=expensive_var).pack(pady=(0,8))
+    # Row-threshold controls
+    threshold_enabled = IntVar(value=0)  # when 0 => threshold disabled => run DISTINCT always
+    def _on_threshold_toggle():
+        state = 'normal' if threshold_enabled.get() else 'disabled'
+        threshold_entry.config(state=state)
+
+    th_frame = tk.Frame(ctrl)
+    th_frame.pack(pady=(0,6))
+    Checkbutton(th_frame, text='Use row threshold', variable=threshold_enabled, command=_on_threshold_toggle).pack(side=LEFT)
+    threshold_var = StringVar(value='10000')
+    Label(th_frame, text='Threshold:').pack(side=LEFT, padx=(8,4))
+    # validate threshold input to digits only
+    def _validate_threshold(P):
+        if P == '':
+            return True
+        return P.isdigit()
+
+    vcmd = (ctrl.register(_validate_threshold), '%P')
+    threshold_entry = Entry(th_frame, textvariable=threshold_var, width=8, validate='key', validatecommand=vcmd)
+    threshold_entry.pack(side=LEFT)
+    # default disabled until checkbox checked
+    threshold_entry.config(state='disabled')
 
     constraint_name_var = StringVar()
     Label(ctrl, text='Constraint name:').pack(pady=(0,4))
@@ -214,6 +237,43 @@ def main(parent=None):
     cname_entry.pack()
     # Button to restore full column list after detect filtered it
     Button(ctrl, text='Show All Columns', command=lambda: on_table_select(), width=20).pack(pady=(6,0))
+    # Help text explaining threshold logic
+    help_text = (
+        "Threshold behavior: when 'Use row threshold' is checked, DISTINCT checks run only if table rows <= threshold.\n"
+        "If unchecked, DISTINCT checks are always performed. Threshold and checkbox state are saved between runs."
+    )
+    Label(ctrl, text=help_text, wraplength=220, justify='left', fg='#333').pack(pady=(6,0))
+
+    # Settings persistence
+    settings_file = Path(base_path) / 'libs' / 'pk_designate_settings.json'
+
+    def load_settings():
+        try:
+            if settings_file.exists():
+                with open(settings_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    threshold_var.set(str(data.get('threshold', threshold_var.get())))
+                    threshold_enabled.set(1 if data.get('use_threshold', False) else 0)
+                    _on_threshold_toggle()
+        except Exception:
+            logger.exception('Failed to load pk_designate settings')
+
+    def save_settings():
+        try:
+            settings_file.parent.mkdir(parents=True, exist_ok=True)
+            data = {
+                'threshold': int(threshold_var.get()) if threshold_var.get().isdigit() else 10000,
+                'use_threshold': bool(threshold_enabled.get())
+            }
+            with open(settings_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f)
+        except Exception:
+            logger.exception('Failed to save pk_designate settings')
+
+    # bind saving on toggle and when entry loses focus
+    threshold_entry.bind('<FocusOut>', lambda e: save_settings())
+    th_frame.bind('<ButtonRelease-1>', lambda e: save_settings())
+    load_settings()
 
     def load_tables():
         cur = conn.cursor()
@@ -297,7 +357,17 @@ def main(parent=None):
                 if total == 0:
                     candidates.append(col)
                     continue
-                check_needed = total <= 10000 or expensive_var.get()
+                # Determine whether to run DISTINCT based on threshold settings
+                try:
+                    threshold = int(threshold_var.get())
+                except Exception:
+                    threshold = 10000
+                if threshold_enabled.get():
+                    # use threshold: run DISTINCT only when total <= threshold
+                    check_needed = (total <= threshold)
+                else:
+                    # threshold disabled -> run DISTINCT regardless of row count
+                    check_needed = True
                 if check_needed:
                     try:
                         distinct_sql = f'SELECT COUNT(DISTINCT {_quote_ident(col)}) FROM {_quote_ident(owner)}.{_quote_ident(tbl)}'
