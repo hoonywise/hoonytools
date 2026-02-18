@@ -14,14 +14,11 @@ Contact: hoonywise@proton.me
 
 ---
 
-HoonyTools is an all-in-one Python-based toolkit for loading, transforming, and cleaning data in Oracle databases.  
-Originally built for institutional data teams, it has since been expanded into a flexible platform for analysts and researchers in any organization.
+HoonyTools is an all-in-one Python-based toolkit for loading, transforming, and cleaning data in Oracle databases.
 
 Designed with front-end users in mind, HoonyTools features an intuitive GUI that makes it easy to load data into Oracle as tables or views, run batch imports, and perform record-level cleanup.
 
 With built-in support for Excel and CSV formats, and customizable database connections via user-defined DSNs, HoonyTools is ideal for daily ETL, research, and reporting workflows.
-
-> 💝 **Now open source and available for public use and modification — our gift to the world of analysts who work with data, not database management.**
 
 ---
 
@@ -29,24 +26,26 @@ With built-in support for Excel and CSV formats, and customizable database conne
 
 ### Both EXE and Python PYW Versions Available
 
-HoonyTools now runs either as a standalone exe or directly as a Python GUI app — just unzip and run pyw or download and run the exe from releases.
+HoonyTools now runs either as a standalone EXE or directly as a Python GUI app.
 
 **First-Time Setup:**
 
-1. Ensure [Python 3.13+](https://www.python.org/downloads/) is installed
-2. Open a terminal in the HoonyTools folder
-3. Run:  
+- EXE users:
+
+1. Download the latest `HoonyTools.exe` from the [Releases](https://github.com/hoonywise/HoonyTools/releases) page.
+2. Place the file in a folder of your choice.
+3. Launch the app by double-clicking `HoonyTools.exe`.
+
+- PYW users:
+
+1. Download the latest `HoonyTools_vX.X.X_python.zip` from the [Releases](https://github.com/hoonywise/HoonyTools/releases) page.
+2. Unzip the file to a folder of your choice.
+3. Ensure [Python 3.13+](https://www.python.org/downloads/) is installed
+4. Open a terminal in the unzipped folder and run:  
    ```
    pip install -r requirements.txt
    ```
-4. Launch the app by double-clicking `HoonyTools.pyw' or running:
-   ```
-   python HoonyTools.pyw
-   ```
-   or
-   ```
-   HoonyTools.exe
-   ```
+5. Launch the app by double-clicking `HoonyTools.pyw'.
 
 ✅ This launches the GUI with **no terminal window**
 
@@ -54,13 +53,14 @@ HoonyTools now runs either as a standalone exe or directly as a Python GUI app �
 
 ## 🗂️ Folder Structure
 
-After unzipping `HoonyTools_v1.0.2_python.zip`, you should see:
+> EXE version will create the necessary folders automatically.
+
+After unzipping `HoonyTools_vX.X.X_python.zip`, you should see:
 
 ```
 HoonyTools/
 ├── HoonyTools.pyw         # Main launcher (double-click this)
-├── README.txt             # Windows user guide
-├── README.md              # This file (GitHub format)
+├── README.txt             # Quickstart user guide
 ├── LICENSE.md             # Licensing terms
 ├── CHANGELOG.md           # Release notes
 ├── requirements.txt       # (Optional) Python modules if running from source)
@@ -153,16 +153,6 @@ This file opens without a terminal window and starts the GUI immediately.
 
 ---
 
-### 🏁 First-Time Run
-
-On first launch:
-
-The launcher does not require domain-specific folders at startup. Tools that need folders will create them when run.
-
-✅ These directories **do not affect production** — HoonyTools only uploads to your authorized DWH schema.
-
----
-
 ### 🧭 GUI Usage
 
 Once launched, the GUI gives access to all tools via an intuitive interface:
@@ -180,12 +170,20 @@ You can run as often as needed — no admin rights or elevated privileges requir
 
 
 - **SQL View Loader**  
-  - Instantly create Oracle views from SQL files placed in the `views/` folder.  
-  - Useful for versioned Banner views or department-specific logic. Supports both user schema and DWH.
+  - Instantly create Oracle views from pasted sql queries.  
 
 - **Excel/CSV Loader**  
   - Load Excel or CSV files into Oracle from a local file picker.  
   - Auto-maps column headers and preserves datatypes.
+  - Provides options for:
+    - `APPEND` Loading into existing tables or creating new ones.
+    - `REPLACE` Truncating existing tables before loading.
+    - `UPSERT` Upserts records based on selected unique keys.
+    - Formatted SQL Preview (default ON)
+      - When loading into an existing table you can preview the generated SQL `APPEND` `REPLACE` `UPSERT` before execution.
+      - The preview window shows nicely formatted SQL, is centered, and is resilient to focus/grab issues across platforms.
+      - Preview includes `Copy SQL` and `Save to .sql` actions so you can easily copy or persist the generated SQL.
+      - Upsert `MERGE` creates a temporary staging table and runs server-side validations (`merge_with_checks`) in dry-run mode to produce accurate counts and MERGE SQL; staging is dropped after preview or execution.
 
 - **Table Cleanup**  
   - Drops table from your schema or DWH shared schema.  
@@ -200,7 +198,6 @@ To optimize query performance, **HoonyTools automatically creates indexes** on c
 
 | Loader         | Columns Automatically Indexed                                          |
 |----------------|------------------------------------------------------------------------|
-| Excel/CSV      | `PIDM`, `TERM`, `STUDENT_ID`                                           |
 | Excel/CSV      | `PIDM`, `TERM`, `STUDENT_ID`                                           |
 
 Indexes are created after the table is generated. If the table already exists, HoonyTools safely skips duplicate index creation.
@@ -217,14 +214,13 @@ If Oracle cannot create the index due to a key size limit (e.g., `VARCHAR2(4000)
 - You must be connected to your institution’s network or VPN if the Oracle database is not publicly accessible.
 - All tools require a valid Oracle **DSN (Data Source Name)** such as `DWHDB_DB`. You may define your own DSN in `tnsnames.ora` to point to your organization’s database.
 - The first time you run a tool that connects to Oracle, you will be prompted for your **username, password, and DSN**.  
-  A **"Save password"** checkbox is available in the login popup. If checked, your credentials will be saved in `libs/config.ini` for future use. If unchecked, the login prompt will appear every time.
--- **Use caution when working with production databases**. Certain tools (e.g., loaders and Table Cleanup) can delete and overwrite data.
+  - A **"Save password"** checkbox is available in the login popup. If checked, your credentials will be saved in `libs/config.ini` for future GUI launches. If unchecked, it will only store for the duration of the current session.
+- **Use caution when working with production databases**. Certain tools (e.g., loaders and Table Cleanup) can delete and overwrite data.
 - For best results, always review your files before running a loader, and monitor the logging window for any errors or warnings.
 
 > 🧠 **Note:** This toolset interacts directly with the Oracle Data Warehouse (DWH). Ensure you understand the impact of any actions, particularly when loading data with loaders or using cleanup tools.
 
-💡 **Tip:** To reset your saved DWH credentials (e.g., if the DSN or password changes), simply delete the `libs/config.ini` file.  
-The next time you launch a DWH-related tool, HoonyTools will prompt you to enter new login information and ask whether to save it again.
+> 💡 **Tip:** To reset your saved DWH credentials (e.g., if the DSN or password changes), simply delete the `libs/config.ini` file. The next time you launch a DWH-related tool, HoonyTools will prompt you to enter new login information and ask whether to save it again.
 
 ---
 
@@ -232,112 +228,6 @@ The next time you launch a DWH-related tool, HoonyTools will prompt you to enter
 
 - For upcoming features, enhancements, and community-driven ideas, see [ROADMAP.md](ROADMAP.md).
 - To report bugs or suggest improvements, please open an issue on GitHub or reach out to the maintainer directly through the contact info listed at the bottom of this README.
-
----
-
-## 🚟 Notes for Developers
-
-This section documents key implementation details, platform-specific workarounds, and lessons learned during the development of HoonyTools. It is intended to help future contributors maintain stability across platforms and understand why certain design choices were made.
-
-Although HoonyTools now runs as a Python-based `.pyw` app by default, these EXE-specific workarounds remain valuable for any future signed `.exe` packaging (e.g., with PyInstaller + certificate signing).
-
----
-
-### 🪟 Entry #1: Taskbar Icon Ownership and PyInstaller + Tkinter on Windows
-
-A detailed breakdown of how we ensure HoonyTools shows the correct custom icon in the taskbar when bundled as an `.exe`.
-
-#### Key Findings
-
-- **Taskbar icon is owned by the *first visible Tkinter window*.**  
-  We must call `Tk()` and make it visible **before** any splash screens or login prompts. Otherwise, the icon becomes permanently associated with the wrong window.
-  
-- **Destroying the original `Tk()` root window early (e.g., before GUI loads) causes the taskbar icon to revert to the default feather icon.**  
-  To prevent this, we create `hidden_root = Tk()` and **never destroy it** until full exit.
-
-- **`SetCurrentProcessExplicitAppUserModelID()` is required** to reliably attach the embedded `.ico` to the taskbar icon when bundled with PyInstaller.
-
-- **Splash screens and modal popups cannot claim taskbar ownership.**  
-  Only the main `Toplevel` window can do so, and it must be shown first.
-
----
-
-#### Implementation Details
-
-```python
-# Inside launcher_gui.py
-
-hidden_root = Tk()
-hidden_root.withdraw()  # Keep root hidden but alive to retain taskbar icon
-
-root = Toplevel(hidden_root)  # Main GUI window attached to hidden_root
-
-# Set custom icon and app ID (required for taskbar ownership)
-ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("hoonywise.hoonytools")
-root.iconbitmap(default=icon_ico_path)  # .ico file embedded via PyInstaller
-```
-
-#### What Breaks It
-
-Creating a splash screen or login window before showing the main GUI
-
-Destroying the original Tk() instance before Toplevel is displayed
-
-Using PhotoImage(...) without keeping a reference
-(e.g., forgetting root.icon_img = icon_img) leads to silent icon failure
-
-#### Safe Exit Pattern
-
-```
-def safe_exit():
-    global is_gui_running
-    is_gui_running = False
-    try:
-        root.destroy()
-    except Exception:
-        pass
-    try:
-        hidden_root.destroy()
-    except Exception:
-        pass
-```
-
----
-
-### 🐞 Entry #2: Loader crash (FA/SF files) and Tkinter thread violation
-
-#### What Happened
-
-When loading FA or SF `.dat` files using a loader, HoonyTools crashed with errors like:
-
-> ❌ `Login prompt must be called from the main thread.`  
-> ❌ `Toplevel()` window creation failed due to threading issues
-
-This happened because the loader attempted to open a Tkinter login window (`Toplevel`) inside a background thread — which is not allowed by Tkinter on Windows.
-
-#### What We Learned
-
-- **Tkinter GUI elements must always be created from the main thread.**
-- **`Toplevel()` windows used in login prompts must be attached to the `_default_root`.**
-- Background loaders must receive the Oracle connection object **after login**, not initiate the login themselves.
-
-#### Fix Implemented
-
-- Moved the call to `get_db_connection()` into the **main thread** (within `run_selected()` in `HoonyTools.pyw`).
-- The returned `conn` object is passed into the background loader thread — solving the crash.
-
----
-
-More developer entries will be added here as we identify new platform-specific quirks, architecture patterns, or tricky implementation areas.
-
----
-
-## 🧑‍💼 Maintainer
-
-Created and maintained by: [@hoonywise](https://github.com/hoonywise)  
-Contact: [hoonywise@proton.me](mailto:hoonywise@proton.me)
-
-For questions, suggestions, or contributions, feel free to reach out or open a GitHub issue.
 
 ---
 
