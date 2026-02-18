@@ -48,3 +48,6 @@ Thumbs.db
 # Virtual environments
 .venv/
 venv/
+
+# Test SQL
+test_sql/
