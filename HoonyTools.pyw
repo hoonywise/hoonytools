@@ -14,7 +14,7 @@ import json
 import random
 import webbrowser
 
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.2.0"
 
 # Safely climb until we find the project root folder
 project_name = "HoonyTools"
@@ -314,6 +314,12 @@ def launch_tool_gui():
 
     # 4️⃣ 🔐 Prompt for login
     session.stored_credentials = prompt_credentials()
+    # Also populate user_credentials so user-scoped tools don't re-prompt
+    if session.stored_credentials:
+        try:
+            session.user_credentials = session.stored_credentials
+        except Exception:
+            pass
     if not session.stored_credentials:
         root.destroy()
         hidden_root.destroy()
