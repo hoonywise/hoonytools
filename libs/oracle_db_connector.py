@@ -212,15 +212,25 @@ def get_db_connection(force_shared=False, root=None):
                     session.stored_credentials = creds_temp
 
                     if creds_temp.get("save", False):
-                        config["dwh"] = {
+                        # Re-read the on-disk config immediately before writing to avoid
+                        # overwriting sections added by other parts of the app (e.g. GUI)
+                        from configparser import ConfigParser
+                        local_cfg = ConfigParser()
+                        try:
+                            local_cfg.read(config_path)
+                        except Exception:
+                            # If read fails for any reason, start with an empty config
+                            local_cfg = ConfigParser()
+
+                        local_cfg["dwh"] = {
                             "username": "dwh",
                             "password": creds_temp["password"],
                             "dsn": creds_temp["dsn"]
                         }
 
                         config_path.parent.mkdir(parents=True, exist_ok=True)
-                        with open(config_path, "w") as f:
-                            config.write(f)
+                        with open(config_path, "w", encoding="utf-8") as f:
+                            local_cfg.write(f)
 
                         logger.info("💾 Saved DWH credentials to config.ini")
                     else:
