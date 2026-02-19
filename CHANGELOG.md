@@ -206,7 +206,7 @@ In addition, licensing language has been refined across the splash screen, READM
 - Renamed all references of `AIDY` to `ACYR` across:
   - `scff_data_loader.py`
   - `launcher_gui.py`
-  - `table_cleanup_gui.py`
+  - `table_cleanup_gui.py` (now renamed to `object_cleanup_gui.py` — backward-compatible wrapper preserved)
   - `README.md`
 - Updated UI labels and logs for consistent terminology
 - Reworded licensing language to refer to "enterprise use" instead of "institutional use"

@@ -37,7 +37,7 @@ from libs import abort_manager
 from loaders.excel_csv_loader import load_multiple_files
 from loaders.sql_view_loader import run_sql_view_loader
 from loaders.sql_mv_loader import run_sql_mv_loader
-from tools.table_cleanup_gui import drop_user_tables, delete_dwh_rows
+from tools.object_cleanup_gui import drop_user_tables, delete_dwh_rows
 from tools.pk_designate_gui import main as pk_designate_main
 from libs.bible_books import book_lookup
 
@@ -600,7 +600,7 @@ def launch_tool_gui():
 
 TOOLS = {    
     "☑ Excel/CSV Loader": load_multiple_files,
-    "☑ Table/View Dropper": drop_user_tables,
+    "☑ Object Dropper": drop_user_tables,
     "☑ SQL View Loader": run_sql_view_loader,
     "☑ SQL Materialized View Loader": run_sql_mv_loader,
     "☑ Designate PK": pk_designate_main,
