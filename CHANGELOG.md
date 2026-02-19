@@ -4,6 +4,43 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🚀 v1.3.0 — Materialized View Manager & Loader Improvements (2026-02-19)
+
+This release adds safer, centralized materialized-view-log detection and management across the SQL MV Loader and the new Materialized View Manager.
+
+### Added
+
+- Shared helper `libs/mv_log_utils.py` with:
+  - `detect_tables_from_sql(sql_text)` — conservative table extraction
+  - `get_dependent_mviews(cursor, table)` — dependency lookup across USER_/ALL_DEPENDENCIES
+  - `detect_existing_mlog(cursor, table)` — conservative, diagnostic-rich MLOG detection
+- Materialized View Manager `tools/mv_refresh_gui.py`:
+  - Browse user MVs, request COMPLETE refresh, create/reuse/drop MV logs
+  - Compact existing-log dialog with DDL preview, dependency list, and debug info
+  - Log type selection (WITH ROWID / WITH PRIMARY KEY) and INCLUDING NEW VALUES option
+  - Sticky selection after actions and centered window on open
+  - Show Refresh Type (ON DEMAND / ON COMMIT) and per-base Current Log Type in info pane
+- SQL Materialized View Loader `loaders/sql_mv_loader.py` integrated the shared helper for base-table detection and safer existing-log handling; UI improvements and wider window geometry
+- Primary Key Designator tool `tools/pk_designate_gui.py` — UI to inspect tables and safely add/remove PRIMARY KEY constraints (ALTER TABLE flows with confirmation and dependency checks)
+
+### Changed
+
+- Conservative detection: we now only report an existing materialized view log when a physical `MLOG$_<MASTER>` or a resolvable `LOG_TABLE` can be verified; detection returns diagnostic counters to aid debugging.
+- Existing-log flows require explicit checkbox acknowledgement before destructive Drop & Recreate; canceling the dialog prevents accidental CREATE attempts.
+- Removed FAST/FORCE refresh options from UIs (unsupported in this environment); only COMPLETE refresh offered.
+
+### Fixed
+
+- Prevent raw ORA-12000 popups by gating creates with existing-log dialogs and offering Drop & Recreate flows.
+- Avoid false positives caused by stale or permission-limited dictionary entries by requiring physical verification and adding debug instrumentation.
+- Graceful handling of KeyboardInterrupt/force-quit while MV Manager GUI is open (clean shutdown and resource cleanup).
+
+### Notes
+
+- Debug info buttons write diagnostic counts and helper meta; consider collecting these when filing issues.
+- Next recommended steps: add unit tests for `libs/mv_log_utils.py` and optionally cache per-MV detection results to reduce repeated dictionary reads.
+
+
 ## 🚀 v1.2.2 — Rename Table Cleanup → Object Cleanup; MV / MLOG / PK support (2026-02-18)
 
 This release renames the old Table Cleanup tool to a more capable Object Cleanup tool and extends its capabilities to handle Oracle objects beyond simple tables and views.
