@@ -185,9 +185,10 @@ You can run as often as needed — no admin rights or elevated privileges requir
       - Preview includes `Copy SQL` and `Save to .sql` actions so you can easily copy or persist the generated SQL.
       - Upsert `MERGE` creates a temporary staging table and runs server-side validations (`merge_with_checks`) in dry-run mode to produce accurate counts and MERGE SQL; staging is dropped after preview or execution.
 
-- **Table Cleanup**  
-  - Drops table from your schema or DWH shared schema.  
-  - Use with caution — this is irreversible.
+- **Object Cleanup (Table/View/Materialized View/PK/Logs)**  
+  - Drop tables, views, materialized views, materialized view logs, and primary key constraints from your schema or the shared DWH schema.  
+  - The GUI prefers materialized views when an underlying table shares the same name to avoid accidental failures.  
+  - Use with caution — these actions are destructive and irreversible.
 
 
 ### 📈 Automatic Indexing (PIDM / TERM / STUDENT_ID)
@@ -213,8 +214,9 @@ If Oracle cannot create the index due to a key size limit (e.g., `VARCHAR2(4000)
 - Ensure your **Oracle Instant Client** is properly installed and configured (see setup section above).
 - You must be connected to your institution’s network or VPN if the Oracle database is not publicly accessible.
 - All tools require a valid Oracle **DSN (Data Source Name)** such as `DWHDB_DB`. You may define your own DSN in `tnsnames.ora` to point to your organization’s database.
-- The first time you run a tool that connects to Oracle, you will be prompted for your **username, password, and DSN**.  
+  - The first time you run a tool that connects to Oracle, you will be prompted for your **username, password, and DSN**.  
   - A **"Save password"** checkbox is available in the login popup. If checked, your credentials will be saved in `libs/config.ini` for future GUI launches. If unchecked, it will only store for the duration of the current session.
+  - The Object Cleanup tool is destructive; when in doubt, take a backup or verify with your DBA before dropping objects or constraints.
 - **Use caution when working with production databases**. Certain tools (e.g., loaders and Table Cleanup) can delete and overwrite data.
 - For best results, always review your files before running a loader, and monitor the logging window for any errors or warnings.
 
