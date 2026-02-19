@@ -112,6 +112,113 @@ def run_sql_mv_loader(on_finish=None):
                 pass
         return result.get('value')
 
+    def show_existing_log_options(table, cursor, desired_sql):
+        """Ask the user what to do when an existing MLOG$_<table> is present.
+        Returns one of: 'reuse', 'drop', or None (cancel)."""
+        try:
+            dlg = tk.Toplevel()
+            dlg.title(f"Existing MV Log on {table}")
+            dlg.grab_set()
+        except Exception as e:
+            logger.exception("Failed to open Existing Log dialog: %s", e)
+            try:
+                deps = []
+                cursor.execute("SELECT MVIEW_NAME FROM USER_MVIEWS WHERE UPPER(QUERY) LIKE '%'||:t||'%'", (table.upper(),))
+                deps = [r[0] for r in cursor.fetchall()]
+            except Exception:
+                deps = []
+            msg = (f"A materialized view log already exists on {table}.\n"
+                   f"Dependent materialized views: {', '.join(deps) if deps else 'None'}\n\n"
+                   "Do you want to drop and recreate the log with the selected options?\n"
+                   "This will affect any dependent materialized views.")
+            try:
+                ans = messagebox.askyesno("Drop & Recreate MV Log?", msg)
+            except Exception:
+                ans = False
+            return 'drop' if ans else None
+
+        # get existing log columns
+        try:
+            mlog_name = f"MLOG$_{table.split('.')[-1].upper()}"
+            cursor.execute("SELECT COLUMN_NAME FROM USER_TAB_COLUMNS WHERE TABLE_NAME = :tn ORDER BY COLUMN_ID", (mlog_name,))
+            cols = [r[0] for r in cursor.fetchall()]
+        except Exception:
+            cols = []
+
+        # get dependent mviews
+        try:
+            cursor.execute("SELECT MVIEW_NAME FROM USER_MVIEWS WHERE UPPER(QUERY) LIKE '%'||:t||'%'", (table.upper(),))
+            deps = [r[0] for r in cursor.fetchall()]
+        except Exception:
+            deps = []
+
+        tk.Label(dlg, text=f"A materialized view log already exists on {table}.", font=("Arial", 10, "bold")).pack(padx=12, pady=(8, 4), anchor='w')
+        tk.Label(dlg, text="Existing log columns:").pack(padx=12, anchor='w')
+        cols_frame = tk.Frame(dlg)
+        cols_frame.pack(padx=12, pady=(0,6), anchor='w')
+        if cols:
+            for c in cols:
+                tk.Label(cols_frame, text=f"- {c}").pack(anchor='w')
+        else:
+            tk.Label(cols_frame, text="(could not read columns)").pack(anchor='w')
+
+        tk.Label(dlg, text="Dependent materialized views:").pack(padx=12, anchor='w')
+        deps_frame = tk.Frame(dlg)
+        deps_frame.pack(padx=12, pady=(0,6), anchor='w')
+        if deps:
+            for m in deps:
+                tk.Label(deps_frame, text=f"- {m}").pack(anchor='w')
+        else:
+            tk.Label(deps_frame, text="(none detected)").pack(anchor='w')
+
+        tk.Label(dlg, text="The tool will run the following DDL if you choose Drop & Recreate:").pack(padx=12, anchor='w')
+        ddl_box = scrolledtext.ScrolledText(dlg, width=80, height=6)
+        ddl_box.pack(padx=12, pady=(4,6))
+        ddl_box.insert("1.0", desired_sql)
+        ddl_box.config(state='disabled')
+
+        tk.Label(dlg, text="Type the table name to confirm DROP & RECREATE:").pack(padx=12, anchor='w')
+        confirm_var = tk.StringVar()
+        confirm_entry = tk.Entry(dlg, textvariable=confirm_var)
+        confirm_entry.pack(padx=12, pady=(0,6), anchor='w')
+
+        result = {'value': None}  # type: dict[str, None | str]
+
+        def do_reuse():
+            result['value'] = 'reuse'
+            dlg.destroy()
+
+        def do_drop():
+            if confirm_var.get().strip().upper() != table.split('.')[-1].upper():
+                messagebox.showerror("Confirmation mismatch", "Table name does not match. Type the exact table name to confirm.")
+                return
+            result['value'] = 'drop'
+            dlg.destroy()
+
+        def do_cancel():
+            result['value'] = None
+            dlg.destroy()
+
+        btnf = tk.Frame(dlg)
+        btnf.pack(pady=8)
+        tk.Button(btnf, text="Reuse Existing Log", command=do_reuse, width=18).pack(side='left', padx=6)
+        tk.Button(btnf, text="Drop & Recreate (type name to confirm)", command=do_drop, width=28).pack(side='left', padx=6)
+        tk.Button(btnf, text="Cancel", command=do_cancel, width=10).pack(side='left', padx=6)
+
+        dlg.update_idletasks()
+        w = dlg.winfo_width(); h = dlg.winfo_height()
+        x = (dlg.winfo_screenwidth() // 2) - (w // 2)
+        y = (dlg.winfo_screenheight() // 2) - (h // 2)
+        dlg.geometry(f"{w}x{h}+{x}+{y}")
+        try:
+            dlg.wait_window(dlg)
+        except Exception:
+            try:
+                dlg.mainloop()
+            except Exception:
+                pass
+        return result.get('value')
+
     def create_materialized_view_logs(cursor, conn, tables, log_type, include_new_values=True):
         """Attempt to create materialized view logs for the given tables.
         tables: list of strings like SCHEMA.TABLE or TABLE
@@ -214,7 +321,70 @@ def run_sql_mv_loader(on_finish=None):
                         # ensure include_new_values is a bool (default True)
                         if include_new_values is None:
                             include_new_values = True
-                        results = create_materialized_view_logs(cursor, conn, selected_tables, log_type, include_new_values)
+
+                        # Check for existing logs and ask user for safer handling
+                        final_results = []
+                        for t in selected_tables:
+                            # If a log exists, show choices to reuse or drop & recreate
+                            try:
+                                cursor.execute("SELECT COUNT(*) FROM USER_MVIEW_LOGS WHERE MASTER = :m", (t.split('.')[-1].upper(),))
+                                exists = cursor.fetchone()[0] > 0
+                            except Exception:
+                                exists = False
+
+                            if exists:
+                                # prepare desired create SQL for preview
+                                desired_sql = f"DROP MATERIALIZED VIEW LOG ON {t};\nCREATE MATERIALIZED VIEW LOG ON {t} \n"
+                                if log_type == 'ROWID':
+                                    desired_sql += "  WITH ROWID\n"
+                                else:
+                                    desired_sql += "  WITH PRIMARY KEY\n"
+                                if include_new_values:
+                                    desired_sql += "  INCLUDING NEW VALUES"
+
+                                choice = show_existing_log_options(t, cursor, desired_sql)
+                                if choice == 'reuse':
+                                    # attempt to reuse: skip drop/create for this table
+                                    logger.info(f"User chose to reuse existing MV log on {t}")
+                                    final_results.append((t, True, None))
+                                    continue
+                                elif choice == 'drop':
+                                    try:
+                                        cursor.execute(f"DROP MATERIALIZED VIEW LOG ON {t}")
+                                        conn.commit()
+                                        logger.info(f"Dropped existing materialized view log on {t}")
+                                    except Exception as e:
+                                        logger.warning(f"Failed to drop existing materialized view log on {t}: {e}")
+                                        final_results.append((t, False, str(e)))
+                                        continue
+                                else:
+                                    # user cancelled
+                                    final_results.append((t, False, 'user_cancel'))
+                                    continue
+
+                            # If no existing log or user chose drop, proceed to create
+                            try:
+                                if '.' in t:
+                                    schema, table = t.split('.', 1)
+                                else:
+                                    schema = None
+                                    table = t
+                                sql = f"CREATE MATERIALIZED VIEW LOG ON {t} \n"
+                                if log_type == 'ROWID':
+                                    sql += "  WITH ROWID\n"
+                                else:
+                                    sql += "  WITH PRIMARY KEY\n"
+                                if include_new_values:
+                                    sql += "  INCLUDING NEW VALUES"
+                                cursor.execute(sql)
+                                conn.commit()
+                                logger.info(f"✅ Created materialized view log on {t}")
+                                final_results.append((t, True, None))
+                            except Exception as e:
+                                logger.warning(f"Could not create MV log on {t}: {e}")
+                                final_results.append((t, False, str(e)))
+
+                        results = final_results
                         # summarize results and ask user whether to continue on failures
                         succeeded = [r[0] for r in results if r[1]]
                         failed = [(r[0], r[2]) for r in results if not r[1]]
