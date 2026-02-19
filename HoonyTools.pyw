@@ -44,6 +44,8 @@ from libs.bible_books import book_lookup
 should_abort = False
 auto_scroll_enabled = True
 is_gui_running = True
+# Guard to prevent scheduling multiple DWH login prompts concurrently
+dwh_prompting = False
 
 # Load Bible JSON from libs/en_kjv.json with robust lookup (works in dev and PyInstaller bundles)
 BIBLE_VERSES = []
@@ -396,6 +398,17 @@ def launch_tool_gui():
             session.user_credentials = session.stored_credentials
         except Exception:
             pass
+    # Load saved DWH creds from config.ini (if present) so refresh can use them immediately
+    try:
+        from libs import oracle_db_connector as _ob
+        if _ob.config and _ob.config.has_section("dwh"):
+            sec = _ob.config["dwh"]
+            try:
+                session.dwh_credentials = {"username": sec.get("username"), "password": sec.get("password"), "dsn": sec.get("dsn")}
+            except Exception:
+                pass
+    except Exception:
+        pass
     if not session.stored_credentials:
         root.destroy()
         hidden_root.destroy()
@@ -469,6 +482,26 @@ def launch_tool_gui():
 
     # === Load Logo Assets ===
     assets_path = base_path / "assets"
+    # Initialize Oracle client early and load saved DWH creds into session if present
+    try:
+        from libs import oracle_db_connector as _ob, session as _session
+        if _ob.config and _ob.config.has_section("dwh"):
+            sec = _ob.config["dwh"]
+            try:
+                _session.dwh_credentials = {"username": sec.get("username"), "password": sec.get("password"), "dsn": sec.get("dsn")}
+            except Exception:
+                pass
+        try:
+            import oracledb as _orac
+            try:
+                _orac.init_oracle_client()
+                logger.info("✅ Oracle client initialized (Thick mode if available)")
+            except Exception:
+                logger.info("ℹ️ Oracle client init skipped or unavailable; proceeding with Thin mode")
+        except Exception:
+            pass
+    except Exception:
+        pass
     
     # --- Helper: create object list frame in left pane
     def _make_objects_frame(parent, title):
@@ -614,6 +647,12 @@ def launch_tool_gui():
         def _start_worker_with_creds(creds):
             def worker():
                 import oracledb
+                # Ensure Oracle client is initialized (helps tnsnames resolution in thick mode)
+                try:
+                    oracledb.init_oracle_client()
+                except Exception:
+                    # init may fail or be unnecessary (thin mode); ignore
+                    pass
                 rows = []
                 cur = None
                 conn = None
@@ -629,7 +668,48 @@ def launch_tool_gui():
                     rows = cur.fetchall()
                 except Exception as e:
                     rows = []
-                    logger.exception(f"Failed to list DWH objects: {e}")
+                    err_text = str(e)
+                    # Treat certain errors as expected environment/tns issues and avoid noisy stacktraces.
+                    if ("DPY-4026" in err_text) or ("tnsnames" in err_text.lower()) or isinstance(e, FileNotFoundError):
+                        # Informational: tnsnames/tns error detected; prompt the user to repair DWH login.
+                        logger.info(f"DWH connect encountered tns/tnsnames issue; will prompt user: {err_text}")
+                        # Update status label and schedule a single main-thread prompt to repair DWH creds/config if not already prompting
+                        try:
+                            try:
+                                root.after(0, lambda: dwh_status.config(text="Prompting for DWH login..."))
+                            except Exception:
+                                pass
+                            from libs import session as _session
+                            global dwh_prompting
+                            if not dwh_prompting:
+                                dwh_prompting = True
+                                def prompt_and_retry():
+                                    try:
+                                        from libs.oracle_db_connector import get_db_connection
+                                        conn2 = get_db_connection(force_shared=True, root=root)
+                                        if conn2:
+                                            try:
+                                                conn2.close()
+                                            except Exception:
+                                                pass
+                                            if _session.dwh_credentials:
+                                                # retry using new creds
+                                                _start_worker_with_creds(_session.dwh_credentials)
+                                    finally:
+                                        try:
+                                            # allow future prompts
+                                            dwh_prompting = False
+                                        except Exception:
+                                            pass
+                                try:
+                                    root.after(0, prompt_and_retry)
+                                except Exception:
+                                    dwh_prompting = False
+                        except Exception:
+                            logger.warning("Failed to schedule DWH login prompt after tns error.")
+                    else:
+                        # Unexpected errors: log stacktrace so we can diagnose
+                        logger.exception(f"Failed to list DWH objects: {e}")
                 finally:
                     try:
                         if cur:
