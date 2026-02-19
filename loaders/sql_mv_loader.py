@@ -196,8 +196,8 @@ def run_sql_mv_loader(on_finish=None):
         if not conn:
             return
         cursor = None
-        # If FAST refresh or ON COMMIT requested, detect base tables and offer to create logs
-        need_logs = (refresh_method in ("FAST",) or refresh_trigger in ("ON COMMIT",))
+        # If ON COMMIT requested, detect base tables and offer to create logs
+        need_logs = (refresh_trigger == "ON COMMIT")
         if need_logs:
             tables = detect_tables_from_sql(sql_query)
             # Only proceed to show dialog if any tables detected
@@ -211,6 +211,9 @@ def run_sql_mv_loader(on_finish=None):
                     # attempt to create logs before creating MV
                     try:
                         cursor = conn.cursor()
+                        # ensure include_new_values is a bool (default True)
+                        if include_new_values is None:
+                            include_new_values = True
                         results = create_materialized_view_logs(cursor, conn, selected_tables, log_type, include_new_values)
                         # summarize results and ask user whether to continue on failures
                         succeeded = [r[0] for r in results if r[1]]
@@ -352,7 +355,9 @@ def run_sql_mv_loader(on_finish=None):
     refresh_frame.pack(side="left", padx=(0, 12))
     refresh_method_var = tk.StringVar(value="COMPLETE")
     tk.Radiobutton(refresh_frame, text="COMPLETE", variable=refresh_method_var, value="COMPLETE").pack(anchor="w")
-    tk.Radiobutton(refresh_frame, text="FAST", variable=refresh_method_var, value="FAST").pack(anchor="w")
+    # FAST refresh removed from UI because it's environment/version dependent and
+    # often requires destructive log changes. Use ON COMMIT trigger to request
+    # log creation instead.
     tk.Radiobutton(refresh_frame, text="FORCE", variable=refresh_method_var, value="FORCE").pack(anchor="w")
 
     # Refresh trigger
