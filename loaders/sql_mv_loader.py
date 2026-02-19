@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox, scrolledtext
+from tkinter import messagebox, scrolledtext, filedialog
 import logging
 import re
 from libs.oracle_db_connector import get_db_connection
@@ -114,31 +114,74 @@ def run_sql_mv_loader(on_finish=None):
 
     def get_dependent_mviews(cursor, table):
         """Return a list of dependent materialized view names for the given table.
-        Uses USER_DEPENDENCIES primarily and falls back to a text search of USER_MVIEWS."""
-        base = table.split('.')[-1].upper()
+        Strategy:
+          1) Try ALL_DEPENDENCIES (cross-schema) if permitted
+          2) Fallback to USER_DEPENDENCIES
+          3) Fallback to a text search of USER_MVIEWS (heuristic)
+        Returns list of strings like 'OWNER.MVIEW' or 'MVIEW'.
+        """
+        parts = table.split('.')
+        if len(parts) == 2:
+            owner = parts[0].upper()
+            base = parts[1].upper()
+        else:
+            owner = None
+            base = parts[-1].upper()
+
         deps = []
+        # Try ALL_DEPENDENCIES first
+        try:
+            if owner:
+                cursor.execute(
+                    "SELECT OWNER, NAME FROM ALL_DEPENDENCIES "
+                    "WHERE REFERENCED_OWNER = :own AND REFERENCED_NAME = :tbl "
+                    "AND REFERENCED_TYPE = 'TABLE' AND TYPE = 'MATERIALIZED VIEW' ORDER BY OWNER, NAME",
+                    (owner, base)
+                )
+            else:
+                cursor.execute("SELECT USER FROM DUAL")
+                current_user = cursor.fetchone()[0]
+                cursor.execute(
+                    "SELECT OWNER, NAME FROM ALL_DEPENDENCIES "
+                    "WHERE REFERENCED_OWNER = :own AND REFERENCED_NAME = :tbl "
+                    "AND REFERENCED_TYPE = 'TABLE' AND TYPE = 'MATERIALIZED VIEW' ORDER BY OWNER, NAME",
+                    (current_user, base)
+                )
+            rows = cursor.fetchall()
+            if rows:
+                deps = [f"{r[0]}.{r[1]}" for r in rows]
+                return deps
+        except Exception:
+            deps = []
+
+        # Fallback to USER_DEPENDENCIES
         try:
             cursor.execute(
                 "SELECT NAME FROM USER_DEPENDENCIES "
                 "WHERE REFERENCED_NAME = :tbl AND REFERENCED_TYPE = 'TABLE' AND TYPE = 'MATERIALIZED VIEW'",
                 (base,)
             )
-            deps = [r[0] for r in cursor.fetchall()]
+            rows = cursor.fetchall()
+            if rows:
+                deps = [r[0] for r in rows]
+                return deps
         except Exception:
             deps = []
 
-        if not deps:
-            try:
-                cursor.execute(
-                    "SELECT MVIEW_NAME FROM USER_MVIEWS WHERE UPPER(query) LIKE '%' || :tbl || '%'",
-                    (base,)
-                )
-                deps = [r[0] for r in cursor.fetchall()]
-            except Exception:
-                deps = []
+        # Last-resort heuristic: text-search USER_MVIEWS
+        try:
+            cursor.execute(
+                "SELECT MVIEW_NAME FROM USER_MVIEWS WHERE UPPER(query) LIKE '%' || :tbl || '%'",
+                (base,)
+            )
+            rows = cursor.fetchall()
+            deps = [r[0] for r in rows]
+        except Exception:
+            deps = []
+
         return deps
 
-    def show_existing_log_options(table, cursor, desired_sql):
+    def show_existing_log_options(table, cursor, desired_sql, mv_ddl=None):
         """Ask the user what to do when an existing MLOG$_<table> is present.
         Returns one of: 'reuse', 'drop', or None (cancel)."""
         try:
@@ -186,13 +229,97 @@ def run_sql_mv_loader(on_finish=None):
             tk.Label(cols_frame, text="(could not read columns)").pack(anchor='w')
 
         tk.Label(dlg, text="Dependent materialized views:").pack(padx=12, anchor='w')
-        deps_frame = tk.Frame(dlg)
-        deps_frame.pack(padx=12, pady=(0,6), anchor='w')
+        # show count and a scrollable list so long lists are usable
+        try:
+            logger.info(f"Dependent materialized views for {table}: {deps}")
+        except Exception:
+            pass
+        tk.Label(dlg, text=f"{len(deps)} dependent materialized view(s) found:").pack(padx=12, anchor='w')
+
+        deps_box = scrolledtext.ScrolledText(dlg, width=80, height=8)
+        deps_box.pack(padx=12, pady=(0,6))
         if deps:
-            for m in deps:
-                tk.Label(deps_frame, text=f"- {m}").pack(anchor='w')
+            deps_box.insert('1.0', '\n'.join(deps))
         else:
-            tk.Label(deps_frame, text="(none detected)").pack(anchor='w')
+            deps_box.insert('1.0', '(none detected)')
+        deps_box.config(state='disabled')
+
+        def copy_deps():
+            try:
+                builder_window.clipboard_clear()
+                builder_window.clipboard_append('\n'.join(deps))
+                messagebox.showinfo('Copied', 'Dependent MV list copied to clipboard.')
+            except Exception:
+                try:
+                    messagebox.showwarning('Copy Failed', 'Could not copy to clipboard.')
+                except Exception:
+                    pass
+
+        def save_deps():
+            try:
+                path = filedialog.asksaveasfilename(defaultextension='.txt', filetypes=[('Text','*.txt')])
+                if path:
+                    with open(path, 'w', encoding='utf-8') as f:
+                        f.write('\n'.join(deps))
+                    messagebox.showinfo('Saved', f'List saved to {path}')
+            except Exception as e:
+                try:
+                    messagebox.showwarning('Save Failed', f'Could not save list: {e}')
+                except Exception:
+                    pass
+
+        btns_deps = tk.Frame(dlg)
+        btns_deps.pack(padx=12, anchor='w')
+        tk.Button(btns_deps, text='Copy list', command=copy_deps, width=10).pack(side='left', padx=(0,6))
+        tk.Button(btns_deps, text='Save list', command=save_deps, width=10).pack(side='left')
+
+        # acknowledgement checkbox to reduce accidental destructive actions
+        ack_var = tk.BooleanVar(value=False)
+        ack_cb = tk.Checkbutton(dlg, text=f"I understand this will affect the {len(deps)} listed materialized view(s).", variable=ack_var)
+        ack_cb.pack(padx=12, pady=(8,4), anchor='w')
+
+        tk.Label(dlg, text="Compatibility summary (quick checks):", font=("Arial", 10, "bold")).pack(padx=12, pady=(6,4), anchor='w')
+        # Compatibility checks will be computed from DB metadata
+        try:
+            mlog_name = f"MLOG$_{table.split('.')[-1].upper()}"
+            cursor.execute("SELECT COLUMN_NAME FROM USER_TAB_COLUMNS WHERE TABLE_NAME = :tn ORDER BY COLUMN_ID", (mlog_name,))
+            cols = [r[0] for r in cursor.fetchall()]
+        except Exception:
+            cols = []
+
+        # determine requested type from desired_sql
+        req_type = 'ROWID' if 'WITH ROWID' in desired_sql.upper() else ('PRIMARY KEY' if 'PRIMARY KEY' in desired_sql.upper() else 'UNKNOWN')
+
+        # detect existing type heuristically
+        existing_type = 'UNKNOWN'
+        pk_cols = []
+        try:
+            cursor.execute("SELECT ucc.column_name FROM user_constraints uc JOIN user_cons_columns ucc ON uc.constraint_name = ucc.constraint_name WHERE uc.table_name = :tn AND uc.constraint_type = 'P'", (table.split('.')[-1].upper(),))
+            pk_cols = [r[0] for r in cursor.fetchall()]
+        except Exception:
+            pk_cols = []
+        if any(c.upper() in [pc.upper() for pc in pk_cols] for c in cols):
+            existing_type = 'PRIMARY KEY'
+        elif any('ROW' in c.upper() or 'M_ROW' in c.upper() or 'ROWID' in c.upper() for c in cols):
+            existing_type = 'ROWID'
+
+        # sequence presence
+        seq_present = any('SEQ' in c.upper() or 'SNAPTIME' in c.upper() for c in cols)
+        # includes new values heuristic
+        includes_new = any('OLD_NEW' in c.upper() or 'NEW' in c.upper() for c in cols)
+
+        # render checklist
+        chkf = tk.Frame(dlg)
+        chkf.pack(padx=12, anchor='w')
+        def label_status(text, ok):
+            color = 'green' if ok else 'red'
+            tk.Label(chkf, text=text, fg=color).pack(anchor='w')
+
+        label_status(f"Requested log type: {req_type}", True)
+        label_status(f"Existing log type (heuristic): {existing_type}", existing_type == req_type)
+        label_status(f"Primary key on master: {', '.join(pk_cols) if pk_cols else 'No'}", bool(pk_cols) or req_type != 'PRIMARY KEY')
+        label_status(f"Sequence-like column present: {'Yes' if seq_present else 'No'}", seq_present)
+        label_status(f"INCLUDING NEW VALUES present: {'Yes' if includes_new else 'No'}", includes_new)
 
         tk.Label(dlg, text="The tool will run the following DDL if you choose Drop & Recreate:").pack(padx=12, anchor='w')
         ddl_box = scrolledtext.ScrolledText(dlg, width=80, height=6)
@@ -200,7 +327,12 @@ def run_sql_mv_loader(on_finish=None):
         ddl_box.insert("1.0", desired_sql)
         ddl_box.config(state='disabled')
 
-        tk.Label(dlg, text="Type the table name to confirm DROP & RECREATE:").pack(padx=12, anchor='w')
+        # Note: Run Explain / MV_CAPABILITIES_TABLE support removed to keep the dialog simple.
+        # Advanced EXPLAIN functionality was intentionally removed per UX decision.
+
+        # expected base table name (unqualified)
+        expected_name = table.split('.')[-1].upper()
+        tk.Label(dlg, text=f"Type the table name to confirm DROP & RECREATE: (expected: {expected_name})").pack(padx=12, anchor='w')
         confirm_var = tk.StringVar()
         confirm_entry = tk.Entry(dlg, textvariable=confirm_var)
         confirm_entry.pack(padx=12, pady=(0,6), anchor='w')
@@ -211,9 +343,18 @@ def run_sql_mv_loader(on_finish=None):
             result['value'] = 'reuse'
             dlg.destroy()
 
+        def normalize_name(s: str) -> str:
+            # accept either 'SALES' or 'SCHEMA.SALES' from user input
+            if not s:
+                return ''
+            s = s.strip()
+            if '.' in s:
+                return s.split('.')[-1].strip().upper()
+            return s.upper()
+
         def do_drop():
-            if confirm_var.get().strip().upper() != table.split('.')[-1].upper():
-                messagebox.showerror("Confirmation mismatch", "Table name does not match. Type the exact table name to confirm.")
+            if normalize_name(confirm_var.get()) != expected_name:
+                messagebox.showerror("Confirmation mismatch", f"Table name does not match. Type the exact table name to confirm (expected: {expected_name}).")
                 return
             result['value'] = 'drop'
             dlg.destroy()
@@ -225,8 +366,35 @@ def run_sql_mv_loader(on_finish=None):
         btnf = tk.Frame(dlg)
         btnf.pack(pady=8)
         tk.Button(btnf, text="Reuse Existing Log", command=do_reuse, width=18).pack(side='left', padx=6)
-        tk.Button(btnf, text="Drop & Recreate (type name to confirm)", command=do_drop, width=28).pack(side='left', padx=6)
+        # Drop button is gated: requires ack checkbox + exact typed table name (accepts schema-qualified input)
+        drop_btn = tk.Button(btnf, text="Drop & Recreate (type name to confirm)", command=do_drop, width=28)
+        drop_btn.pack(side='left', padx=6)
+        drop_btn.config(state='disabled')
         tk.Button(btnf, text="Cancel", command=do_cancel, width=10).pack(side='left', padx=6)
+
+        def can_enable_drop():
+            try:
+                ack_ok = ack_var.get()
+            except Exception:
+                ack_ok = False
+            name_ok = normalize_name(confirm_var.get()) == expected_name
+            return ack_ok and name_ok
+
+        def update_buttons(*_):
+            if can_enable_drop():
+                drop_btn.config(state='normal')
+            else:
+                drop_btn.config(state='disabled')
+
+        # Bind watchers
+        try:
+            ack_var.trace_add('write', lambda *_: update_buttons())
+        except Exception:
+            ack_var.trace('w', lambda *_: update_buttons())
+        try:
+            confirm_var.trace_add('write', lambda *_: update_buttons())
+        except Exception:
+            confirm_var.trace('w', lambda *_: update_buttons())
 
         dlg.update_idletasks()
         w = dlg.winfo_width(); h = dlg.winfo_height()
@@ -347,11 +515,34 @@ def run_sql_mv_loader(on_finish=None):
 
                         # Check for existing logs and ask user for safer handling
                         final_results = []
+                        # get current user for ownership checks
+                        try:
+                            cursor.execute("SELECT USER FROM DUAL")
+                            current_user = cursor.fetchone()[0]
+                        except Exception:
+                            current_user = None
+
                         for t in selected_tables:
                             # If a log exists, show choices to reuse or drop & recreate
                             try:
-                                cursor.execute("SELECT COUNT(*) FROM USER_MVIEW_LOGS WHERE MASTER = :m", (t.split('.')[-1].upper(),))
-                                exists = cursor.fetchone()[0] > 0
+                                master_name = t.split('.')[-1].upper()
+                                # try ALL_MVIEW_LOGS first (may show cross-schema logs if permitted)
+                                try:
+                                    cursor.execute(
+                                        "SELECT COUNT(*) FROM ALL_MVIEW_LOGS WHERE MASTER = :m",
+                                        (master_name,)
+                                    )
+                                    exists = cursor.fetchone()[0] > 0
+                                except Exception:
+                                    # fallback to USER_MVIEW_LOGS
+                                    try:
+                                        cursor.execute(
+                                            "SELECT COUNT(*) FROM USER_MVIEW_LOGS WHERE MASTER = :m",
+                                            (master_name,)
+                                        )
+                                        exists = cursor.fetchone()[0] > 0
+                                    except Exception:
+                                        exists = False
                             except Exception:
                                 exists = False
 
@@ -384,6 +575,43 @@ def run_sql_mv_loader(on_finish=None):
                                     # user cancelled
                                     final_results.append((t, False, 'user_cancel'))
                                     continue
+
+                            # Before attempting to create, verify the target object exists and is a table
+                            try:
+                                # resolve owner and table
+                                if '.' in t:
+                                    owner_part, table_part = t.split('.', 1)
+                                    owner_check = owner_part.strip().upper()
+                                    table_check = table_part.strip().upper()
+                                else:
+                                    owner_check = current_user
+                                    table_check = t.strip().upper()
+                                # check ALL_OBJECTS for table presence and type
+                                try:
+                                    cursor.execute(
+                                        "SELECT OWNER, OBJECT_TYPE FROM ALL_OBJECTS WHERE OWNER = :own AND OBJECT_NAME = :tbl",
+                                        (owner_check, table_check)
+                                    )
+                                    obj = cursor.fetchone()
+                                except Exception:
+                                    obj = None
+                                if not obj:
+                                    # object not found or inaccessible
+                                    err_msg = f"target object {t} not found or not accessible"
+                                    logger.warning(f"Could not create MV log on {t}: {err_msg}")
+                                    final_results.append((t, False, err_msg))
+                                    continue
+                                owner_found, obj_type = obj[0], obj[1]
+                                if obj_type.upper() != 'TABLE':
+                                    err_msg = f"target object {t} is not a TABLE (found type: {obj_type})"
+                                    logger.warning(f"Could not create MV log on {t}: {err_msg}")
+                                    final_results.append((t, False, err_msg))
+                                    continue
+
+                            except Exception as e:
+                                logger.exception("Error checking object existence for %s: %s", t, e)
+                                final_results.append((t, False, str(e)))
+                                continue
 
                             # If no existing log or user chose drop, proceed to create
                             try:

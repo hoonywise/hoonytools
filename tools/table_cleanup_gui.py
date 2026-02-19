@@ -100,8 +100,18 @@ def select_tables_gui(tables, title="Select tables to delete from your schema:")
     canvas.pack(side=LEFT, fill=BOTH, expand=True)
     scrollbar.pack(side=RIGHT, fill=Y)
 
-    # 🖱️ Enable mouse scrolling inside the canvas
-    canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+    # 🖱️ Enable mouse scrolling inside the canvas only while cursor is over it.
+    # Use enter/leave to bind/unbind the global mousewheel so the callback
+    # does not fire after the window is destroyed (prevents TclError).
+    def _on_mousewheel(ev):
+        try:
+            canvas.yview_scroll(int(-1*(ev.delta/120)), "units")
+        except Exception:
+            # ignore if canvas is no longer available
+            pass
+
+    canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+    canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
 
     vars_ = {}
     for table in tables:
