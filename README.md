@@ -250,13 +250,6 @@ If Oracle cannot create the index due to a key size limit (e.g., `VARCHAR2(4000)
 
 ---
 
-## 📖 Documentation & Roadmap
-
-- For upcoming features, enhancements, and community-driven ideas, see [ROADMAP.md](ROADMAP.md).
-- To report bugs or suggest improvements, please open an issue on GitHub or reach out to the maintainer directly through the contact info listed at the bottom of this README.
-
----
-
 ## 📜 License
 
 HoonyTools is free for individual, non-commercial use.  
