@@ -164,6 +164,98 @@ def run_mv_refresh_gui(on_finish=None):
 
         info_text.delete('1.0', tk.END)
         info_text.insert(tk.END, f"Name: {row[0]}\nBuild: {build}\nRefresh Method: {refresh_method}\nRefresh Type: {refresh_mode or 'ON DEMAND'}\nRewrite Enabled: {rewrite_enabled}\nLast Refresh: {last_refresh}\n")
+        # Insert current log type information (bold, blue)
+        try:
+            info_text.tag_configure('logtype', foreground='blue', font=('Arial', 10, 'bold'))
+        except Exception:
+            pass
+        log_info = ''
+        try:
+            mv_sql = query or ''
+            if mv_sql and 'detect_tables_from_sql' in globals():
+                bases = detect_tables_from_sql(mv_sql)
+            else:
+                bases = []
+            # Fallback: if regex detection failed, try USER_DEPENDENCIES / ALL_DEPENDENCIES to find referenced tables
+            if not bases:
+                try:
+                    cur = conn.cursor()
+                    try:
+                        cur.execute(
+                            "SELECT REFERENCED_OWNER, REFERENCED_NAME FROM USER_DEPENDENCIES WHERE NAME = :mv AND REFERENCED_TYPE = 'TABLE'",
+                            (row[0],)
+                        )
+                        dep_rows = cur.fetchall()
+                        if dep_rows:
+                            bases = [ (r[0] + '.' + r[1]) if r[0] else r[1] for r in dep_rows ]
+                        else:
+                            # try ALL_DEPENDENCIES with current user as owner
+                            try:
+                                cur.execute("SELECT USER FROM DUAL")
+                                cur_user = cur.fetchone()[0]
+                                cur.execute(
+                                    "SELECT REFERENCED_OWNER, REFERENCED_NAME FROM ALL_DEPENDENCIES WHERE OWNER = :own AND NAME = :mv AND REFERENCED_TYPE = 'TABLE'",
+                                    (cur_user, row[0])
+                                )
+                                dep_rows = cur.fetchall()
+                                bases = [ f"{r[0]}.{r[1]}" for r in dep_rows ]
+                            except Exception:
+                                bases = []
+                    finally:
+                        try:
+                            cur.close()
+                        except Exception:
+                            pass
+                except Exception:
+                    bases = []
+            # Filter out the MV itself if it appears in the detected bases
+            try:
+                mv_basename = row[0].split('.')[-1].upper()
+                filtered = []
+                seen = set()
+                for b in bases:
+                    try:
+                        bname = str(b).split('.')[-1].upper()
+                    except Exception:
+                        bname = str(b).upper()
+                    if bname == mv_basename:
+                        # skip self-reference
+                        continue
+                    if b not in seen:
+                        seen.add(b)
+                        filtered.append(b)
+                bases = filtered
+            except Exception:
+                pass
+            if not bases:
+                log_info = 'Current Log Type: (no base tables detected)'
+            else:
+                parts = []
+                try:
+                    cur = conn.cursor()
+                    for b in bases:
+                        try:
+                            if detect_existing_mlog:
+                                meta = detect_existing_mlog(cur, b)
+                                if meta and meta.get('exists'):
+                                    parts.append(f"{b}: {meta.get('existing_type','UNKNOWN')}")
+                                else:
+                                    parts.append(f"{b}: No log")
+                            else:
+                                parts.append(f"{b}: (no detection)")
+                        except Exception:
+                            parts.append(f"{b}: (error)")
+                    cur.close()
+                except Exception:
+                    parts = [f"{b}: (no access)" for b in bases]
+                log_info = 'Current Log Type: ' + '; '.join(parts)
+        except Exception:
+            log_info = 'Current Log Type: (unknown)'
+        # insert with tag
+        try:
+            info_text.insert(tk.END, log_info + '\n', 'logtype')
+        except Exception:
+            info_text.insert(tk.END, log_info + '\n')
         sql_text.delete('1.0', tk.END)
         try:
             sql_text.insert(tk.END, query or "")
