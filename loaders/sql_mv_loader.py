@@ -118,6 +118,7 @@ def run_sql_mv_loader(on_finish=None):
         log_type: 'ROWID' or 'PRIMARY KEY'
         include_new_values: bool
         """
+        results = []
         for t in tables:
             try:
                 if '.' in t:
@@ -132,12 +133,43 @@ def run_sql_mv_loader(on_finish=None):
                     sql += "  WITH PRIMARY KEY\n"
                 if include_new_values:
                     sql += "  INCLUDING NEW VALUES"
-                cursor.execute(sql)
-                conn.commit()
-                logger.info(f"✅ Created materialized view log on {t}")
+                try:
+                    cursor.execute(sql)
+                    conn.commit()
+                    logger.info(f"✅ Created materialized view log on {t}")
+                    results.append((t, True, None))
+                except Exception as e:
+                    err = str(e)
+                    logger.warning(f"Could not create MV log on {t}: {err}")
+                    # Possibly an existing incompatible log exists. Ask user whether to drop and recreate.
+                    try:
+                        prompt = (f"Could not create materialized view log on {t}:\n{err}\n\n"
+                                  "Do you want to DROP any existing materialized view log on this table and recreate it with the selected options?\n"
+                                  "This may affect other materialized views that depend on the existing log.")
+                        drop_confirm = messagebox.askyesno("Existing MV Log Detected", prompt)
+                    except Exception:
+                        drop_confirm = False
+
+                    if drop_confirm:
+                        try:
+                            cursor.execute(f"DROP MATERIALIZED VIEW LOG ON {t}")
+                            conn.commit()
+                            logger.info(f"Dropped existing materialized view log on {t}")
+                            # try create again
+                            cursor.execute(sql)
+                            conn.commit()
+                            logger.info(f"✅ Recreated materialized view log on {t}")
+                            results.append((t, True, None))
+                        except Exception as e2:
+                            err2 = str(e2)
+                            logger.warning(f"Failed to drop/recreate MV log on {t}: {err2}")
+                            results.append((t, False, err2))
+                    else:
+                        results.append((t, False, err))
             except Exception as e:
-                # Log and continue — the MV creation step will surface errors if necessary
-                logger.warning(f"Could not create MV log on {t}: {e}")
+                logger.exception("Unexpected error creating MV log on %s: %s", t, e)
+                results.append((t, False, str(e)))
+        return results
     def on_submit():
         mv_name = mv_name_entry.get().strip()
         sql_query = sql_text.get("1.0", tk.END).strip()
@@ -179,7 +211,28 @@ def run_sql_mv_loader(on_finish=None):
                     # attempt to create logs before creating MV
                     try:
                         cursor = conn.cursor()
-                        create_materialized_view_logs(cursor, conn, selected_tables, log_type, include_new_values)
+                        results = create_materialized_view_logs(cursor, conn, selected_tables, log_type, include_new_values)
+                        # summarize results and ask user whether to continue on failures
+                        succeeded = [r[0] for r in results if r[1]]
+                        failed = [(r[0], r[2]) for r in results if not r[1]]
+                        if succeeded:
+                            try:
+                                messagebox.showinfo("MV Logs Created", f"Created logs on: {', '.join(succeeded)}")
+                            except Exception:
+                                pass
+                        if failed:
+                            msg_lines = [f"{t}: {err}" for (t, err) in failed]
+                            msg = "Some MV logs could not be created:\n\n" + "\n".join(msg_lines) + "\n\nDo you want to continue creating the materialized view anyway?"
+                            try:
+                                cont = messagebox.askyesno("MV Log Creation Failed", msg)
+                            except Exception:
+                                cont = False
+                            if not cont:
+                                try:
+                                    cursor.close()
+                                except Exception:
+                                    pass
+                                return
                     except Exception as e:
                         logger.warning(f"Failed to create MV logs: {e}")
                     finally:
