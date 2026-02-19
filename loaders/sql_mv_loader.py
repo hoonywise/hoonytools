@@ -218,6 +218,27 @@ def run_sql_mv_loader(on_finish=None):
         except Exception:
             deps = []
 
+        # determine requested type from desired_sql
+        req_type = 'ROWID' if 'WITH ROWID' in desired_sql.upper() else ('PRIMARY KEY' if 'PRIMARY KEY' in desired_sql.upper() else 'UNKNOWN')
+
+        # detect existing type heuristically and master PK columns
+        existing_type = 'UNKNOWN'
+        pk_cols = []
+        try:
+            cursor.execute("SELECT ucc.column_name FROM user_constraints uc JOIN user_cons_columns ucc ON uc.constraint_name = ucc.constraint_name WHERE uc.table_name = :tn AND uc.constraint_type = 'P'", (table.split('.')[-1].upper(),))
+            pk_cols = [r[0] for r in cursor.fetchall()]
+        except Exception:
+            pk_cols = []
+        if any(c.upper() in [pc.upper() for pc in pk_cols] for c in cols):
+            existing_type = 'PRIMARY KEY'
+        elif any('ROW' in c.upper() or 'M_ROW' in c.upper() or 'ROWID' in c.upper() for c in cols):
+            existing_type = 'ROWID'
+
+        # sequence presence
+        seq_present = any('SEQ' in c.upper() or 'SNAPTIME' in c.upper() for c in cols)
+        # includes new values heuristic
+        includes_new = any('OLD_NEW' in c.upper() or 'NEW' in c.upper() for c in cols)
+
         tk.Label(dlg, text=f"A materialized view log already exists on {table}.", font=("Arial", 10, "bold")).pack(padx=12, pady=(8, 4), anchor='w')
         tk.Label(dlg, text="Existing log columns:").pack(padx=12, anchor='w')
         cols_frame = tk.Frame(dlg)
@@ -228,18 +249,19 @@ def run_sql_mv_loader(on_finish=None):
         else:
             tk.Label(cols_frame, text="(could not read columns)").pack(anchor='w')
 
-        tk.Label(dlg, text="Dependent materialized views:").pack(padx=12, anchor='w')
+        tk.Label(dlg, text="Material Views that May Be Dependent:").pack(padx=12, anchor='w')
         # show count and a scrollable list so long lists are usable
         try:
             logger.info(f"Dependent materialized views for {table}: {deps}")
         except Exception:
             pass
-        tk.Label(dlg, text=f"{len(deps)} dependent materialized view(s) found:").pack(padx=12, anchor='w')
+        tk.Label(dlg, text=f"{len(deps)} material view(s) that may be dependent:").pack(padx=12, anchor='w')
 
         deps_box = scrolledtext.ScrolledText(dlg, width=80, height=8)
         deps_box.pack(padx=12, pady=(0,6))
         if deps:
-            deps_box.insert('1.0', '\n'.join(deps))
+            for m in deps:
+                deps_box.insert('end', f"{m}\n")
         else:
             deps_box.insert('1.0', '(none detected)')
         deps_box.config(state='disabled')
@@ -273,10 +295,8 @@ def run_sql_mv_loader(on_finish=None):
         tk.Button(btns_deps, text='Copy list', command=copy_deps, width=10).pack(side='left', padx=(0,6))
         tk.Button(btns_deps, text='Save list', command=save_deps, width=10).pack(side='left')
 
-        # acknowledgement checkbox to reduce accidental destructive actions
+        # acknowledgement checkbox variable (checkbox will be placed next to the confirmation entry)
         ack_var = tk.BooleanVar(value=False)
-        ack_cb = tk.Checkbutton(dlg, text=f"I understand this will affect the {len(deps)} listed materialized view(s).", variable=ack_var)
-        ack_cb.pack(padx=12, pady=(8,4), anchor='w')
 
         tk.Label(dlg, text="Compatibility summary (quick checks):", font=("Arial", 10, "bold")).pack(padx=12, pady=(6,4), anchor='w')
         # Compatibility checks will be computed from DB metadata
@@ -287,26 +307,6 @@ def run_sql_mv_loader(on_finish=None):
         except Exception:
             cols = []
 
-        # determine requested type from desired_sql
-        req_type = 'ROWID' if 'WITH ROWID' in desired_sql.upper() else ('PRIMARY KEY' if 'PRIMARY KEY' in desired_sql.upper() else 'UNKNOWN')
-
-        # detect existing type heuristically
-        existing_type = 'UNKNOWN'
-        pk_cols = []
-        try:
-            cursor.execute("SELECT ucc.column_name FROM user_constraints uc JOIN user_cons_columns ucc ON uc.constraint_name = ucc.constraint_name WHERE uc.table_name = :tn AND uc.constraint_type = 'P'", (table.split('.')[-1].upper(),))
-            pk_cols = [r[0] for r in cursor.fetchall()]
-        except Exception:
-            pk_cols = []
-        if any(c.upper() in [pc.upper() for pc in pk_cols] for c in cols):
-            existing_type = 'PRIMARY KEY'
-        elif any('ROW' in c.upper() or 'M_ROW' in c.upper() or 'ROWID' in c.upper() for c in cols):
-            existing_type = 'ROWID'
-
-        # sequence presence
-        seq_present = any('SEQ' in c.upper() or 'SNAPTIME' in c.upper() for c in cols)
-        # includes new values heuristic
-        includes_new = any('OLD_NEW' in c.upper() or 'NEW' in c.upper() for c in cols)
 
         # render checklist
         chkf = tk.Frame(dlg)
@@ -332,10 +332,7 @@ def run_sql_mv_loader(on_finish=None):
 
         # expected base table name (unqualified)
         expected_name = table.split('.')[-1].upper()
-        tk.Label(dlg, text=f"Type the table name to confirm DROP & RECREATE: (expected: {expected_name})").pack(padx=12, anchor='w')
-        confirm_var = tk.StringVar()
-        confirm_entry = tk.Entry(dlg, textvariable=confirm_var)
-        confirm_entry.pack(padx=12, pady=(0,6), anchor='w')
+        # We'll position the confirmation controls and buttons in a bottom bar.
 
         result = {'value': None}  # type: dict[str, None | str]
 
@@ -343,19 +340,7 @@ def run_sql_mv_loader(on_finish=None):
             result['value'] = 'reuse'
             dlg.destroy()
 
-        def normalize_name(s: str) -> str:
-            # accept either 'SALES' or 'SCHEMA.SALES' from user input
-            if not s:
-                return ''
-            s = s.strip()
-            if '.' in s:
-                return s.split('.')[-1].strip().upper()
-            return s.upper()
-
         def do_drop():
-            if normalize_name(confirm_var.get()) != expected_name:
-                messagebox.showerror("Confirmation mismatch", f"Table name does not match. Type the exact table name to confirm (expected: {expected_name}).")
-                return
             result['value'] = 'drop'
             dlg.destroy()
 
@@ -363,22 +348,41 @@ def run_sql_mv_loader(on_finish=None):
             result['value'] = None
             dlg.destroy()
 
-        btnf = tk.Frame(dlg)
-        btnf.pack(pady=8)
-        tk.Button(btnf, text="Reuse Existing Log", command=do_reuse, width=18).pack(side='left', padx=6)
-        # Drop button is gated: requires ack checkbox + exact typed table name (accepts schema-qualified input)
-        drop_btn = tk.Button(btnf, text="Drop & Recreate (type name to confirm)", command=do_drop, width=28)
-        drop_btn.pack(side='left', padx=6)
+        # Bottom bar: center column will contain a vertical stack of
+        # Reuse, Cancel, and Confirm entry. Below them we'll place the
+        # acknowledgement checkbox and Drop button on the same line.
+        bottom_bar = tk.Frame(dlg)
+        bottom_bar.pack(pady=8, fill='x', padx=12)
+
+        bottom_bar.grid_columnconfigure(0, weight=1)
+        bottom_bar.grid_columnconfigure(1, weight=0)
+        bottom_bar.grid_columnconfigure(2, weight=1)
+
+        center_stack = tk.Frame(bottom_bar)
+        center_stack.grid(row=0, column=1)
+
+        reuse_label = f"Reuse Existing Log - {existing_type}" if existing_type and existing_type != 'UNKNOWN' else "Reuse Existing Log"
+        btn_row = tk.Frame(center_stack)
+        btn_row.pack(side='top', pady=(0,6))
+        tk.Button(btn_row, text=reuse_label, command=do_reuse, width=26).pack(side='left', padx=(0,6))
+        tk.Button(btn_row, text="Cancel", command=do_cancel, width=10).pack(side='left')
+
+        # (Confirmation entry removed — checkbox alone is required to enable Drop)
+
+        # Controls row: ack checkbox and drop button on the same line
+        controls_row = tk.Frame(center_stack)
+        controls_row.pack(side='top', pady=(6,0))
+        ack_cb = tk.Checkbutton(controls_row, text=f"I understand this will affect the {len(deps)} listed materialized view(s).", variable=ack_var)
+        ack_cb.pack(side='left')
+        drop_btn = tk.Button(controls_row, text="Drop & Recreate", command=do_drop, width=18)
+        drop_btn.pack(side='left', padx=(12,0))
         drop_btn.config(state='disabled')
-        tk.Button(btnf, text="Cancel", command=do_cancel, width=10).pack(side='left', padx=6)
 
         def can_enable_drop():
             try:
-                ack_ok = ack_var.get()
+                return bool(ack_var.get())
             except Exception:
-                ack_ok = False
-            name_ok = normalize_name(confirm_var.get()) == expected_name
-            return ack_ok and name_ok
+                return False
 
         def update_buttons(*_):
             if can_enable_drop():
@@ -391,10 +395,6 @@ def run_sql_mv_loader(on_finish=None):
             ack_var.trace_add('write', lambda *_: update_buttons())
         except Exception:
             ack_var.trace('w', lambda *_: update_buttons())
-        try:
-            confirm_var.trace_add('write', lambda *_: update_buttons())
-        except Exception:
-            confirm_var.trace('w', lambda *_: update_buttons())
 
         dlg.update_idletasks()
         w = dlg.winfo_width(); h = dlg.winfo_height()
@@ -685,7 +685,8 @@ def run_sql_mv_loader(on_finish=None):
                                 if choice == 'reuse':
                                     # attempt to reuse: skip drop/create for this table
                                     logger.info(f"User chose to reuse existing MV log on {t}")
-                                    final_results.append((t, True, None))
+                                    # mark as 'reused' so UI messages don't claim we 'created' a log
+                                    final_results.append((t, 'reused', None))
                                     continue
                                 elif choice == 'drop':
                                     try:
@@ -762,11 +763,17 @@ def run_sql_mv_loader(on_finish=None):
 
                         results = final_results
                         # summarize results and ask user whether to continue on failures
-                        succeeded = [r[0] for r in results if r[1]]
-                        failed = [(r[0], r[2]) for r in results if not r[1]]
-                        if succeeded:
+                        created = [r[0] for r in results if r[1] is True]
+                        reused = [r[0] for r in results if r[1] == 'reused']
+                        failed = [(r[0], r[2]) for r in results if r[1] is False or (isinstance(r[1], str) and r[1] not in ("reused",))]
+                        msgs = []
+                        if created:
+                            msgs.append(f"Created logs on: {', '.join(created)}")
+                        if reused:
+                            msgs.append(f"Reused existing logs: {', '.join(reused)}")
+                        if msgs:
                             try:
-                                messagebox.showinfo("MV Logs Created", f"Created logs on: {', '.join(succeeded)}")
+                                messagebox.showinfo("MV Logs Created", "\n".join(msgs))
                             except Exception:
                                 pass
                         if failed:
