@@ -111,7 +111,7 @@ def run_mv_refresh_gui(on_finish=None):
     include_new_var = tk.BooleanVar(value=True)
     tk.Checkbutton(btn_frame, text="INCLUDING NEW VALUES", variable=include_new_var).pack(side="left", padx=(8,0))
 
-    def load_mviews():
+    def load_mviews(selected_name=None):
         try:
             cur = conn.cursor()
             cur.execute("SELECT mview_name, build_mode, refresh_method, rewrite_enabled, last_refresh_date, QUERY FROM user_mviews ORDER BY mview_name")
@@ -124,6 +124,20 @@ def run_mv_refresh_gui(on_finish=None):
             # attach as normal attribute for later lookup
             setattr(root, '_mview_rows', {r[0]: r for r in rows})
             cur.close()
+            # restore selection if requested
+            try:
+                if selected_name:
+                    # find index of the selected name
+                    for i in range(mview_listbox.size()):
+                        if mview_listbox.get(i) == selected_name:
+                            mview_listbox.selection_clear(0, tk.END)
+                            mview_listbox.selection_set(i)
+                            mview_listbox.activate(i)
+                            # update right pane to reflect restored selection
+                            on_select()
+                            break
+            except Exception:
+                pass
         except Exception as e:
             logger.exception(f"Failed to load materialized views: {e}")
 
@@ -155,7 +169,7 @@ def run_mv_refresh_gui(on_finish=None):
             conn.commit()
             messagebox.showinfo("Refresh", f"Refresh of {name} requested (COMPLETE).")
             cur.close()
-            load_mviews()
+            load_mviews(name)
         except Exception as e:
             logger.exception(f"Failed to refresh {name}: {e}")
             messagebox.showerror("Refresh Failed", str(e))
@@ -390,7 +404,13 @@ def run_mv_refresh_gui(on_finish=None):
             if failed:
                 msg_lines = [f"{t}: {err}" for (t, err) in failed]
                 messagebox.showwarning("Some logs failed", "\n".join(msg_lines))
-            load_mviews()
+            # preserve selection so the user can perform another action on the same MV
+            try:
+                sel = mview_listbox.curselection()
+                sel_name = mview_listbox.get(sel[0]) if sel else None
+            except Exception:
+                sel_name = None
+            load_mviews(sel_name)
         except Exception as e:
             logger.exception(f"Failed to create logs: {e}")
             messagebox.showerror("Error", str(e))
