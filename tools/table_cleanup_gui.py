@@ -100,8 +100,18 @@ def select_tables_gui(tables, title="Select tables to delete from your schema:")
     canvas.pack(side=LEFT, fill=BOTH, expand=True)
     scrollbar.pack(side=RIGHT, fill=Y)
 
-    # 🖱️ Enable mouse scrolling inside the canvas
-    canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+    # 🖱️ Enable mouse scrolling inside the canvas only while cursor is over it.
+    # Use enter/leave to bind/unbind the global mousewheel so the callback
+    # does not fire after the window is destroyed (prevents TclError).
+    def _on_mousewheel(ev):
+        try:
+            canvas.yview_scroll(int(-1*(ev.delta/120)), "units")
+        except Exception:
+            # ignore if canvas is no longer available
+            pass
+
+    canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+    canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
 
     vars_ = {}
     for table in tables:
@@ -129,19 +139,72 @@ def drop_user_tables():
     schema = "DWH" if schema_choice == "dwh" else conn.username.upper()
     cursor = conn.cursor()
 
+    # Retrieve object names and types, include materialized views
     cursor.execute("""
-        SELECT object_name FROM all_objects 
-        WHERE owner = :owner 
-        AND object_type IN ('TABLE', 'VIEW') 
+        SELECT object_name, object_type FROM all_objects
+        WHERE owner = :owner
+        AND object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW')
         ORDER BY object_name
     """, [schema])
-    objects = [row[0] for row in cursor.fetchall()]
+    rows = cursor.fetchall()
 
-    if not objects:
-        messagebox.showinfo("No Objects", f"No tables or views found in schema {schema}")
+    if not rows:
+        messagebox.showinfo("No Objects", f"No tables, views or materialized views found in schema {schema}")
         return
 
-    selected = select_tables_gui(objects, f"Select tables/views to drop from schema: {schema}")
+    # Prepare display strings for the GUI and a mapping back to name/type
+    # If a MATERIALIZED VIEW and a TABLE share the same name, prefer the MATERIALIZED VIEW
+    mv_names = {name.upper() for name, obj_type in rows if obj_type == 'MATERIALIZED VIEW'}
+
+    display_map = {}
+    display_list = []
+    for name, obj_type in rows:
+        upper_name = name.upper()
+        # Materialized view log objects appear as TABLEs named like MLOG$... or MLOG$_...
+        if obj_type == 'TABLE' and upper_name.startswith('MLOG$'):
+            # extract the base table name from the log object name
+            base = name.split('$', 1)[1].lstrip('_')
+            disp = f"{name} (MATERIALIZED VIEW LOG on {base})"
+            if disp in display_map:
+                continue
+            # map as MVIEW_LOG with original mlog name and base table
+            display_map[disp] = ('MVIEW_LOG', name, base)
+            display_list.append(disp)
+            continue
+
+        # Skip table entry when a materialized view of the same name exists
+        if obj_type == 'TABLE' and upper_name in mv_names:
+            continue
+        disp = f"{name} ({obj_type})"
+        # avoid duplicates if any
+        if disp in display_map:
+            continue
+        # Mark map entries for object drops as ('OBJECT', name, obj_type)
+        display_map[disp] = ('OBJECT', name, obj_type)
+        display_list.append(disp)
+
+    # Additionally include primary key constraints so user can drop PKs when needed
+    try:
+        cursor.execute("""
+            SELECT constraint_name, table_name FROM all_constraints
+            WHERE owner = :owner AND constraint_type = 'P'
+            ORDER BY table_name, constraint_name
+        """, [schema])
+        pk_rows = cursor.fetchall()
+        for constraint_name, table_name in pk_rows:
+            disp = f"{constraint_name} (PRIMARY KEY on {table_name})"
+            if disp in display_map:
+                continue
+            display_map[disp] = ('CONSTRAINT', constraint_name, table_name)
+            display_list.append(disp)
+    except Exception:
+        # If constraints query fails for any reason, continue without PK entries
+        logger.debug("Could not retrieve primary key constraints; skipping PK display")
+
+    # deterministic order
+    display_list.sort()
+
+    selected = select_tables_gui(display_list, f"Select objects to drop from schema: {schema}")
     if not selected:
         messagebox.showinfo("Cancelled", "No objects selected.")
         return
@@ -149,19 +212,59 @@ def drop_user_tables():
     if not messagebox.askyesno("Confirm", f"Drop {len(selected)} object(s) from schema {schema}?"):
         return
 
-    for obj in selected:
+    for disp in selected:
+        entry = display_map.get(disp)
+        if not entry:
+            logger.warning(f"⚠️ Unknown selection: {disp}")
+            continue
         try:
-            cursor.execute(f'DROP TABLE "{schema}"."{obj}" PURGE')
-            logger.info(f"🗑️ Dropped table: {schema}.{obj}")
-        except oracledb.DatabaseError as e:
-            if "ORA-00942" in str(e) or "ORA-00955" in str(e):
+            if entry[0] == 'OBJECT':
+                _, name, obj_type = entry
+                if obj_type == 'TABLE':
+                    cursor.execute(f'DROP TABLE "{schema}"."{name}" PURGE')
+                    logger.info(f"🗑️ Dropped table: {schema}.{name}")
+                elif obj_type == 'VIEW':
+                    cursor.execute(f'DROP VIEW "{schema}"."{name}"')
+                    logger.info(f"🗑️ Dropped view: {schema}.{name}")
+                elif obj_type == 'MATERIALIZED VIEW':
+                    cursor.execute(f'DROP MATERIALIZED VIEW "{schema}"."{name}"')
+                    logger.info(f"🗑️ Dropped materialized view: {schema}.{name}")
+                else:
+                    # Fallback: try drop table then view
+                    try:
+                        cursor.execute(f'DROP TABLE "{schema}"."{name}" PURGE')
+                        logger.info(f"🗑️ Dropped (fallback table): {schema}.{name}")
+                    except Exception:
+                        try:
+                            cursor.execute(f'DROP VIEW "{schema}"."{name}"')
+                            logger.info(f"🗑️ Dropped (fallback view): {schema}.{name}")
+                        except Exception as e2:
+                            logger.warning(f"⚠️ Could not drop {name}: {e2}")
+            elif entry[0] == 'CONSTRAINT':
+                _, constraint_name, table_name = entry
+                # Drop constraint by name on the owning table
                 try:
-                    cursor.execute(f'DROP VIEW "{schema}"."{obj}"')
-                    logger.info(f"🗑️ Dropped view: {schema}.{obj}")
+                    cursor.execute(f'ALTER TABLE "{schema}"."{table_name}" DROP CONSTRAINT "{constraint_name}"')
+                    logger.info(f"🗑️ Dropped primary key constraint: {schema}.{constraint_name} on {table_name}")
                 except Exception as e2:
-                    logger.warning(f"⚠️ Could not drop {obj} as view: {e2}")
+                    logger.warning(f"⚠️ Could not drop constraint {constraint_name} on {table_name}: {e2}")
+            elif entry[0] == 'MVIEW_LOG':
+                # Drop materialized view log
+                _, mlog_name, base_table = entry
+                try:
+                    cursor.execute(f'DROP MATERIALIZED VIEW LOG ON "{schema}"."{base_table}"')
+                    logger.info(f"🗑️ Dropped materialized view log for {schema}.{base_table} (log object: {mlog_name})")
+                except Exception as e2:
+                    # Some Oracle versions require dropping the log object directly or quoted names; try direct DROP TABLE as fallback
+                    try:
+                        cursor.execute(f'DROP MATERIALIZED VIEW LOG ON {schema}."{base_table}"')
+                        logger.info(f"🗑️ Dropped materialized view log (fallback) for {schema}.{base_table}")
+                    except Exception as e3:
+                        logger.warning(f"⚠️ Could not drop materialized view log {mlog_name} on {base_table}: {e2} / {e3}")
             else:
-                logger.warning(f"⚠️ Could not drop {obj}: {e}")
+                logger.warning(f"⚠️ Unhandled entry type for {disp}: {entry[0]}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not process {disp}: {e}")
 
     conn.commit()
     cursor.close()

@@ -4,6 +4,18 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🚀 v1.2.2 — Maintenance: Table cleanup GUI materialized view handling (2026-02-18)
+
+Small update to prefer materialized views over underlying tables in the table cleanup GUI and add explicit drop support for materialized views.
+
+### Fixes
+
+- When a MATERIALIZED VIEW and an underlying TABLE share a name, the GUI now shows only the MATERIALIZED VIEW to avoid confusion and failed drops.
+- Add explicit `DROP MATERIALIZED VIEW` support so materialized views are removed correctly.
+- Preserve previous behavior for TABLE and VIEW drops; added deterministic ordering to the object list.
+
+---
+
 ## 🚀 v1.2.1 — Fix: Preserve saved user creds & session DWH reuse (2026-02-18)
 
 Small but important fixes to ensure credentials are not accidentally overwritten and that DWH logins are reused in-memory during a GUI session.
@@ -194,7 +206,7 @@ In addition, licensing language has been refined across the splash screen, READM
 - Renamed all references of `AIDY` to `ACYR` across:
   - `scff_data_loader.py`
   - `launcher_gui.py`
-  - `table_cleanup_gui.py`
+  - `table_cleanup_gui.py` (now renamed to `object_cleanup_gui.py` — backward-compatible wrapper preserved)
   - `README.md`
 - Updated UI labels and logs for consistent terminology
 - Reworded licensing language to refer to "enterprise use" instead of "institutional use"

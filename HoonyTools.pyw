@@ -36,7 +36,8 @@ for p in [path, base_path]:
 from libs import abort_manager
 from loaders.excel_csv_loader import load_multiple_files
 from loaders.sql_view_loader import run_sql_view_loader
-from tools.table_cleanup_gui import drop_user_tables, delete_dwh_rows
+from loaders.sql_mv_loader import run_sql_mv_loader
+from tools.object_cleanup_gui import drop_user_tables, delete_dwh_rows
 from tools.pk_designate_gui import main as pk_designate_main
 from libs.bible_books import book_lookup
 
@@ -191,7 +192,10 @@ def run_selected():
     # For everything else
     def run_and_update():
         try:
-            if tool_name == "☑ SQL View Loader":
+            # Tools that accept an on_finish callback should be called with it so the launcher
+            # can update its status light. Treat SQL View and SQL Materialized View loaders
+            # the same way.
+            if tool_name in ("☑ SQL View Loader", "☑ SQL Materialized View Loader"):
                 TOOLS[tool_name](on_finish=lambda: status_light.config(text="🟢"))
             else:
                 try:
@@ -596,8 +600,9 @@ def launch_tool_gui():
 
 TOOLS = {    
     "☑ Excel/CSV Loader": load_multiple_files,
-    "☑ Table/View Dropper": drop_user_tables,
+    "☑ Object Dropper": drop_user_tables,
     "☑ SQL View Loader": run_sql_view_loader,
+    "☑ SQL Materialized View Loader": run_sql_mv_loader,
     "☑ Designate PK": pk_designate_main,
     
     # the repository for later separation.
