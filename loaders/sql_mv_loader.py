@@ -112,6 +112,32 @@ def run_sql_mv_loader(on_finish=None):
                 pass
         return result.get('value')
 
+    def get_dependent_mviews(cursor, table):
+        """Return a list of dependent materialized view names for the given table.
+        Uses USER_DEPENDENCIES primarily and falls back to a text search of USER_MVIEWS."""
+        base = table.split('.')[-1].upper()
+        deps = []
+        try:
+            cursor.execute(
+                "SELECT NAME FROM USER_DEPENDENCIES "
+                "WHERE REFERENCED_NAME = :tbl AND REFERENCED_TYPE = 'TABLE' AND TYPE = 'MATERIALIZED VIEW'",
+                (base,)
+            )
+            deps = [r[0] for r in cursor.fetchall()]
+        except Exception:
+            deps = []
+
+        if not deps:
+            try:
+                cursor.execute(
+                    "SELECT MVIEW_NAME FROM USER_MVIEWS WHERE UPPER(query) LIKE '%' || :tbl || '%'",
+                    (base,)
+                )
+                deps = [r[0] for r in cursor.fetchall()]
+            except Exception:
+                deps = []
+        return deps
+
     def show_existing_log_options(table, cursor, desired_sql):
         """Ask the user what to do when an existing MLOG$_<table> is present.
         Returns one of: 'reuse', 'drop', or None (cancel)."""
