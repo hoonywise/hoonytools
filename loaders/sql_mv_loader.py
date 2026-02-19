@@ -526,23 +526,148 @@ def run_sql_mv_loader(on_finish=None):
                             # If a log exists, show choices to reuse or drop & recreate
                             try:
                                 master_name = t.split('.')[-1].upper()
-                                # try ALL_MVIEW_LOGS first (may show cross-schema logs if permitted)
+                                # Prefer USER_MVIEW_LOGS (current schema) to avoid false positives
                                 try:
                                     cursor.execute(
-                                        "SELECT COUNT(*) FROM ALL_MVIEW_LOGS WHERE MASTER = :m",
+                                        "SELECT COUNT(*) FROM USER_MVIEW_LOGS WHERE MASTER = :m",
                                         (master_name,)
                                     )
                                     exists = cursor.fetchone()[0] > 0
                                 except Exception:
-                                    # fallback to USER_MVIEW_LOGS
+                                    # fallback to ALL_MVIEW_LOGS if user view not available
                                     try:
-                                        cursor.execute(
-                                            "SELECT COUNT(*) FROM USER_MVIEW_LOGS WHERE MASTER = :m",
-                                            (master_name,)
-                                        )
+                                        # if t qualified with owner, filter by owner too to reduce false matches
+                                        if '.' in t:
+                                            owner_part = t.split('.')[0].upper()
+                                            cursor.execute(
+                                                "SELECT COUNT(*) FROM ALL_MVIEW_LOGS WHERE MASTER = :m AND OWNER = :own",
+                                                (master_name, owner_part)
+                                            )
+                                        else:
+                                            cursor.execute(
+                                                "SELECT COUNT(*) FROM ALL_MVIEW_LOGS WHERE MASTER = :m",
+                                                (master_name,)
+                                            )
                                         exists = cursor.fetchone()[0] > 0
                                     except Exception:
                                         exists = False
+
+                                # Defensive: try to resolve the actual log table name(s) from the mview logs view
+                                # Some dictionary views may contain stale or inaccessible entries; prefer explicit LOG_TABLE lookup.
+                                # log diagnostic info about detected existence for troubleshooting
+                                try:
+                                    logger.debug(f"MV log detection for {t}: master_name={master_name}, preliminary_exists={exists}")
+                                except Exception:
+                                    pass
+
+                                if exists:
+                                    try:
+                                        log_tables = []
+                                        try:
+                                            cursor.execute("SELECT LOG_TABLE FROM USER_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
+                                            rows = cursor.fetchall()
+                                            log_tables = [r[0] for r in rows if r and r[0]]
+                                        except Exception:
+                                            log_tables = []
+
+                                        if not log_tables:
+                                            try:
+                                                if '.' in t:
+                                                    owner_part = t.split('.')[0].upper()
+                                                    cursor.execute("SELECT LOG_TABLE FROM ALL_MVIEW_LOGS WHERE MASTER = :m AND OWNER = :own", (master_name, owner_part))
+                                                else:
+                                                    cursor.execute("SELECT LOG_TABLE FROM ALL_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
+                                                rows = cursor.fetchall()
+                                                log_tables = [r[0] for r in rows if r and r[0]]
+                                            except Exception:
+                                                log_tables = []
+
+                                        # If we couldn't determine any LOG_TABLEs, fall back to checking for MLOG$_<master> physical table
+                                        if not log_tables:
+                                            mlog_name = f"MLOG$_{master_name}"
+                                            # check USER_TABLES first
+                                            cursor.execute("SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
+                                            mcount = cursor.fetchone()[0]
+                                            if mcount == 0:
+                                                if '.' in t:
+                                                    owner_part = t.split('.')[0].upper()
+                                                    cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE OWNER = :own AND TABLE_NAME = :tn", (owner_part, mlog_name))
+                                                else:
+                                                    cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
+                                                mcount = cursor.fetchone()[0]
+                                            if mcount == 0:
+                                                exists = False
+                                        else:
+                                            # Only consider reported LOG_TABLEs that match expected naming (MLOG$_<master>)
+                                            filtered = []
+                                            for lt in log_tables:
+                                                if not lt:
+                                                    continue
+                                                lt_str = str(lt).upper()
+                                                if lt_str.endswith(f"MLOG$_{master_name}") or lt_str == f"MLOG$_{master_name}":
+                                                    filtered.append(lt_str)
+                                            if not filtered:
+                                                # none of the reported log table names look like a real MLOG$_ table for this master
+                                                exists = False
+                                            else:
+                                                # verify at least one of the filtered log tables exists as a table accessible to the user
+                                                found = False
+                                                for lt in filtered:
+                                                    if '.' in lt:
+                                                        owner_lt, name_lt = lt.split('.', 1)
+                                                        try:
+                                                            cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE OWNER = :own AND TABLE_NAME = :tn", (owner_lt.upper(), name_lt.upper()))
+                                                            cnt = cursor.fetchone()[0]
+                                                        except Exception:
+                                                            cnt = 0
+                                                    else:
+                                                        try:
+                                                            cursor.execute("SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = :tn", (lt.upper(),))
+                                                            cnt = cursor.fetchone()[0]
+                                                            if cnt == 0:
+                                                                cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE TABLE_NAME = :tn", (lt.upper(),))
+                                                                cnt = cursor.fetchone()[0]
+                                                        except Exception:
+                                                            cnt = 0
+                                                    if cnt > 0:
+                                                        found = True
+                                                        break
+                                                if not found:
+                                                    exists = False
+                                    except Exception as e:
+                                        # If we cannot verify the physical log presence due to permission errors
+                                        # or other DB access issues, conservatively treat the log as not present
+                                        logger.warning(f"Could not verify physical MLOG presence for {master_name}: {e}")
+                                        exists = False
+
+                                # Extra safeguard: if the dictionary reports a log but we cannot read
+                                # any columns and there are no dependent MVs, treat as not existing.
+                                if exists:
+                                    try:
+                                        deps_preview = []
+                                        try:
+                                            deps_preview = get_dependent_mviews(cursor, t)
+                                        except Exception:
+                                            deps_preview = []
+
+                                        # check columns on MLOG$_<master>
+                                        colcount = 0
+                                        try:
+                                            cursor.execute("SELECT COUNT(*) FROM USER_TAB_COLUMNS WHERE TABLE_NAME = :tn", (f"MLOG$_{master_name}",))
+                                            colcount = cursor.fetchone()[0]
+                                            if colcount == 0 and '.' in t:
+                                                owner_part = t.split('.')[0].upper()
+                                                cursor.execute("SELECT COUNT(*) FROM ALL_TAB_COLUMNS WHERE OWNER = :own AND TABLE_NAME = :tn", (owner_part, f"MLOG$_{master_name}"))
+                                                colcount = cursor.fetchone()[0]
+                                        except Exception:
+                                            colcount = 0
+
+                                        if (not deps_preview) and colcount == 0:
+                                            # nothing we can read; treat as no log
+                                            logger.info(f"Dictionary indicates MV log for {t} but no physical log or dependents found; ignoring.")
+                                            exists = False
+                                    except Exception:
+                                        pass
                             except Exception:
                                 exists = False
 
