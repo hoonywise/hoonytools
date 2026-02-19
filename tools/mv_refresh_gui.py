@@ -114,7 +114,12 @@ def run_mv_refresh_gui(on_finish=None):
     def load_mviews(selected_name=None):
         try:
             cur = conn.cursor()
-            cur.execute("SELECT mview_name, build_mode, refresh_method, rewrite_enabled, last_refresh_date, QUERY FROM user_mviews ORDER BY mview_name")
+            # include REFRESH_MODE (ON DEMAND / ON COMMIT) when available
+            try:
+                cur.execute("SELECT mview_name, build_mode, refresh_method, refresh_mode, rewrite_enabled, last_refresh_date, QUERY FROM user_mviews ORDER BY mview_name")
+            except Exception:
+                # fallback for DBs that don't expose REFRESH_MODE column
+                cur.execute("SELECT mview_name, build_mode, refresh_method, rewrite_enabled, last_refresh_date, QUERY FROM user_mviews ORDER BY mview_name")
             rows = cur.fetchall()
             mview_listbox.delete(0, tk.END)
             for r in rows:
@@ -147,11 +152,21 @@ def run_mv_refresh_gui(on_finish=None):
             return
         name = mview_listbox.get(sel[0])
         row = getattr(root, '_mview_rows', {}).get(name)
+        if not row:
+            return
+        # defensive extraction because REFRESH_MODE may not be available in older DBs
+        build = row[1] if len(row) > 1 else ''
+        refresh_method = row[2] if len(row) > 2 else ''
+        refresh_mode = row[3] if len(row) > 3 else ''
+        rewrite_enabled = row[4] if len(row) > 4 else (row[3] if len(row) > 3 else '')
+        last_refresh = row[5] if len(row) > 5 else (row[4] if len(row) > 4 else '')
+        query = row[6] if len(row) > 6 else (row[5] if len(row) > 5 else '')
+
         info_text.delete('1.0', tk.END)
-        info_text.insert(tk.END, f"Name: {row[0]}\nBuild: {row[1]}\nRefresh Method: {row[2]}\nRewrite Enabled: {row[3]}\nLast Refresh: {row[4]}\n")
+        info_text.insert(tk.END, f"Name: {row[0]}\nBuild: {build}\nRefresh Method: {refresh_method}\nRefresh Type: {refresh_mode or 'ON DEMAND'}\nRewrite Enabled: {rewrite_enabled}\nLast Refresh: {last_refresh}\n")
         sql_text.delete('1.0', tk.END)
         try:
-            sql_text.insert(tk.END, row[5] or "")
+            sql_text.insert(tk.END, query or "")
         except Exception:
             sql_text.insert(tk.END, "")
 
@@ -181,7 +196,9 @@ def run_mv_refresh_gui(on_finish=None):
             return
         name = mview_listbox.get(sel[0])
         row = getattr(root, '_mview_rows', {}).get(name)
-        mv_query = row[5] or ''
+        mv_query = ''
+        if row:
+            mv_query = row[6] if len(row) > 6 else (row[5] if len(row) > 5 else '')
         tables = detect_tables_from_sql(mv_query)
         if not tables:
             messagebox.showinfo("No tables", "Could not detect base tables from the MV query.")
