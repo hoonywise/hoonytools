@@ -146,3 +146,44 @@ Notes / follow-ups:
 
 - Consider logging when an in-memory credential is reused vs read from disk for better diagnostics.
 - `libs/setup_config.py` was updated to merge into existing config by default; `--force` remains available to overwrite the file intentionally.
+
+---
+
+### 📝 Entry #5: MV Manager, SQL MV Loader, and PK Designator Enhancements (2026-02-19)
+
+Summary: This dev session added a shared MV log detection helper and improved tooling around materialized views and primary keys. The aim was safer detection, clearer UX for destructive actions, and centralized helpers to reduce duplication.
+
+Changes and rationale:
+
+- Added `libs/mv_log_utils.py` with:
+  - `detect_tables_from_sql(sql_text)` — conservative extraction of table tokens from MV queries.
+  - `get_dependent_mviews(cursor, table)` — helper to list materialized views that may depend on a master table.
+  - `detect_existing_mlog(cursor, table)` — conservative detection that prefers `USER_*` dictionary views, falls back to `ALL_*`, and requires physical `MLOG$_<MASTER>` or resolvable `LOG_TABLE` verification before reporting a log as existing. Returns `diag` counters for debugging.
+
+- SQL Materialized View Loader (`loaders/sql_mv_loader.py`):
+  - Integrated `libs/mv_log_utils.detect_tables_from_sql` for base-table detection.
+  - Show a compact existing-log dialog when a log is detected; added "Show debug info" button to collect helper meta and dictionary counts.
+  - Conservative fallback: if helper reports exists but no columns/deps, verify the physical MLOG presence in `USER_TABLES` (and `ALL_TABLES` only for schema-qualified masters) before treating as existing.
+
+- Materialized View Manager (`tools/mv_refresh_gui.py`):
+  - New GUI to list user MVs, run COMPLETE refreshes, and manage MV logs (create, reuse, Drop & Recreate).
+  - Removed FAST/FORCE options (unsupported). Only COMPLETE refresh offered.
+  - Log creation UI: Log Type radios (`WITH ROWID` / `WITH PRIMARY KEY`) and `INCLUDING NEW VALUES` checkbox.
+  - Uses `detect_existing_mlog` to surface existing logs; dialog requires checkbox acknowledgment before destructive changes.
+  - Added "Show debug info" that collects `detect_existing_mlog` meta + dictionary counts to help diagnose false positives.
+  - Preserve selection (sticky) after actions; center window on open; show `Refresh Type` and per-base `Current Log Type` in the info pane (blue, bolded label).
+
+- Primary Key Designator (`tools/pk_designate_gui.py`):
+  - Tool to list tables, detect PK candidates (with configurable DISTINCT threshold), run null/duplicate checks, and create PRIMARY KEY constraints with confirmation and naming heuristics.
+
+Discoveries / gotchas:
+
+- Stale `ALL_MVIEW_LOGS` or `ALL_*` entries can cause false-positive detection when the current user lacks visibility into physical MLOG tables owned by other schemas. We now prefer `USER_*` views and only consult `ALL_*` when the master is schema-qualified.
+- Some environments restrict access to `USER_TAB_COLUMNS` or `USER_TABLES`, requiring graceful degradation (show "could not read columns" and surface diagnostic counters).
+- ORA-12000 (materialized view log already exists) can be triggered when attempting CREATE without prior DROP; we now gate creates and offer Drop & Recreate flows or prompt on CREATE failures.
+
+Next actions suggested:
+
+1. Add unit tests for `libs/mv_log_utils.detect_existing_mlog` to cover cases: (a) user-owned MLOG present, (b) ALL_MVIEW_LOGS only, (c) LOG_TABLE resolvable to another schema, (d) no visibility / permission errors.
+2. Cache per-MV detection results for the GUI session to reduce dictionary queries while navigating.
+3. Consider moving per-base detection to a background thread to avoid blocking the UI for very large schemas.
