@@ -148,9 +148,7 @@ def run_sql_mv_loader(on_finish=None):
         except Exception as e:
             logger.exception("Failed to open Existing Log dialog: %s", e)
             try:
-                deps = []
-                cursor.execute("SELECT MVIEW_NAME FROM USER_MVIEWS WHERE UPPER(QUERY) LIKE '%'||:t||'%'", (table.upper(),))
-                deps = [r[0] for r in cursor.fetchall()]
+                deps = get_dependent_mviews(cursor, table)
             except Exception:
                 deps = []
             msg = (f"A materialized view log already exists on {table}.\n"
@@ -171,10 +169,9 @@ def run_sql_mv_loader(on_finish=None):
         except Exception:
             cols = []
 
-        # get dependent mviews
+        # get dependent mviews (use dependency-based lookup with fallback)
         try:
-            cursor.execute("SELECT MVIEW_NAME FROM USER_MVIEWS WHERE UPPER(QUERY) LIKE '%'||:t||'%'", (table.upper(),))
-            deps = [r[0] for r in cursor.fetchall()]
+            deps = get_dependent_mviews(cursor, table)
         except Exception:
             deps = []
 
