@@ -6,6 +6,7 @@ from libs.oracle_db_connector import get_db_connection
 from libs import session
 import ctypes
 from libs.paths import ASSETS_PATH
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +35,26 @@ def run_sql_mv_loader(on_finish=None):
     def show_create_logs_dialog(tables):
         """Show a modal dialog asking which tables to create logs on.
         Returns (create_flag, selected_tables, log_type, include_new_values) or None if cancelled."""
-        dlg = tk.Toplevel()
-        dlg.title("Create Materialized View Logs")
-        dlg.grab_set()
+        try:
+            dlg = tk.Toplevel()
+            dlg.title("Create Materialized View Logs")
+            dlg.grab_set()
+        except Exception as e:
+            # If creating the Toplevel fails (threading/root issues), fallback to a simple confirmation
+            logger.exception("Failed to open Create Logs dialog: %s", e)
+            try:
+                trace_file = Path.cwd() / "mv_debug_trace.txt"
+                with trace_file.open("a", encoding="utf-8") as f:
+                    f.write(f"DIALOG_OPEN_FAILED: {e}\n")
+            except Exception:
+                pass
+            try:
+                create_choice = messagebox.askyesno("Create MV Logs?", f"Detected tables: {', '.join(tables)}\nCreate materialized view logs with WITH ROWID and INCLUDING NEW VALUES?")
+            except Exception:
+                create_choice = False
+            if not create_choice:
+                return (False, [], None, None)
+            return (True, tables, 'ROWID', True)
         tk.Label(dlg, text="The selected MV options require materialized view logs for fast refresh/ON COMMIT.\nSelect tables to create logs on:", justify="left").pack(padx=12, pady=(8, 6))
         checks = []
         frame = tk.Frame(dlg)
@@ -84,7 +102,14 @@ def run_sql_mv_loader(on_finish=None):
         x = (dlg.winfo_screenwidth() // 2) - (w // 2)
         y = (dlg.winfo_screenheight() // 2) - (h // 2)
         dlg.geometry(f"{w}x{h}+{x}+{y}")
-        dlg.mainloop()
+        # Use wait_window to avoid nested mainloops
+        try:
+            dlg.wait_window(dlg)
+        except Exception:
+            try:
+                dlg.mainloop()
+            except Exception:
+                pass
         return result.get('value')
 
     def create_materialized_view_logs(cursor, conn, tables, log_type, include_new_values=True):
@@ -191,9 +216,21 @@ def run_sql_mv_loader(on_finish=None):
             if on_finish:
                 on_finish()
         except Exception as e:
-            logger.error(f"❌ Error creating materialized view: {e}")
+            # Log full traceback to help debugging
+            import traceback
+            tb = traceback.format_exc()
+            logger.exception("❌ Error creating materialized view: %s", e)
+            # write trace file for easier capture
+            try:
+                trace_file = Path.cwd() / "mv_debug_trace.txt"
+                with trace_file.open("a", encoding="utf-8") as f:
+                    f.write("EXCEPTION_DDL:\n")
+                    f.write(tb + "\n")
+            except Exception:
+                pass
             # Provide helpful hint for common MV issues
             hint = "\n\nTip: REFRESH FAST/ON COMMIT may require materialized view logs or PKs on source tables."
+            # Show dialog with concise message but include trace in log file
             messagebox.showerror("Error", f"❌ Failed to create materialized view:\n{e}{hint}")
         finally:
             try:
