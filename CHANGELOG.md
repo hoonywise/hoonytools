@@ -3,6 +3,42 @@
 All notable changes to **HoonyTools** will be documented in this file.
 
 ---
+## 🚀 v1.3.5 — UI & DWH Refresh Improvements (2026-02-19)
+
+This patch contains several UI improvements and fixes to the DWH refresh/login flow implemented during the current development session.
+
+### Added / Fixed
+
+- Left-pane object lists: two scrollable lists were added to the main launcher — `User Objects` (populated at launch) and `DWH Objects` (populate on demand via Refresh). They run DB queries on background threads and update the UI safely on the main thread.
+- Object counters: compact `X Objects` counters placed beside each LabelFrame title. Counters are positioned to avoid changing tree widths and update after refreshes.
+- DWH refresh robustness:
+  - Prefer saved DWH credentials from `libs/config.ini` or in-memory `session.dwh_credentials` and attempt background connects without prompting.
+  - On tns/tnsnames failures (DPY-4026 / missing tnsnames.ora), schedule a single main-thread login prompt to repair credentials and retry automatically.
+  - Initialize the Oracle client early and pre-load saved DWH creds after GUI launch to reduce transient tns lookups.
+  - Avoid repeated login prompts and noisy stacktraces for common environment errors; display a friendly status and retry flow instead.
+- UI alignment and layout:
+  - Centered the toolbar (Select Tool + dropdown + Run/Abort/Exit) across the full launcher window.
+  - Adjusted left pane padding to align object lists with the log area top.
+  - Removed the small legend beneath the toolbar as requested.
+
+### Notes
+
+- Background DB connections still run in worker threads; all UI dialogs (login prompts) are scheduled on the main thread to remain Tk-safe.
+- If your DWH DSN is a TNS name and the Oracle Thick client is used, ensure `tnsnames.ora` or `TNS_ADMIN` is configured. Alternatively use an EZCONNECT style DSN (host:port/service) to bypass tnsnames lookup.
+
+
+### Fixed
+
+- Prevent raw ORA-12000 popups by gating creates with existing-log dialogs and offering Drop & Recreate flows.
+- Avoid false positives caused by stale or permission-limited dictionary entries by requiring physical verification and adding debug instrumentation.
+- Graceful handling of KeyboardInterrupt/force-quit while MV Manager GUI is open (clean shutdown and resource cleanup).
+
+### Notes
+
+- Debug info buttons write diagnostic counts and helper meta; consider collecting these when filing issues.
+- Next recommended steps: add unit tests for `libs/mv_log_utils.py` and optionally cache per-MV detection results to reduce repeated dictionary reads.
+
+---
 
 ## 🚀 v1.3.0 — Materialized View Manager & Loader Improvements (2026-02-19)
 
@@ -29,17 +65,7 @@ This release adds safer, centralized materialized-view-log detection and managem
 - Existing-log flows require explicit checkbox acknowledgement before destructive Drop & Recreate; canceling the dialog prevents accidental CREATE attempts.
 - Removed FAST/FORCE refresh options from UIs (unsupported in this environment); only COMPLETE refresh offered.
 
-### Fixed
-
-- Prevent raw ORA-12000 popups by gating creates with existing-log dialogs and offering Drop & Recreate flows.
-- Avoid false positives caused by stale or permission-limited dictionary entries by requiring physical verification and adding debug instrumentation.
-- Graceful handling of KeyboardInterrupt/force-quit while MV Manager GUI is open (clean shutdown and resource cleanup).
-
-### Notes
-
-- Debug info buttons write diagnostic counts and helper meta; consider collecting these when filing issues.
-- Next recommended steps: add unit tests for `libs/mv_log_utils.py` and optionally cache per-MV detection results to reduce repeated dictionary reads.
-
+---
 
 ## 🚀 v1.2.2 — Rename Table Cleanup → Object Cleanup; MV / MLOG / PK support (2026-02-18)
 

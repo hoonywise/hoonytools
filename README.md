@@ -172,6 +172,7 @@ This file opens without a terminal window and starts the GUI immediately.
 
 Once launched, the GUI gives access to all tools via an intuitive interface:
 
+- Object list for `user` and `dwh` schemas.
 - Load Excel and CSV files
 - Delete tables from your Oracle schema or DWH shared schema.
 - Create SQL views from SQL files

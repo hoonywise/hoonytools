@@ -187,3 +187,35 @@ Next actions suggested:
 1. Add unit tests for `libs/mv_log_utils.detect_existing_mlog` to cover cases: (a) user-owned MLOG present, (b) ALL_MVIEW_LOGS only, (c) LOG_TABLE resolvable to another schema, (d) no visibility / permission errors.
 2. Cache per-MV detection results for the GUI session to reduce dictionary queries while navigating.
 3. Consider moving per-base detection to a background thread to avoid blocking the UI for very large schemas.
+
+---
+
+### 🧭 Entry #6: Session Work — UI polish & DWH refresh robustness (2026-02-19)
+
+Summary: This development session focused on improving the launcher UI (left-pane object lists, center toolbar) and making the DWH refresh flow robust across different Oracle client configurations (Thin vs Thick, tnsnames lookup). Highlights below document findings, challenges, and decisions made for future maintainers.
+
+Findings
+- The Oracle Thick client (when available) attempts to parse `tnsnames.ora` which can cause DPY-4026 errors if `ORACLE_HOME` is set but `tnsnames.ora` is missing. This often manifests only on the first connection attempt unless the client is initialized early.
+- Loader tools historically called `get_db_connection()` from the main thread which both initializes the Oracle client and uses the dialog prompt flow; background workers that call `oracledb.connect()` directly can hit environment issues unless the client is initialized first.
+
+Key changes implemented
+- Added two scrollable object lists in the left pane: `User Objects` (auto-populate after login) and `DWH Objects` (populate on demand). These run database queries on background threads and use `root.after(0, ...)` to update UI components safely.
+- Counters beside each LabelFrame title showing `X Objects` were added; they are positioned to avoid affecting Treeview column widths and update after refreshes.
+- DWH refresh flow:
+  - Pre-load saved `[dwh]` credentials from `libs/config.ini` into `session.dwh_credentials` at startup so refresh can use them without prompting.
+  - Initialize the Oracle client early (call `oracledb.init_oracle_client()` where safe) to reduce DPY-4026 occurrences.
+  - When a background connect detects a tns/tnsnames error (DPY-4026 or missing tnsnames), schedule a single main-thread login prompt and retry automatically with updated credentials. Use a module-level guard (`dwh_prompting`) to prevent multiple concurrent prompts.
+
+Challenges
+- Ensuring all UI dialogs are created on the main thread while allowing background workers to run DB queries required careful use of `root.after(0, ...)` and explicit session state updates.
+- Multi-monitor + mixed-DPI environments complicate centering the main window. Several strategies were tried (Toplevel vs Tk root, Win32 SetWindowPos, monitor-from-cursor). We settled on centering based on the monitor containing the cursor with a fallback to primary monitor.
+
+Notes for future maintenance
+- If DPY-4026 continues to appear even with client init, prefer storing an EZCONNECT-style DSN (host:port/service) in `libs/config.ini` to avoid tnsnames lookups.
+- When packaging as an EXE with a bundled Oracle Thick client, ensure `TNS_ADMIN` is set or provide a packaged `tnsnames.ora` for the target environment.
+- Consider adding a small diagnostic mode (`--diag`) that logs the full ORA/oracledb error chain to help support teams triage connection issues quickly.
+
+Testing checklist
+1. With a valid `[dwh]` entry in `libs/config.ini`, restart the app and press DWH Refresh — no prompt should appear and objects should populate.
+2. Corrupt the saved DWH DSN (or remove `tnsnames.ora`) and press DWH Refresh — a single login prompt should appear; on successful login the list should populate and `config.ini` updated if Save checked.
+3. Ensure no background thread attempts to create UI elements directly (watch logs for "Login prompt must be called from the main thread.").
