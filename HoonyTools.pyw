@@ -341,21 +341,25 @@ def launch_tool_gui():
     center_window(root, 1280, 960)  # Resize to full GUI and center on screen
     root.title("HoonyTools Launcher")
 
+    # === Bible Verse Row (centered across the entire window) ===
+    verse_frame = tk.Frame(root)
+    verse_frame.pack(fill="x", padx=10, pady=(0, 8))
+
     # === Main content: two-column layout (left object lists, right main UI) ===
     content_frame = tk.Frame(root)
     content_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
     # Left pane for object lists (fixed width)
     left_pane = tk.Frame(content_frame, width=360)
-    left_pane.pack(side="left", fill="y", padx=(0, 10))
+    # fill both so the left pane stretches vertically and the two child frames
+    # can share vertical space equally
+    # push left pane down slightly so its top lines up with the log area
+    left_pane.pack(side="left", fill="both", padx=(6, 10), pady=(40,0))
+    left_pane.config(width=360)
 
     # Right pane for existing UI (tools, log, status)
     right_pane = tk.Frame(content_frame)
     right_pane.pack(side="left", fill="both", expand=True)
-
-    # === Bible Verse Row ===
-    verse_frame = tk.Frame(right_pane)
-    verse_frame.pack(fill="x", padx=10, pady=(0, 0))
 
     verse_label = tk.Label(
         verse_frame,
@@ -394,12 +398,14 @@ def launch_tool_gui():
     # --- Helper: create object list frame in left pane
     def _make_objects_frame(parent, title):
         frame = tk.LabelFrame(parent, text=title, padx=6, pady=6)
-        frame.pack(fill="both", pady=(0, 8))
-        tv = ttk.Treeview(frame, columns=("name", "type"), show="headings", height=10)
+        # allow frames to share available vertical space equally
+        frame.pack(fill="both", pady=(0, 8), expand=True)
+        # Lock treeview width to avoid auto-resize when labels change
+        tv = ttk.Treeview(frame, columns=("name", "type"), show="headings")
         tv.heading("name", text="Name")
         tv.heading("type", text="Type")
-        tv.column("name", width=180, anchor="w")
-        tv.column("type", width=120, anchor="center")
+        tv.column("name", width=180, anchor="w", stretch=False)
+        tv.column("type", width=120, anchor="center", stretch=False)
         vs = tk.Scrollbar(frame, orient="vertical", command=tv.yview)
         tv.configure(yscrollcommand=vs.set)
         tv.pack(side="left", fill="both", expand=True)
@@ -410,11 +416,45 @@ def launch_tool_gui():
         refresh_btn.pack(side="left")
         status_lbl = tk.Label(btn_frame_local, text="", font=("Arial", 8), fg="#444444")
         status_lbl.pack(side="left", padx=(6, 0))
-        return tv, refresh_btn, status_lbl
+        return frame, tv, refresh_btn, status_lbl
 
-    # Create the two object panes in the left_pane
-    user_tree, user_refresh_btn, user_status = _make_objects_frame(left_pane, "User Objects")
-    dwh_tree, dwh_refresh_btn, dwh_status = _make_objects_frame(left_pane, "DWH Objects (login required)")
+    # Create the two object panes in the left_pane (stacked, share vertical space)
+    user_frame, user_tree, user_refresh_btn, user_status = _make_objects_frame(left_pane, "User Objects")
+    dwh_frame, dwh_tree, dwh_refresh_btn, dwh_status = _make_objects_frame(left_pane, "DWH Objects")
+
+    # Prevent the left pane from auto-resizing when internal labels change
+    left_pane.pack_propagate(False)
+
+    # Create external count labels aligned to the right of each object frame
+    user_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg="#444444")
+    dwh_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg="#444444")
+    # place them in the second column of the left_pane grid so they don't affect frame width
+    # use small right padding so the label sits near the outer border
+    user_count_label.grid(row=0, column=1, sticky="ne", padx=(0, 4), pady=(4, 0))
+    dwh_count_label.grid(row=1, column=1, sticky="ne", padx=(0, 4), pady=(4, 0))
+
+    # hide the internal status labels created inside each frame to avoid them resizing the frame
+    try:
+        user_status.pack_forget()
+    except Exception:
+        pass
+    try:
+        dwh_status.pack_forget()
+    except Exception:
+        pass
+
+    # Make the two left frames share the available vertical space equally
+    # Place frames into grid so rowconfigure can control their weights
+    left_pane.grid_rowconfigure(0, weight=1)
+    left_pane.grid_rowconfigure(1, weight=1)
+    # prevent the count label column from expanding; let column 0 (frames) take all extra space
+    left_pane.grid_columnconfigure(0, weight=1)
+    left_pane.grid_columnconfigure(1, weight=0)
+    # Re-pack the frames using grid so they share the vertical space
+    user_frame.pack_forget()
+    dwh_frame.pack_forget()
+    user_frame.grid(row=0, column=0, sticky="nsew", pady=(0,8))
+    dwh_frame.grid(row=1, column=0, sticky="nsew")
 
     # Utility to populate a treeview from rows [(name, type), ...]
     def _populate_treeview(tv, rows):
@@ -456,78 +496,125 @@ def launch_tool_gui():
                 except Exception:
                     pass
 
-            root.after(0, lambda: (_populate_treeview(user_tree, rows), user_status.config(text=f"{len(rows)} objects")))
+            # If no rows found, show friendly message in status
+            if not rows:
+                # update external count label and tree
+                root.after(0, lambda: (_populate_treeview(user_tree, rows), user_count_label.config(text="No objects")))
+            else:
+                root.after(0, lambda: (_populate_treeview(user_tree, rows), user_count_label.config(text=f"{len(rows)} objects")))
         threading.Thread(target=worker, daemon=True).start()
 
     def refresh_dwh_objects():
         dwh_status.config(text="Loading...")
-        def worker():
-            from libs.oracle_db_connector import get_db_connection
-            conn = get_db_connection(force_shared=True, root=root)
-            if not conn:
-                root.after(0, lambda: dwh_status.config(text="Not logged in"))
-                return
-            try:
-                cur = conn.cursor()
-                cur.execute("""
-                    SELECT object_name, object_type FROM all_objects
-                    WHERE owner = :owner
-                    AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
-                    ORDER BY object_name
-                """, ["DWH"])
-                rows = cur.fetchall()
-            except Exception as e:
-                rows = []
-                logger.exception(f"Failed to list DWH objects: {e}")
-            finally:
-                try:
-                    cur.close()
-                except Exception:
-                    pass
-                try:
-                    conn.close()
-                except Exception:
-                    pass
 
-            root.after(0, lambda: (_populate_treeview(dwh_tree, rows), dwh_status.config(text=f"{len(rows)} objects")))
-        threading.Thread(target=worker, daemon=True).start()
+        # Helper: spawn a worker that connects using explicit credentials (no UI prompts)
+        def _start_worker_with_creds(creds):
+            def worker():
+                import oracledb
+                rows = []
+                cur = None
+                conn = None
+                try:
+                    conn = oracledb.connect(user=creds["username"], password=creds["password"], dsn=creds["dsn"])
+                    cur = conn.cursor()
+                    cur.execute("""
+                        SELECT object_name, object_type FROM all_objects
+                        WHERE owner = :owner
+                        AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
+                        ORDER BY object_name
+                    """, ["DWH"])
+                    rows = cur.fetchall()
+                except Exception as e:
+                    rows = []
+                    logger.exception(f"Failed to list DWH objects: {e}")
+                finally:
+                    try:
+                        if cur:
+                            cur.close()
+                    except Exception:
+                        pass
+                    try:
+                        if conn:
+                            conn.close()
+                    except Exception:
+                        pass
+
+                if not rows:
+                    root.after(0, lambda: (_populate_treeview(dwh_tree, rows), dwh_count_label.config(text="No objects"), dwh_status.config(text="")))
+                else:
+                    root.after(0, lambda: (_populate_treeview(dwh_tree, rows), dwh_count_label.config(text=f"{len(rows)} objects"), dwh_status.config(text="")))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        # Decide whether we can use saved creds (no UI) or need to prompt on the main thread
+        from libs import session
+        from libs import oracle_db_connector as ob
+
+        creds = None
+        if session.dwh_credentials and session.dwh_credentials.get("username", "").lower() == "dwh":
+            creds = session.dwh_credentials
+        elif ob.config.has_section("dwh"):
+            section = ob.config["dwh"]
+            if section.get("username") and section.get("password") and section.get("dsn"):
+                creds = {
+                    "username": section.get("username"),
+                    "password": section.get("password"),
+                    "dsn": section.get("dsn")
+                }
+
+        if creds:
+            # Use the saved credentials from session or config.ini in a background thread
+            _start_worker_with_creds(creds)
+            return
+
+        # No saved creds: prompt on the main thread (get_db_connection will schedule a dialog via root)
+        from libs.oracle_db_connector import get_db_connection
+        conn = get_db_connection(force_shared=True, root=root)
+        if not conn:
+            root.after(0, lambda: dwh_status.config(text="Not logged in"))
+            return
+
+        # If get_db_connection returned a connection, close it and use the stored session credentials
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+        # session.dwh_credentials should have been set by get_db_connection when prompting
+        creds = session.dwh_credentials if session.dwh_credentials else None
+        if not creds:
+            root.after(0, lambda: dwh_status.config(text="No credentials"))
+            return
+
+        _start_worker_with_creds(creds)
 
     # Wire buttons
     user_refresh_btn.config(command=refresh_user_objects)
     dwh_refresh_btn.config(command=refresh_dwh_objects)
 
-    tool_select_frame = tk.Frame(right_pane)
-    tool_select_frame.pack(pady=(10, 10))
+    # Top toolbar (centered): tool selector + buttons + legend
+    # Place the toolbar inside the right pane so it lines up with the log area
+    top_toolbar = tk.Frame(right_pane)
+    top_toolbar.pack(fill="x", pady=(0, 6))
+    toolbar_inner = tk.Frame(top_toolbar)
+    toolbar_inner.pack(anchor="center")
+    # Give the toolbar some extra top padding so it visually lines up with the log
+    toolbar_inner.configure(pady=6)
 
     tk.Label(
-        tool_select_frame, 
+        toolbar_inner,
         text="Select Tool:",
         font=("Arial", 12, "bold")
     ).pack(side="left", padx=(0, 10))
-    
-    legend_frame = tk.Frame(right_pane)
-    legend_frame.pack(fill="x", padx=10)
 
-    tk.Label(
-        legend_frame,
-        text="☑ = User/DWH   |   🔒 = DWH only   |   📁 = Local only",
-        font=("Arial", 10),
-        anchor="w",  # align left
-        justify="left"
-    ).pack() 
-    
-    # Divider between legend and button row
-    tk.Frame(right_pane, height=1, bg="#ccc").pack(fill="x", padx=10, pady=(10, 15))
-
+    # Tool selector and buttons
     selected_tool = tk.StringVar()
-    tool_menu = ttk.Combobox(tool_select_frame, textvariable=selected_tool, values=list(TOOLS.keys()), font=("Arial", 11), state="readonly", width=22)
+    tool_menu = ttk.Combobox(toolbar_inner, textvariable=selected_tool, values=list(TOOLS.keys()), font=("Arial", 11), state="readonly", width=22)
     tool_menu.pack(side="left")
-
-    # Optional: pre-select the first item
     tool_menu.current(0)
 
-    btn_frame = tk.Frame(tool_select_frame)
-    btn_frame.pack()
+    btn_frame = tk.Frame(toolbar_inner)
+    btn_frame.pack(side="left", padx=12)
 
     tk.Button(btn_frame, text="Run", width=10, command=lambda: run_selected()).pack(side="left", padx=7)
     tk.Button(btn_frame, text="Abort", width=10, command=abort_process).pack(side="left", padx=7)
@@ -544,9 +631,12 @@ def launch_tool_gui():
 
     tk.Button(btn_frame, text="Exit", width=10, command=safe_exit).pack(side="left", padx=7)
 
+    # Divider between toolbar and content
+    tk.Frame(right_pane, height=1, bg="#ccc").pack(fill="x", padx=10, pady=(8, 12))
+
     # Place the log area in the right pane (narrower because left pane uses space)
     log_text = scrolledtext.ScrolledText(right_pane, width=80, height=25)
-    log_text.pack(padx=10, pady=(10, 5), fill="both", expand=True)
+    log_text.pack(padx=10, pady=(0, 5), fill="both", expand=True)
     
     # === Status Bar (under verse) ===
     tk.Frame(root, height=1, bg="#ccc").pack(fill="x", padx=10)
@@ -732,5 +822,12 @@ except Exception:
     pass
 
 if __name__ == "__main__":
-    show_splash()
-    launch_tool_gui()
+    try:
+        show_splash()
+        launch_tool_gui()
+    except KeyboardInterrupt:
+        # Allow graceful exit when user force-quits (Ctrl+C or similar)
+        try:
+            sys.exit(0)
+        except Exception:
+            pass
