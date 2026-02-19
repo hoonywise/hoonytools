@@ -14,7 +14,7 @@ import json
 import random
 import webbrowser
 
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 
 # Safely climb until we find the project root folder
 project_name = "HoonyTools"
