@@ -425,13 +425,14 @@ def launch_tool_gui():
     # Prevent the left pane from auto-resizing when internal labels change
     left_pane.pack_propagate(False)
 
-    # Create external count labels aligned to the right of each object frame
+    # Create external count labels aligned to the right border of each object frame.
+    # We'll position them with place() so they don't affect frame width and can sit
+    # visually at the outer border of each LabelFrame.
     user_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg="#444444")
     dwh_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg="#444444")
-    # place them in the second column of the left_pane grid so they don't affect frame width
-    # use small right padding so the label sits near the outer border
-    user_count_label.grid(row=0, column=1, sticky="ne", padx=(0, 4), pady=(4, 0))
-    dwh_count_label.grid(row=1, column=1, sticky="ne", padx=(0, 4), pady=(4, 0))
+    # Temporarily place at 0,0; real positions will be computed after layout
+    user_count_label.place(x=0, y=0)
+    dwh_count_label.place(x=0, y=0)
 
     # hide the internal status labels created inside each frame to avoid them resizing the frame
     try:
@@ -455,6 +456,36 @@ def launch_tool_gui():
     dwh_frame.pack_forget()
     user_frame.grid(row=0, column=0, sticky="nsew", pady=(0,8))
     dwh_frame.grid(row=1, column=0, sticky="nsew")
+
+    # Position the object-count labels so they sit at the right edge (outer border)
+    def position_count_labels(event=None):
+        try:
+            left_pane.update_idletasks()
+            # Position the count label next to the LabelFrame title text (top-left area)
+            # Measure the title text width so we can place the counter to its right.
+            import tkinter.font as tkfont
+            default_font = tkfont.nametofont("TkDefaultFont")
+
+            # User frame title
+            ux = user_frame.winfo_x()
+            uy = user_frame.winfo_y()
+            user_title = user_frame.cget("text")
+            title_w = default_font.measure(user_title)
+            # small left padding inside the LabelFrame border is ~6 px; place counter after title
+            user_count_label.place(x=ux + 8 + title_w + 8, y=uy - 2)
+
+            # DWH frame title
+            dx = dwh_frame.winfo_x()
+            dy = dwh_frame.winfo_y()
+            dwh_title = dwh_frame.cget("text")
+            dwh_title_w = default_font.measure(dwh_title)
+            dwh_count_label.place(x=dx + 8 + dwh_title_w + 8, y=dy - 2)
+        except Exception:
+            pass
+
+    # Reposition when the left pane changes size or after initial layout
+    left_pane.bind('<Configure>', position_count_labels)
+    root.after(100, position_count_labels)
 
     # Utility to populate a treeview from rows [(name, type), ...]
     def _populate_treeview(tv, rows):
@@ -499,9 +530,9 @@ def launch_tool_gui():
             # If no rows found, show friendly message in status
             if not rows:
                 # update external count label and tree
-                root.after(0, lambda: (_populate_treeview(user_tree, rows), user_count_label.config(text="No objects")))
+                root.after(0, lambda: (_populate_treeview(user_tree, rows), user_count_label.config(text="No Objects")))
             else:
-                root.after(0, lambda: (_populate_treeview(user_tree, rows), user_count_label.config(text=f"{len(rows)} objects")))
+                root.after(0, lambda: (_populate_treeview(user_tree, rows), user_count_label.config(text=f"{len(rows)} Objects")))
         threading.Thread(target=worker, daemon=True).start()
 
     def refresh_dwh_objects():
@@ -540,9 +571,9 @@ def launch_tool_gui():
                         pass
 
                 if not rows:
-                    root.after(0, lambda: (_populate_treeview(dwh_tree, rows), dwh_count_label.config(text="No objects"), dwh_status.config(text="")))
+                    root.after(0, lambda: (_populate_treeview(dwh_tree, rows), dwh_count_label.config(text="No Objects"), dwh_status.config(text="")))
                 else:
-                    root.after(0, lambda: (_populate_treeview(dwh_tree, rows), dwh_count_label.config(text=f"{len(rows)} objects"), dwh_status.config(text="")))
+                    root.after(0, lambda: (_populate_treeview(dwh_tree, rows), dwh_count_label.config(text=f"{len(rows)} Objects"), dwh_status.config(text="")))
 
             threading.Thread(target=worker, daemon=True).start()
 
