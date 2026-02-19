@@ -353,8 +353,8 @@ def launch_tool_gui():
     left_pane = tk.Frame(content_frame, width=360)
     # fill both so the left pane stretches vertically and the two child frames
     # can share vertical space equally
-    # push left pane down slightly so its top lines up with the log area
-    left_pane.pack(side="left", fill="both", padx=(6, 10), pady=(40,0))
+    # reduce top padding so the left pane top lines up with the log area
+    left_pane.pack(side="left", fill="both", padx=(6, 10), pady=(6,0))
     left_pane.config(width=360)
 
     # Right pane for existing UI (tools, log, status)
@@ -425,12 +425,11 @@ def launch_tool_gui():
     # Prevent the left pane from auto-resizing when internal labels change
     left_pane.pack_propagate(False)
 
-    # Create external count labels aligned to the right border of each object frame.
-    # We'll position them with place() so they don't affect frame width and can sit
-    # visually at the outer border of each LabelFrame.
+    # Create external count labels aligned to the right of each object frame
+    # Use grid placement so they don't affect the inner frame widths
     user_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg="#444444")
     dwh_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg="#444444")
-    # Temporarily place at 0,0; real positions will be computed after layout
+    # start with a placeholder placement; we'll position these next to the LabelFrame titles
     user_count_label.place(x=0, y=0)
     dwh_count_label.place(x=0, y=0)
 
@@ -454,27 +453,26 @@ def launch_tool_gui():
     # Re-pack the frames using grid so they share the vertical space
     user_frame.pack_forget()
     dwh_frame.pack_forget()
-    user_frame.grid(row=0, column=0, sticky="nsew", pady=(0,8))
-    dwh_frame.grid(row=1, column=0, sticky="nsew")
+    # add left padding so the object frames sit a few pixels in from the left border
+    user_frame.grid(row=0, column=0, sticky="nsew", pady=(0,8), padx=(14,0))
+    dwh_frame.grid(row=1, column=0, sticky="nsew", padx=(14,0))
 
-    # Position the object-count labels so they sit at the right edge (outer border)
+    # Position the object-count labels next to each LabelFrame title (top-left header area)
     def position_count_labels(event=None):
         try:
             left_pane.update_idletasks()
-            # Position the count label next to the LabelFrame title text (top-left area)
-            # Measure the title text width so we can place the counter to its right.
             import tkinter.font as tkfont
             default_font = tkfont.nametofont("TkDefaultFont")
 
-            # User frame title
+            # User frame title placement
             ux = user_frame.winfo_x()
             uy = user_frame.winfo_y()
             user_title = user_frame.cget("text")
             title_w = default_font.measure(user_title)
-            # small left padding inside the LabelFrame border is ~6 px; place counter after title
+            # small left offset inside the LabelFrame border (~8 px), then a small gap
             user_count_label.place(x=ux + 8 + title_w + 8, y=uy - 2)
 
-            # DWH frame title
+            # DWH frame title placement
             dx = dwh_frame.winfo_x()
             dy = dwh_frame.winfo_y()
             dwh_title = dwh_frame.cget("text")
@@ -483,7 +481,6 @@ def launch_tool_gui():
         except Exception:
             pass
 
-    # Reposition when the left pane changes size or after initial layout
     left_pane.bind('<Configure>', position_count_labels)
     root.after(100, position_count_labels)
 
@@ -623,10 +620,12 @@ def launch_tool_gui():
     user_refresh_btn.config(command=refresh_user_objects)
     dwh_refresh_btn.config(command=refresh_dwh_objects)
 
-    # Top toolbar (centered): tool selector + buttons + legend
-    # Place the toolbar inside the right pane so it lines up with the log area
-    top_toolbar = tk.Frame(right_pane)
-    top_toolbar.pack(fill="x", pady=(0, 6))
+    # Top toolbar (centered): tool selector + buttons
+    # Create the toolbar at the root level and pack it before the main content_frame
+    # so it centers across the entire window (including the left pane).
+    top_toolbar = tk.Frame(root)
+    # pack before the already-created content_frame so it appears between the verse and content
+    top_toolbar.pack(fill="x", pady=(0, 6), before=content_frame)
     toolbar_inner = tk.Frame(top_toolbar)
     toolbar_inner.pack(anchor="center")
     # Give the toolbar some extra top padding so it visually lines up with the log
