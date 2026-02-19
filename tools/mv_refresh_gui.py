@@ -559,4 +559,21 @@ def run_mv_refresh_gui(on_finish=None):
                 logger.exception("Error in on_finish callback for mv_refresh_gui")
 
     root.protocol("WM_DELETE_WINDOW", on_close)
-    root.mainloop()
+    try:
+        root.mainloop()
+    except KeyboardInterrupt:
+        # If the process is force-terminated or interrupted while the GUI is open,
+        # attempt a graceful shutdown to avoid printing a traceback to the user.
+        try:
+            logger.info("mv_refresh_gui interrupted by KeyboardInterrupt; closing window")
+            on_close()
+        except Exception:
+            pass
+    except Exception as e:
+        # Catch-all to prevent exceptions inside the Tk event loop from bubbling
+        # up into the caller unexpectedly. Log for diagnostics and try to close.
+        logger.exception("Unexpected exception in mv_refresh_gui mainloop: %s", e)
+        try:
+            on_close()
+        except Exception:
+            pass
