@@ -911,7 +911,8 @@ def run_sql_mv_loader(on_finish=None):
     # FAST refresh removed from UI because it's environment/version dependent and
     # often requires destructive log changes. Use ON COMMIT trigger to request
     # log creation instead.
-    tk.Radiobutton(refresh_frame, text="FORCE", variable=refresh_method_var, value="FORCE").pack(anchor="w")
+    # FORCE option removed because FAST refresh is unsupported in this environment.
+    # The refresh method is therefore limited to COMPLETE (and UI should not offer FORCE).
 
     # Refresh trigger
     trigger_frame = tk.LabelFrame(param_frame, text="Refresh Trigger", padx=8, pady=6)
