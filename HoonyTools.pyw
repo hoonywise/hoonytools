@@ -526,7 +526,7 @@ def launch_tool_gui():
         "table_utils",
         "excel_csv_loader",
         "sql_view_loader",
-        "table_cleanup_gui",
+        "object_cleanup_gui",
     ]:
         logging.getLogger(mod).propagate = True
         logging.getLogger(mod).handlers.clear()
