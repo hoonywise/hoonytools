@@ -10,26 +10,37 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+_MV_HELPERS = {}
+try:
+    from libs.mv_log_utils import detect_tables_from_sql as _ht, get_dependent_mviews as _gd, detect_existing_mlog as _dm
+    _MV_HELPERS['detect_tables_from_sql'] = _ht
+    _MV_HELPERS['get_dependent_mviews'] = _gd
+    _MV_HELPERS['detect_existing_mlog'] = _dm
+except Exception:
+    # helpers may not exist in older tree states; fall back to inline implementations below
+    pass
+
 
 def run_sql_mv_loader(on_finish=None):
     def detect_tables_from_sql(sql_text):
         """A conservative table detector: finds tokens after FROM and JOIN. Returns list of unique table identifiers."""
-        # Normalize spacing and remove subquery parentheses content crudely
+        # prefer shared helper when available
+        try:
+            helper = _MV_HELPERS.get('detect_tables_from_sql')
+            if helper:
+                return helper(sql_text)
+        except Exception:
+            pass
+        # fallback to inline implementation
         text = re.sub(r"\s+", " ", sql_text.replace('\n', ' ')).upper()
-        # Find FROM/JOIN occurrences
         candidates = []
         for m in re.finditer(r"(?:FROM|JOIN)\s+([A-Z0-9_\.]+)", text):
-            tbl = m.group(1).strip()
-            # strip trailing commas
-            tbl = tbl.rstrip(',')
+            tbl = m.group(1).strip().rstrip(',')
             candidates.append(tbl)
-        # Deduplicate while preserving order
-        seen = set()
-        out = []
+        seen = set(); out = []
         for t in candidates:
             if t not in seen:
-                seen.add(t)
-                out.append(t)
+                seen.add(t); out.append(t)
         return out
 
     def show_create_logs_dialog(tables):
@@ -120,6 +131,13 @@ def run_sql_mv_loader(on_finish=None):
           3) Fallback to a text search of USER_MVIEWS (heuristic)
         Returns list of strings like 'OWNER.MVIEW' or 'MVIEW'.
         """
+        # prefer shared helper when available
+        try:
+            helper = _MV_HELPERS.get('get_dependent_mviews')
+            if helper:
+                return helper(cursor, table)
+        except Exception:
+            pass
         parts = table.split('.')
         if len(parts) == 2:
             owner = parts[0].upper()
@@ -184,6 +202,7 @@ def run_sql_mv_loader(on_finish=None):
     def show_existing_log_options(table, cursor, desired_sql, mv_ddl=None):
         """Ask the user what to do when an existing MLOG$_<table> is present.
         Returns one of: 'reuse', 'drop', or None (cancel)."""
+        meta = None
         try:
             dlg = tk.Toplevel()
             dlg.title(f"Existing MV Log on {table}")
@@ -204,40 +223,86 @@ def run_sql_mv_loader(on_finish=None):
                 ans = False
             return 'drop' if ans else None
 
-        # get existing log columns
-        try:
-            mlog_name = f"MLOG$_{table.split('.')[-1].upper()}"
-            cursor.execute("SELECT COLUMN_NAME FROM USER_TAB_COLUMNS WHERE TABLE_NAME = :tn ORDER BY COLUMN_ID", (mlog_name,))
-            cols = [r[0] for r in cursor.fetchall()]
-        except Exception:
-            cols = []
-
-        # get dependent mviews (use dependency-based lookup with fallback)
-        try:
-            deps = get_dependent_mviews(cursor, table)
-        except Exception:
-            deps = []
-
-        # determine requested type from desired_sql
-        req_type = 'ROWID' if 'WITH ROWID' in desired_sql.upper() else ('PRIMARY KEY' if 'PRIMARY KEY' in desired_sql.upper() else 'UNKNOWN')
-
-        # detect existing type heuristically and master PK columns
+        # Prefer centralized detection helper when available
+        cols = []
+        deps = []
         existing_type = 'UNKNOWN'
         pk_cols = []
+        seq_present = False
+        includes_new = False
         try:
-            cursor.execute("SELECT ucc.column_name FROM user_constraints uc JOIN user_cons_columns ucc ON uc.constraint_name = ucc.constraint_name WHERE uc.table_name = :tn AND uc.constraint_type = 'P'", (table.split('.')[-1].upper(),))
-            pk_cols = [r[0] for r in cursor.fetchall()]
+            helper = _MV_HELPERS.get('detect_existing_mlog') if _MV_HELPERS else None
+            if helper:
+                meta = helper(cursor, table)
+                try:
+                    logger.debug(f"detect_existing_mlog meta for {table}: {meta}")
+                except Exception:
+                    pass
+                cols = meta.get('cols') or []
+                deps = meta.get('deps') or []
+                existing_type = meta.get('existing_type', 'UNKNOWN')
+                pk_cols = meta.get('pk_cols') or []
+                seq_present = bool(meta.get('seq_present'))
+                includes_new = bool(meta.get('includes_new'))
+                # Extra conservative check: if helper reports a log but we cannot read
+                # any columns and there are no dependent MVs, verify the physical
+                # MLOG$_<master> presence directly. If not visible, treat as no log.
+                try:
+                    if meta.get('exists') and not cols and not deps:
+                        master_name = table.split('.')[-1].upper()
+                        mlog_name = f"MLOG$_{master_name}"
+                        phys = False
+                        try:
+                            if '.' in table:
+                                owner_part = table.split('.')[0].upper()
+                                cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE OWNER = :own AND TABLE_NAME = :tn", (owner_part, mlog_name))
+                                phys = cursor.fetchone()[0] > 0
+                            else:
+                                cursor.execute("SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
+                                cnt = cursor.fetchone()[0]
+                                if cnt == 0:
+                                    cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
+                                    cnt = cursor.fetchone()[0]
+                                phys = cnt > 0
+                        except Exception:
+                            phys = False
+                        if not phys:
+                            # no physical log visible; ignore the helper's exists indication
+                            meta['exists'] = False
+                            cols = []
+                            deps = []
+                            existing_type = 'UNKNOWN'
+                            pk_cols = []
+                            seq_present = False
+                            includes_new = False
+                except Exception:
+                    pass
+            else:
+                # fallback to best-effort local detection
+                mlog_name = f"MLOG$_{table.split('.')[-1].upper()}"
+                try:
+                    cursor.execute("SELECT COLUMN_NAME FROM USER_TAB_COLUMNS WHERE TABLE_NAME = :tn ORDER BY COLUMN_ID", (mlog_name,))
+                    cols = [r[0] for r in cursor.fetchall()]
+                except Exception:
+                    cols = []
+                try:
+                    deps = get_dependent_mviews(cursor, table)
+                except Exception:
+                    deps = []
+                try:
+                    cursor.execute("SELECT ucc.column_name FROM user_constraints uc JOIN user_cons_columns ucc ON uc.constraint_name = ucc.constraint_name WHERE uc.table_name = :tn AND uc.constraint_type = 'P'", (table.split('.')[-1].upper(),))
+                    pk_cols = [r[0] for r in cursor.fetchall()]
+                except Exception:
+                    pk_cols = []
+                if any(c.upper() in [pc.upper() for pc in pk_cols] for c in cols):
+                    existing_type = 'PRIMARY KEY'
+                elif any('ROW' in c.upper() or 'M_ROW' in c.upper() or 'ROWID' in c.upper() for c in cols):
+                    existing_type = 'ROWID'
+                seq_present = any('SEQ' in c.upper() or 'SNAPTIME' in c.upper() for c in cols)
+                includes_new = any('OLD_NEW' in c.upper() or 'NEW' in c.upper() for c in cols)
         except Exception:
-            pk_cols = []
-        if any(c.upper() in [pc.upper() for pc in pk_cols] for c in cols):
-            existing_type = 'PRIMARY KEY'
-        elif any('ROW' in c.upper() or 'M_ROW' in c.upper() or 'ROWID' in c.upper() for c in cols):
-            existing_type = 'ROWID'
-
-        # sequence presence
-        seq_present = any('SEQ' in c.upper() or 'SNAPTIME' in c.upper() for c in cols)
-        # includes new values heuristic
-        includes_new = any('OLD_NEW' in c.upper() or 'NEW' in c.upper() for c in cols)
+            # keep defaults if helper fails
+            pass
 
         tk.Label(dlg, text=f"A materialized view log already exists on {table}.", font=("Arial", 10, "bold")).pack(padx=12, pady=(8, 4), anchor='w')
         tk.Label(dlg, text="Existing log columns:").pack(padx=12, anchor='w')
@@ -295,6 +360,54 @@ def run_sql_mv_loader(on_finish=None):
         tk.Button(btns_deps, text='Copy list', command=copy_deps, width=10).pack(side='left', padx=(0,6))
         tk.Button(btns_deps, text='Save list', command=save_deps, width=10).pack(side='left')
 
+        # Gather low-level diagnostic counts to help debug false positives
+        diag = {}
+        try:
+            master_name = table.split('.')[-1].upper()
+            try:
+                cursor.execute("SELECT COUNT(*) FROM USER_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
+                diag['user_mview_logs_count'] = cursor.fetchone()[0]
+            except Exception:
+                diag['user_mview_logs_count'] = None
+            try:
+                cursor.execute("SELECT COUNT(*) FROM ALL_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
+                diag['all_mview_logs_count'] = cursor.fetchone()[0]
+            except Exception:
+                diag['all_mview_logs_count'] = None
+            try:
+                mlog_name = f"MLOG$_{master_name}"
+                cursor.execute("SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
+                diag['user_tables_mlog_count'] = cursor.fetchone()[0]
+            except Exception:
+                diag['user_tables_mlog_count'] = None
+            try:
+                cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
+                diag['all_tables_mlog_count'] = cursor.fetchone()[0]
+            except Exception:
+                diag['all_tables_mlog_count'] = None
+        except Exception:
+            diag = {}
+
+        # Debug info button (helps surface permission/stale-dictionary cases)
+        def show_diag():
+            try:
+                meta_text = ''
+                try:
+                    meta_text = str(meta)
+                except Exception:
+                    meta_text = '(no meta)'
+                lines = [f"detect_existing_mlog meta: {meta_text}"]
+                for k in ('user_mview_logs_count','all_mview_logs_count','user_tables_mlog_count','all_tables_mlog_count'):
+                    lines.append(f"{k}: {diag.get(k)!r}")
+                messagebox.showinfo('Debug Info', '\n'.join(lines))
+            except Exception as e:
+                try:
+                    messagebox.showwarning('Debug Failed', f'Could not show debug info: {e}')
+                except Exception:
+                    pass
+
+        tk.Button(btns_deps, text='Show debug info', command=show_diag, width=14).pack(side='left', padx=(6,0))
+
         # acknowledgement checkbox variable (checkbox will be placed next to the confirmation entry)
         ack_var = tk.BooleanVar(value=False)
 
@@ -307,6 +420,12 @@ def run_sql_mv_loader(on_finish=None):
         except Exception:
             cols = []
 
+
+        # determine requested type from desired_sql
+        try:
+            req_type = 'ROWID' if 'WITH ROWID' in desired_sql.upper() else ('PRIMARY KEY' if 'PRIMARY KEY' in desired_sql.upper() else 'UNKNOWN')
+        except Exception:
+            req_type = 'UNKNOWN'
 
         # render checklist
         chkf = tk.Frame(dlg)
@@ -522,243 +641,130 @@ def run_sql_mv_loader(on_finish=None):
                         except Exception:
                             current_user = None
 
+                        # Use shared detection helper when available for a simpler flow
+                        final_results = []
+                        helper = _MV_HELPERS.get('detect_existing_mlog') if _MV_HELPERS else None
                         for t in selected_tables:
-                            # If a log exists, show choices to reuse or drop & recreate
                             try:
-                                master_name = t.split('.')[-1].upper()
-                                # Prefer USER_MVIEW_LOGS (current schema) to avoid false positives
-                                try:
-                                    cursor.execute(
-                                        "SELECT COUNT(*) FROM USER_MVIEW_LOGS WHERE MASTER = :m",
-                                        (master_name,)
-                                    )
-                                    exists = cursor.fetchone()[0] > 0
-                                except Exception:
-                                    # fallback to ALL_MVIEW_LOGS if user view not available
+                                exists = False
+                                # Prefer helper-based detection
+                                if helper:
                                     try:
-                                        # if t qualified with owner, filter by owner too to reduce false matches
-                                        if '.' in t:
-                                            owner_part = t.split('.')[0].upper()
-                                            cursor.execute(
-                                                "SELECT COUNT(*) FROM ALL_MVIEW_LOGS WHERE MASTER = :m AND OWNER = :own",
-                                                (master_name, owner_part)
-                                            )
-                                        else:
-                                            cursor.execute(
-                                                "SELECT COUNT(*) FROM ALL_MVIEW_LOGS WHERE MASTER = :m",
-                                                (master_name,)
-                                            )
-                                        exists = cursor.fetchone()[0] > 0
+                                        meta = helper(cursor, t)
+                                        exists = bool(meta.get('exists'))
+                                        # If helper reports exists but has no readable columns or deps,
+                                        # verify the physical MLOG$_<master> presence; if not visible,
+                                        # treat as not existing to avoid false positives.
+                                        try:
+                                            if exists and not (meta.get('cols') or meta.get('deps')):
+                                                master_name = t.split('.')[-1].upper()
+                                                mlog_name = f"MLOG$_{master_name}"
+                                                phys = False
+                                                try:
+                                                    if '.' in t:
+                                                        owner_part = t.split('.')[0].upper()
+                                                        cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE OWNER = :own AND TABLE_NAME = :tn", (owner_part, mlog_name))
+                                                        phys = cursor.fetchone()[0] > 0
+                                                    else:
+                                                        # For unqualified master names, only consider USER_TABLES to avoid
+                                                        # treating a log owned by another schema as 'existing' for the current user.
+                                                        cursor.execute("SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
+                                                        cnt = cursor.fetchone()[0]
+                                                        phys = cnt > 0
+                                                except Exception:
+                                                    phys = False
+                                                if not phys:
+                                                    exists = False
+                                                    try:
+                                                        # also update meta to reflect conservative view
+                                                        meta['exists'] = False
+                                                    except Exception:
+                                                        pass
+                                        except Exception:
+                                            pass
                                     except Exception:
                                         exists = False
-
-                                # Defensive: try to resolve the actual log table name(s) from the mview logs view
-                                # Some dictionary views may contain stale or inaccessible entries; prefer explicit LOG_TABLE lookup.
-                                # log diagnostic info about detected existence for troubleshooting
-                                try:
-                                    logger.debug(f"MV log detection for {t}: master_name={master_name}, preliminary_exists={exists}")
-                                except Exception:
-                                    pass
-
-                                if exists:
+                                else:
+                                    # Minimal fallback: check USER_MVIEW_LOGS presence
                                     try:
-                                        log_tables = []
+                                        master_name = t.split('.')[-1].upper()
                                         try:
-                                            cursor.execute("SELECT LOG_TABLE FROM USER_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
-                                            rows = cursor.fetchall()
-                                            log_tables = [r[0] for r in rows if r and r[0]]
+                                            cursor.execute("SELECT COUNT(*) FROM USER_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
+                                            exists = cursor.fetchone()[0] > 0
                                         except Exception:
-                                            log_tables = []
-
-                                        if not log_tables:
-                                            try:
-                                                if '.' in t:
-                                                    owner_part = t.split('.')[0].upper()
-                                                    cursor.execute("SELECT LOG_TABLE FROM ALL_MVIEW_LOGS WHERE MASTER = :m AND OWNER = :own", (master_name, owner_part))
-                                                else:
-                                                    cursor.execute("SELECT LOG_TABLE FROM ALL_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
-                                                rows = cursor.fetchall()
-                                                log_tables = [r[0] for r in rows if r and r[0]]
-                                            except Exception:
-                                                log_tables = []
-
-                                        # If we couldn't determine any LOG_TABLEs, fall back to checking for MLOG$_<master> physical table
-                                        if not log_tables:
-                                            mlog_name = f"MLOG$_{master_name}"
-                                            # check USER_TABLES first
-                                            cursor.execute("SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
-                                            mcount = cursor.fetchone()[0]
-                                            if mcount == 0:
-                                                if '.' in t:
-                                                    owner_part = t.split('.')[0].upper()
-                                                    cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE OWNER = :own AND TABLE_NAME = :tn", (owner_part, mlog_name))
-                                                else:
-                                                    cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
-                                                mcount = cursor.fetchone()[0]
-                                            if mcount == 0:
-                                                exists = False
-                                        else:
-                                            # Only consider reported LOG_TABLEs that match expected naming (MLOG$_<master>)
-                                            filtered = []
-                                            for lt in log_tables:
-                                                if not lt:
-                                                    continue
-                                                lt_str = str(lt).upper()
-                                                if lt_str.endswith(f"MLOG$_{master_name}") or lt_str == f"MLOG$_{master_name}":
-                                                    filtered.append(lt_str)
-                                            if not filtered:
-                                                # none of the reported log table names look like a real MLOG$_ table for this master
-                                                exists = False
-                                            else:
-                                                # verify at least one of the filtered log tables exists as a table accessible to the user
-                                                found = False
-                                                for lt in filtered:
-                                                    if '.' in lt:
-                                                        owner_lt, name_lt = lt.split('.', 1)
-                                                        try:
-                                                            cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE OWNER = :own AND TABLE_NAME = :tn", (owner_lt.upper(), name_lt.upper()))
-                                                            cnt = cursor.fetchone()[0]
-                                                        except Exception:
-                                                            cnt = 0
-                                                    else:
-                                                        try:
-                                                            cursor.execute("SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = :tn", (lt.upper(),))
-                                                            cnt = cursor.fetchone()[0]
-                                                            if cnt == 0:
-                                                                cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE TABLE_NAME = :tn", (lt.upper(),))
-                                                                cnt = cursor.fetchone()[0]
-                                                        except Exception:
-                                                            cnt = 0
-                                                    if cnt > 0:
-                                                        found = True
-                                                        break
-                                                if not found:
-                                                    exists = False
-                                    except Exception as e:
-                                        # If we cannot verify the physical log presence due to permission errors
-                                        # or other DB access issues, conservatively treat the log as not present
-                                        logger.warning(f"Could not verify physical MLOG presence for {master_name}: {e}")
-                                        exists = False
-
-                                # Extra safeguard: if the dictionary reports a log but we cannot read
-                                # any columns and there are no dependent MVs, treat as not existing.
-                                if exists:
-                                    try:
-                                        deps_preview = []
-                                        try:
-                                            deps_preview = get_dependent_mviews(cursor, t)
-                                        except Exception:
-                                            deps_preview = []
-
-                                        # check columns on MLOG$_<master>
-                                        colcount = 0
-                                        try:
-                                            cursor.execute("SELECT COUNT(*) FROM USER_TAB_COLUMNS WHERE TABLE_NAME = :tn", (f"MLOG$_{master_name}",))
-                                            colcount = cursor.fetchone()[0]
-                                            if colcount == 0 and '.' in t:
-                                                owner_part = t.split('.')[0].upper()
-                                                cursor.execute("SELECT COUNT(*) FROM ALL_TAB_COLUMNS WHERE OWNER = :own AND TABLE_NAME = :tn", (owner_part, f"MLOG$_{master_name}"))
-                                                colcount = cursor.fetchone()[0]
-                                        except Exception:
-                                            colcount = 0
-
-                                        if (not deps_preview) and colcount == 0:
-                                            # nothing we can read; treat as no log
-                                            logger.info(f"Dictionary indicates MV log for {t} but no physical log or dependents found; ignoring.")
                                             exists = False
                                     except Exception:
-                                        pass
-                            except Exception:
-                                exists = False
+                                        exists = False
 
-                            if exists:
-                                # prepare desired create SQL for preview
-                                desired_sql = f"DROP MATERIALIZED VIEW LOG ON {t};\nCREATE MATERIALIZED VIEW LOG ON {t} \n"
-                                if log_type == 'ROWID':
-                                    desired_sql += "  WITH ROWID\n"
-                                else:
-                                    desired_sql += "  WITH PRIMARY KEY\n"
-                                if include_new_values:
-                                    desired_sql += "  INCLUDING NEW VALUES"
+                                if exists:
+                                    desired_sql = f"DROP MATERIALIZED VIEW LOG ON {t};\nCREATE MATERIALIZED VIEW LOG ON {t} \n"
+                                    if log_type == 'ROWID':
+                                        desired_sql += "  WITH ROWID\n"
+                                    else:
+                                        desired_sql += "  WITH PRIMARY KEY\n"
+                                    if include_new_values:
+                                        desired_sql += "  INCLUDING NEW VALUES"
 
-                                choice = show_existing_log_options(t, cursor, desired_sql)
-                                if choice == 'reuse':
-                                    # attempt to reuse: skip drop/create for this table
-                                    logger.info(f"User chose to reuse existing MV log on {t}")
-                                    # mark as 'reused' so UI messages don't claim we 'created' a log
-                                    final_results.append((t, 'reused', None))
-                                    continue
-                                elif choice == 'drop':
-                                    try:
-                                        cursor.execute(f"DROP MATERIALIZED VIEW LOG ON {t}")
-                                        conn.commit()
-                                        logger.info(f"Dropped existing materialized view log on {t}")
-                                    except Exception as e:
-                                        logger.warning(f"Failed to drop existing materialized view log on {t}: {e}")
-                                        final_results.append((t, False, str(e)))
+                                    choice = show_existing_log_options(t, cursor, desired_sql)
+                                    if choice == 'reuse':
+                                        final_results.append((t, 'reused', None))
                                         continue
-                                else:
-                                    # user cancelled
-                                    final_results.append((t, False, 'user_cancel'))
-                                    continue
+                                    elif choice == 'drop':
+                                        try:
+                                            cursor.execute(f"DROP MATERIALIZED VIEW LOG ON {t}")
+                                            conn.commit()
+                                        except Exception as e:
+                                            final_results.append((t, False, str(e)))
+                                            continue
+                                    else:
+                                        final_results.append((t, False, 'user_cancel'))
+                                        continue
 
-                            # Before attempting to create, verify the target object exists and is a table
-                            try:
-                                # resolve owner and table
-                                if '.' in t:
-                                    owner_part, table_part = t.split('.', 1)
-                                    owner_check = owner_part.strip().upper()
-                                    table_check = table_part.strip().upper()
-                                else:
-                                    owner_check = current_user
-                                    table_check = t.strip().upper()
-                                # check ALL_OBJECTS for table presence and type
+                                # Verify target object exists and is a table
                                 try:
-                                    cursor.execute(
-                                        "SELECT OWNER, OBJECT_TYPE FROM ALL_OBJECTS WHERE OWNER = :own AND OBJECT_NAME = :tbl",
-                                        (owner_check, table_check)
-                                    )
-                                    obj = cursor.fetchone()
-                                except Exception:
-                                    obj = None
-                                if not obj:
-                                    # object not found or inaccessible
-                                    err_msg = f"target object {t} not found or not accessible"
-                                    logger.warning(f"Could not create MV log on {t}: {err_msg}")
-                                    final_results.append((t, False, err_msg))
-                                    continue
-                                owner_found, obj_type = obj[0], obj[1]
-                                if obj_type.upper() != 'TABLE':
-                                    err_msg = f"target object {t} is not a TABLE (found type: {obj_type})"
-                                    logger.warning(f"Could not create MV log on {t}: {err_msg}")
-                                    final_results.append((t, False, err_msg))
+                                    if '.' in t:
+                                        owner_part, table_part = t.split('.', 1)
+                                        owner_check = owner_part.strip().upper()
+                                        table_check = table_part.strip().upper()
+                                    else:
+                                        owner_check = current_user
+                                        table_check = t.strip().upper()
+                                    try:
+                                        cursor.execute(
+                                            "SELECT OWNER, OBJECT_TYPE FROM ALL_OBJECTS WHERE OWNER = :own AND OBJECT_NAME = :tbl",
+                                            (owner_check, table_check)
+                                        )
+                                        obj = cursor.fetchone()
+                                    except Exception:
+                                        obj = None
+                                    if not obj:
+                                        err_msg = f"target object {t} not found or not accessible"
+                                        final_results.append((t, False, err_msg))
+                                        continue
+                                    owner_found, obj_type = obj[0], obj[1]
+                                    if obj_type.upper() != 'TABLE':
+                                        err_msg = f"target object {t} is not a TABLE (found type: {obj_type})"
+                                        final_results.append((t, False, err_msg))
+                                        continue
+                                except Exception as e:
+                                    final_results.append((t, False, str(e)))
                                     continue
 
+                                # Attempt to create the log
+                                try:
+                                    sql = f"CREATE MATERIALIZED VIEW LOG ON {t} \n"
+                                    if log_type == 'ROWID':
+                                        sql += "  WITH ROWID\n"
+                                    else:
+                                        sql += "  WITH PRIMARY KEY\n"
+                                    if include_new_values:
+                                        sql += "  INCLUDING NEW VALUES"
+                                    cursor.execute(sql)
+                                    conn.commit()
+                                    final_results.append((t, True, None))
+                                except Exception as e:
+                                    final_results.append((t, False, str(e)))
                             except Exception as e:
-                                logger.exception("Error checking object existence for %s: %s", t, e)
-                                final_results.append((t, False, str(e)))
-                                continue
-
-                            # If no existing log or user chose drop, proceed to create
-                            try:
-                                if '.' in t:
-                                    schema, table = t.split('.', 1)
-                                else:
-                                    schema = None
-                                    table = t
-                                sql = f"CREATE MATERIALIZED VIEW LOG ON {t} \n"
-                                if log_type == 'ROWID':
-                                    sql += "  WITH ROWID\n"
-                                else:
-                                    sql += "  WITH PRIMARY KEY\n"
-                                if include_new_values:
-                                    sql += "  INCLUDING NEW VALUES"
-                                cursor.execute(sql)
-                                conn.commit()
-                                logger.info(f"✅ Created materialized view log on {t}")
-                                final_results.append((t, True, None))
-                            except Exception as e:
-                                logger.warning(f"Could not create MV log on {t}: {e}")
                                 final_results.append((t, False, str(e)))
 
                         results = final_results
@@ -861,7 +867,8 @@ def run_sql_mv_loader(on_finish=None):
 
     builder_window = tk.Toplevel()
     builder_window.title("SQL Materialized View Loader")
-    builder_window.geometry("1100x700")
+    # widen builder window so bottom option row isn't squished on smaller displays
+    builder_window.geometry("1300x740")
     builder_window.grab_set()
 
     # Preserve taskbar icon and branding

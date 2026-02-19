@@ -59,18 +59,33 @@ After unzipping `HoonyTools_vX.X.X_python.zip`, you should see:
 
 ```
 HoonyTools/
-├── HoonyTools.pyw         # Main launcher (double-click this)
-├── README.txt             # Quickstart user guide
-├── LICENSE.md             # Licensing terms
-├── CHANGELOG.md           # Release notes
-├── requirements.txt       # (Optional) Python modules if running from source)
-├── libs/                  # Shared utility modules (Oracle, config, logging, etc.)
-│   └── config.ini         # Created at first login if "Save password" is checked
-│   └── setup_config.py    # Setup script for login
-│   └── paths.py           # Filepaths for domain-specific folders
-├── loaders/               # Loaders (Excel, CSV, SQL, etc.)
-├── tools/                 # Object cleanup tools and extractors
-├── assets/                # Icons and splash images
+├── HoonyTools.pyw                  # Main launcher (double-click this)
+├── README.txt                      # Quickstart user guide
+├── LICENSE.md                      # Licensing terms
+├── CHANGELOG.md                    # Release notes
+├── requirements.txt                # (Optional) Python modules if running from source)
+├── libs/                           # Shared utility modules (Oracle, config, logging, etc.)
+│   ├── config.ini                  # Created at first login if "Save password" is checked
+│   ├── setup_config.py             # Setup script for login
+│   ├── paths.py                    # Filepaths for domain-specific folders
+│   ├── mv_log_utils.py             # MV log detection helpers used by loaders and tools
+│   ├── pk_designate_settings.json  # persisted settings for PK Designator
+│   ├── oracle_db_connector.py      # Oracle connection helper (get_db_connection)
+│   ├── session.py                  # Session memory for credentials and states
+│   ├── abort_manager.py            # Coordinated abort/cleanup helper used by loaders
+│   ├── table_utils.py              # Common table utilities (DDL helpers)
+│   ├── layout_definitions.py       # UI layout helper constants
+│   ├── bible_books.py              # small lookup for book names (used by some tools)
+│   └── en_kjv.json                 # embedded JSON data for KJV text (used by demo/tools)
+├── loaders/                        # Loaders (Excel, CSV, SQL, etc.)
+│   ├── excel_csv_loader.py         # Excel/CSV Loader GUI (APPEND/REPLACE/UPSERT, preview)
+│   ├── sql_view_loader.py          # SQL View Loader (create view from pasted SQL)
+│   └── sql_mv_loader.py            # SQL Materialized View Loader (creates MVs, offers MV log creation)
+├── tools/                          # Object cleanup tools and extractors
+│   ├── object_cleanup_gui.py       # Object Cleanup (drop tables/views/mviews/mlogs/pks)
+│   ├── mv_refresh_gui.py           # Materialized View Manager (refresh, create/reuse/drop logs)
+│   └── pk_designate_gui.py         # Primary Key Designator (inspect tables, create PKs safely)
+└──  assets/                         # Icons and splash images
 ```
 
 ---
@@ -171,6 +186,15 @@ You can run as often as needed — no admin rights or elevated privileges requir
 
 - **SQL View Loader**  
   - Instantly create Oracle views from pasted sql queries.  
+
+- **SQL Materialized View Loader**  
+  - Create materialized views from pasted SQL and optionally create required materialized view logs. Offers log creation UI with `WITH ROWID` / `WITH PRIMARY KEY` and `INCLUDING NEW VALUES` options. Safer detection and debug info included.
+
+- **Materialized View Manager**  
+  - Browse existing materialized views, request COMPLETE refreshes, and manage materialized view logs (create, reuse, or Drop & Recreate). Shows refresh type (ON DEMAND / ON COMMIT) and per-base current log types; FAST refresh is intentionally not offered.
+
+- **Primary Key Designator**  
+  - Inspect tables, detect PK candidates (single-column or composite), run safe null/duplicate checks, and add PRIMARY KEY constraints with confirmation and configurable constraint naming.
 
 - **Excel/CSV Loader**  
   - Load Excel or CSV files into Oracle from a local file picker.  
