@@ -318,16 +318,10 @@ def launch_tool_gui():
         except Exception as e:
             print(f"⚠️ Failed to set taskbar icon: {e}")
 
-    # 🪄 Position tiny window exactly behind login popup
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
-    login_width = 330
-    login_height = 150
-    x = int((screen_width / 2) - (login_width / 2)) + 16  # Nudge right
-    y = int((screen_height / 2) - (login_height / 2))
-    root.geometry(f"1x1+{x}+{y}")
-    root.update()
-    root.deiconify()
+    # Keep the main window hidden while the login dialog is shown
+    # This prevents geometry nudging issues on some systems. The main
+    # window will be deiconified and centered after a successful login.
+    root.withdraw()
 
     # 4️⃣ 🔐 Prompt for login
     session.stored_credentials = prompt_credentials()
@@ -342,12 +336,25 @@ def launch_tool_gui():
         hidden_root.destroy()
         return
     
-    # ✅ After login success
-    center_window(root, 1280, 960)  # Resize to full GUI
+    # ✅ After login success: show and center the main window
+    root.deiconify()
+    center_window(root, 1280, 960)  # Resize to full GUI and center on screen
     root.title("HoonyTools Launcher")
 
+    # === Main content: two-column layout (left object lists, right main UI) ===
+    content_frame = tk.Frame(root)
+    content_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+    # Left pane for object lists (fixed width)
+    left_pane = tk.Frame(content_frame, width=360)
+    left_pane.pack(side="left", fill="y", padx=(0, 10))
+
+    # Right pane for existing UI (tools, log, status)
+    right_pane = tk.Frame(content_frame)
+    right_pane.pack(side="left", fill="both", expand=True)
+
     # === Bible Verse Row ===
-    verse_frame = tk.Frame(root)
+    verse_frame = tk.Frame(right_pane)
     verse_frame.pack(fill="x", padx=10, pady=(0, 0))
 
     verse_label = tk.Label(
@@ -384,7 +391,112 @@ def launch_tool_gui():
     # === Load Logo Assets ===
     assets_path = base_path / "assets"
     
-    tool_select_frame = tk.Frame(root)
+    # --- Helper: create object list frame in left pane
+    def _make_objects_frame(parent, title):
+        frame = tk.LabelFrame(parent, text=title, padx=6, pady=6)
+        frame.pack(fill="both", pady=(0, 8))
+        tv = ttk.Treeview(frame, columns=("name", "type"), show="headings", height=10)
+        tv.heading("name", text="Name")
+        tv.heading("type", text="Type")
+        tv.column("name", width=180, anchor="w")
+        tv.column("type", width=120, anchor="center")
+        vs = tk.Scrollbar(frame, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=vs.set)
+        tv.pack(side="left", fill="both", expand=True)
+        vs.pack(side="right", fill="y")
+        btn_frame_local = tk.Frame(frame)
+        btn_frame_local.pack(fill="x", pady=(6, 0))
+        refresh_btn = tk.Button(btn_frame_local, text="Refresh", width=10)
+        refresh_btn.pack(side="left")
+        status_lbl = tk.Label(btn_frame_local, text="", font=("Arial", 8), fg="#444444")
+        status_lbl.pack(side="left", padx=(6, 0))
+        return tv, refresh_btn, status_lbl
+
+    # Create the two object panes in the left_pane
+    user_tree, user_refresh_btn, user_status = _make_objects_frame(left_pane, "User Objects")
+    dwh_tree, dwh_refresh_btn, dwh_status = _make_objects_frame(left_pane, "DWH Objects (login required)")
+
+    # Utility to populate a treeview from rows [(name, type), ...]
+    def _populate_treeview(tv, rows):
+        try:
+            tv.delete(*tv.get_children())
+        except Exception:
+            pass
+        for name, obj_type in rows:
+            tv.insert("", "end", values=(name, obj_type))
+
+    # Background refreshers
+    def refresh_user_objects():
+        user_status.config(text="Loading...")
+        def worker():
+            from libs.oracle_db_connector import get_db_connection
+            conn = get_db_connection(force_shared=False)
+            if not conn:
+                root.after(0, lambda: user_status.config(text="No connection"))
+                return
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT object_name, object_type FROM all_objects
+                    WHERE owner = :owner
+                    AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
+                    ORDER BY object_name
+                """, [conn.username.upper()])
+                rows = cur.fetchall()
+            except Exception as e:
+                rows = []
+                logger.exception(f"Failed to list user objects: {e}")
+            finally:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+            root.after(0, lambda: (_populate_treeview(user_tree, rows), user_status.config(text=f"{len(rows)} objects")))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def refresh_dwh_objects():
+        dwh_status.config(text="Loading...")
+        def worker():
+            from libs.oracle_db_connector import get_db_connection
+            conn = get_db_connection(force_shared=True, root=root)
+            if not conn:
+                root.after(0, lambda: dwh_status.config(text="Not logged in"))
+                return
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT object_name, object_type FROM all_objects
+                    WHERE owner = :owner
+                    AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
+                    ORDER BY object_name
+                """, ["DWH"])
+                rows = cur.fetchall()
+            except Exception as e:
+                rows = []
+                logger.exception(f"Failed to list DWH objects: {e}")
+            finally:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+            root.after(0, lambda: (_populate_treeview(dwh_tree, rows), dwh_status.config(text=f"{len(rows)} objects")))
+        threading.Thread(target=worker, daemon=True).start()
+
+    # Wire buttons
+    user_refresh_btn.config(command=refresh_user_objects)
+    dwh_refresh_btn.config(command=refresh_dwh_objects)
+
+    tool_select_frame = tk.Frame(right_pane)
     tool_select_frame.pack(pady=(10, 10))
 
     tk.Label(
@@ -393,7 +505,7 @@ def launch_tool_gui():
         font=("Arial", 12, "bold")
     ).pack(side="left", padx=(0, 10))
     
-    legend_frame = tk.Frame(root)
+    legend_frame = tk.Frame(right_pane)
     legend_frame.pack(fill="x", padx=10)
 
     tk.Label(
@@ -405,7 +517,7 @@ def launch_tool_gui():
     ).pack() 
     
     # Divider between legend and button row
-    tk.Frame(root, height=1, bg="#ccc").pack(fill="x", padx=10, pady=(10, 15))
+    tk.Frame(right_pane, height=1, bg="#ccc").pack(fill="x", padx=10, pady=(10, 15))
 
     selected_tool = tk.StringVar()
     tool_menu = ttk.Combobox(tool_select_frame, textvariable=selected_tool, values=list(TOOLS.keys()), font=("Arial", 11), state="readonly", width=22)
@@ -414,7 +526,7 @@ def launch_tool_gui():
     # Optional: pre-select the first item
     tool_menu.current(0)
 
-    btn_frame = tk.Frame(root)
+    btn_frame = tk.Frame(tool_select_frame)
     btn_frame.pack()
 
     tk.Button(btn_frame, text="Run", width=10, command=lambda: run_selected()).pack(side="left", padx=7)
@@ -432,7 +544,8 @@ def launch_tool_gui():
 
     tk.Button(btn_frame, text="Exit", width=10, command=safe_exit).pack(side="left", padx=7)
 
-    log_text = scrolledtext.ScrolledText(root, width=100, height=25)  # ⬆️ taller only
+    # Place the log area in the right pane (narrower because left pane uses space)
+    log_text = scrolledtext.ScrolledText(right_pane, width=80, height=25)
     log_text.pack(padx=10, pady=(10, 5), fill="both", expand=True)
     
     # === Status Bar (under verse) ===
