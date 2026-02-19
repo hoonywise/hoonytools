@@ -603,10 +603,20 @@ TOOLS = {
     "☑ Object Dropper": drop_user_tables,
     "☑ SQL View Loader": run_sql_view_loader,
     "☑ SQL Materialized View Loader": run_sql_mv_loader,
+    "☑ Materialized View Manager": None,  # placeholder, will be wired if available
     "☑ Designate PK": pk_designate_main,
     
     # the repository for later separation.
 }
+
+# Wire the MV refresh tool if present (keep the tool list construction separate
+# from runtime imports to avoid syntax issues inside the dict literal)
+try:
+    from tools.mv_refresh_gui import run_mv_refresh_gui
+    TOOLS["☑ Materialized View Manager"] = run_mv_refresh_gui
+except Exception:
+    # leave the placeholder if import fails
+    pass
 
 if __name__ == "__main__":
     show_splash()

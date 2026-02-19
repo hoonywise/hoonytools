@@ -10,6 +10,14 @@ logger = logging.getLogger(__name__)
 
 
 def run_mv_refresh_gui(on_finish=None):
+    # Backwards-compatible parameter handling: the launcher may pass a parent
+    # window (root) as the first argument. If a non-callable is passed, treat
+    # it as parent and clear on_finish.
+    parent = None
+    if on_finish is not None and not callable(on_finish):
+        parent = on_finish
+        on_finish = None
+
     conn = get_db_connection()
     if not conn:
         return
@@ -42,7 +50,7 @@ def run_mv_refresh_gui(on_finish=None):
             except Exception as e:
                 logger.warning(f"Could not create MV log on {t}: {e}")
 
-    root = tk.Toplevel()
+    root = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
     root.title("Materialized View Manager")
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("hoonywise.hoonytools")
@@ -71,10 +79,11 @@ def run_mv_refresh_gui(on_finish=None):
     btn_frame = tk.Frame(right)
     btn_frame.pack(fill="x", pady=6)
 
+    # Only COMPLETE refresh supported in this environment. FAST/ FORCED refresh
+    # behavior was found unreliable and is intentionally not offered here.
     refresh_mode_var = tk.StringVar(value='C')
     tk.Radiobutton(btn_frame, text="COMPLETE", variable=refresh_mode_var, value='C').pack(side="left", padx=6)
-    tk.Radiobutton(btn_frame, text="FAST", variable=refresh_mode_var, value='F').pack(side="left", padx=6)
-    tk.Radiobutton(btn_frame, text="FORCE", variable=refresh_mode_var, value='?').pack(side="left", padx=6)
+    tk.Label(btn_frame, text="(FAST refresh unsupported)").pack(side="left", padx=6)
 
     def load_mviews():
         try:
@@ -86,7 +95,8 @@ def run_mv_refresh_gui(on_finish=None):
                 name = r[0]
                 mview_listbox.insert(tk.END, name)
             # store metadata
-            root._mview_rows = {r[0]: r for r in rows}
+            # attach as normal attribute for later lookup
+            setattr(root, '_mview_rows', {r[0]: r for r in rows})
             cur.close()
         except Exception as e:
             logger.exception(f"Failed to load materialized views: {e}")
@@ -96,7 +106,7 @@ def run_mv_refresh_gui(on_finish=None):
         if not sel:
             return
         name = mview_listbox.get(sel[0])
-        row = root._mview_rows.get(name)
+        row = getattr(root, '_mview_rows', {}).get(name)
         info_text.delete('1.0', tk.END)
         info_text.insert(tk.END, f"Name: {row[0]}\nBuild: {row[1]}\nRefresh Method: {row[2]}\nRewrite Enabled: {row[3]}\nLast Refresh: {row[4]}\n")
         sql_text.delete('1.0', tk.END)
@@ -111,14 +121,13 @@ def run_mv_refresh_gui(on_finish=None):
             messagebox.showwarning("Select MV", "Please select a materialized view first.")
             return
         name = mview_listbox.get(sel[0])
-        mode = refresh_mode_var.get()
+        # Only COMPLETE mode is supported here; pass 'C' to DBMS_MVIEW.REFRESH
+        mode = 'C'
         try:
             cur = conn.cursor()
-            # map '?' to FORCE
-            mode_code = mode if mode in ('C', 'F') else ' ? '
             cur.execute(f"BEGIN DBMS_MVIEW.REFRESH('{name}','{mode}'); END;")
             conn.commit()
-            messagebox.showinfo("Refresh", f"Refresh of {name} requested ({mode}).")
+            messagebox.showinfo("Refresh", f"Refresh of {name} requested (COMPLETE).")
             cur.close()
             load_mviews()
         except Exception as e:
@@ -131,7 +140,7 @@ def run_mv_refresh_gui(on_finish=None):
             messagebox.showwarning("Select MV", "Please select a materialized view first.")
             return
         name = mview_listbox.get(sel[0])
-        row = root._mview_rows.get(name)
+        row = getattr(root, '_mview_rows', {}).get(name)
         mv_query = row[5] or ''
         tables = detect_tables_from_sql(mv_query)
         if not tables:
@@ -162,9 +171,16 @@ def run_mv_refresh_gui(on_finish=None):
             conn.close()
         except Exception:
             pass
-        root.destroy()
-        if on_finish:
-            on_finish()
+        try:
+            root.destroy()
+        except Exception:
+            pass
+        # Call on_finish only if provided and callable
+        if callable(on_finish):
+            try:
+                on_finish()
+            except Exception:
+                logger.exception("Error in on_finish callback for mv_refresh_gui")
 
     root.protocol("WM_DELETE_WINDOW", on_close)
     root.mainloop()
