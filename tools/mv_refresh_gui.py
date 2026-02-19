@@ -439,6 +439,17 @@ def run_mv_refresh_gui(on_finish=None):
 
     load_mviews()
 
+    # Center window on screen (was opening slightly left on some displays)
+    try:
+        root.update_idletasks()
+        w = root.winfo_width()
+        h = root.winfo_height()
+        x = (root.winfo_screenwidth() // 2) - (w // 2)
+        y = (root.winfo_screenheight() // 2) - (h // 2)
+        root.geometry(f"{w}x{h}+{x}+{y}")
+    except Exception:
+        pass
+
     def on_close():
         try:
             conn.close()
