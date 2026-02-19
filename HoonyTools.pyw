@@ -144,12 +144,78 @@ def validate_required_folders():
     return True
 
 def center_window(window, width, height):
+    # Center on the monitor that contains the cursor (DPI-aware when possible)
+    try:
+        window.geometry(f"{width}x{height}")
+    except Exception:
+        pass
+
     window.update_idletasks()
-    screen_width = window.winfo_screenwidth()
-    screen_height = window.winfo_screenheight()
-    x = int((screen_width / 2) - (width / 2))
-    y = int((screen_height / 2) - (height / 2))
-    window.geometry(f"{width}x{height}+{x}+{y}")
+    try:
+        window.update()
+    except Exception:
+        pass
+
+    w = window.winfo_width() or width
+    h = window.winfo_height() or height
+
+    try:
+        if sys.platform.startswith("win"):
+            import ctypes
+
+            class POINT(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+            class RECT(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", RECT), ("rcWork", RECT), ("dwFlags", ctypes.c_ulong)]
+
+            user32 = ctypes.windll.user32
+            pt = POINT()
+            if user32.GetCursorPos(ctypes.byref(pt)):
+                MONITOR_DEFAULTTONEAREST = 2
+                hmon = user32.MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST)
+                if hmon:
+                    mi = MONITORINFO()
+                    mi.cbSize = ctypes.sizeof(MONITORINFO)
+                    if user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+                        left = mi.rcWork.left
+                        top = mi.rcWork.top
+                        mon_w = mi.rcWork.right - mi.rcWork.left
+                        mon_h = mi.rcWork.bottom - mi.rcWork.top
+
+                        x = int(left + (mon_w - w) / 2)
+                        y = int(top + (mon_h - h) / 2)
+
+                        try:
+                            window.geometry(f"{w}x{h}+{x}+{y}")
+                        except Exception:
+                            pass
+
+                        # Force native positioning
+                        try:
+                            hwnd = int(window.winfo_id())
+                            SWP_NOSIZE = 0x0001
+                            SWP_NOZORDER = 0x0004
+                            SWP_SHOWWINDOW = 0x0040
+                            user32.SetWindowPos(hwnd, 0, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_SHOWWINDOW)
+                        except Exception:
+                            pass
+                        return
+    except Exception:
+        pass
+
+    # Fallback: center on primary screen
+    screen_w = window.winfo_screenwidth()
+    screen_h = window.winfo_screenheight()
+    x = (screen_w // 2) - (w // 2)
+    y = (screen_h // 2) - (h // 2)
+    try:
+        window.geometry(f"{w}x{h}+{x}+{y}")
+    except Exception:
+        pass
 
 def abort_process():
     abort_manager.set_abort(True)
@@ -302,12 +368,11 @@ def launch_tool_gui():
     
     global root, selected_tool, log_text, log_stream, status_light
 
-    hidden_root = tk.Tk()
-    hidden_root.withdraw()  # Hide it immediately
-    
-    # 👇 Taskbar ownership
-    root = tk.Toplevel(hidden_root)
-    root.protocol("WM_DELETE_WINDOW", hidden_root.quit)
+    # Create the main Tk root directly and keep it hidden while login dialog appears.
+    root = tk.Tk()
+    root.withdraw()
+    # Ensure closing the window quits the app
+    root.protocol("WM_DELETE_WINDOW", root.quit)
 
     # Set Windows AppUserModelID for taskbar icon
     if sys.platform.startswith("win"):
@@ -338,7 +403,17 @@ def launch_tool_gui():
     
     # ✅ After login success: show and center the main window
     root.deiconify()
+    # Ensure the window is realized, then center it on the primary monitor
+    try:
+        root.update()
+    except Exception:
+        pass
     center_window(root, 1280, 960)  # Resize to full GUI and center on screen
+    try:
+        root.lift()
+        root.focus_force()
+    except Exception:
+        pass
     root.title("HoonyTools Launcher")
 
     # === Bible Verse Row (centered across the entire window) ===
