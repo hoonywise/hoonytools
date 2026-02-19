@@ -69,7 +69,7 @@ HoonyTools/
 │   └── setup_config.py    # Setup script for login
 │   └── paths.py           # Filepaths for domain-specific folders
 ├── loaders/               # Loaders (Excel, CSV, SQL, etc.)
-├── tools/                 # Table cleanup tools and extractors
+├── tools/                 # Object cleanup tools and extractors
 ├── assets/                # Icons and splash images
 ```
 
@@ -217,7 +217,7 @@ If Oracle cannot create the index due to a key size limit (e.g., `VARCHAR2(4000)
   - The first time you run a tool that connects to Oracle, you will be prompted for your **username, password, and DSN**.  
   - A **"Save password"** checkbox is available in the login popup. If checked, your credentials will be saved in `libs/config.ini` for future GUI launches. If unchecked, it will only store for the duration of the current session.
   - The Object Cleanup tool is destructive; when in doubt, take a backup or verify with your DBA before dropping objects or constraints.
-- **Use caution when working with production databases**. Certain tools (e.g., loaders and Table Cleanup) can delete and overwrite data.
+- **Use caution when working with production databases**. Certain tools (e.g., loaders and Object Cleanup) can delete and overwrite data.
 - For best results, always review your files before running a loader, and monitor the logging window for any errors or warnings.
 
 > 🧠 **Note:** This toolset interacts directly with the Oracle Data Warehouse (DWH). Ensure you understand the impact of any actions, particularly when loading data with loaders or using cleanup tools.

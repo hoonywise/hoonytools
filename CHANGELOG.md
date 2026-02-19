@@ -4,15 +4,22 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
-## 🚀 v1.2.2 — Maintenance: Table cleanup GUI materialized view handling (2026-02-18)
+## 🚀 v1.2.2 — Rename Table Cleanup → Object Cleanup; MV / MLOG / PK support (2026-02-18)
 
-Small update to prefer materialized views over underlying tables in the table cleanup GUI and add explicit drop support for materialized views.
+This release renames the old Table Cleanup tool to a more capable Object Cleanup tool and extends its capabilities to handle Oracle objects beyond simple tables and views.
 
-### Fixes
+### Highlights
 
-- When a MATERIALIZED VIEW and an underlying TABLE share a name, the GUI now shows only the MATERIALIZED VIEW to avoid confusion and failed drops.
-- Add explicit `DROP MATERIALIZED VIEW` support so materialized views are removed correctly.
-- Preserve previous behavior for TABLE and VIEW drops; added deterministic ordering to the object list.
+- Atomic rename: canonical implementation moved to `tools/object_cleanup_gui.py` and the launcher now imports from it (tool shown in the launcher as **Object Dropper**). The deprecated `tools/table_cleanup_gui.py` file was removed from the tree.
+- Added explicit support for dropping MATERIALIZED VIEWs (`DROP MATERIALIZED VIEW`) and materialized view logs (MLOG$ objects) via `DROP MATERIALIZED VIEW LOG ON "schema"."base_table"`.
+- Added ability to drop PRIMARY KEY constraints (ALTER TABLE ... DROP CONSTRAINT ...) by listing constraint entries in the selector.
+- UI behavior improvements: when a MATERIALIZED VIEW and TABLE share a name the UI prefers the MATERIALIZED VIEW (to avoid accidental drops of the wrong object); object list is deduplicated and sorted deterministically; mouse-wheel scrolling is bound/unbound on enter/leave to avoid Tk errors after window close.
+
+### Notes
+
+- Launcher: `HoonyTools.pyw` now registers the tool as **"☑ Object Dropper"** and imports `drop_user_tables` / `delete_dwh_rows` from `tools.object_cleanup_gui`.
+- Backwards compatibility: any scripts or packaged artifacts that referenced the old filename were updated (build/test copies in `build/` and `test_zip/` were adjusted); recommend running smoke tests and CI before shipping.
+- Safety: drops still require user confirmation. Test against a development DB before running destructive operations in production.
 
 ---
 
