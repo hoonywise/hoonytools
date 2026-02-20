@@ -134,7 +134,7 @@ from libs import abort_manager
 # from loaders.excel_csv_loader import load_files_gui
 from loaders.sql_view_loader import run_sql_view_loader
 from loaders.sql_mv_loader import run_sql_mv_loader
-from tools.object_cleanup_gui import drop_user_tables, delete_dwh_rows
+# drop_user_tables moved to integrated Drop buttons - import drop_objects on-demand in handlers
 from tools.pk_designate_gui import main as pk_designate_main
 from libs.bible_books import book_lookup
 
@@ -783,6 +783,64 @@ def launch_tool_gui():
     except Exception:
         pass
     
+    # --- Helper: make treeview columns sortable by clicking headers
+    def _make_sortable_tree(tv):
+        """Enable sorting by clicking column headers. Shows sort direction with arrows."""
+        # Store sort state per column
+        sort_state = {}  # col -> bool (True = descending, False = ascending)
+        
+        def sort_column(col):
+            # Toggle sort direction
+            reverse = sort_state.get(col, False)
+            sort_state[col] = not reverse
+            
+            # Get all items with their values
+            data = []
+            for child in tv.get_children(''):
+                vals = tv.item(child)['values']
+                col_idx = list(tv['columns']).index(col)
+                val = vals[col_idx] if col_idx < len(vals) else ''
+                data.append((val, child))
+            
+            # Sort (case-insensitive for strings)
+            def sort_key(x):
+                v = x[0]
+                if v is None:
+                    return ''
+                return str(v).lower()
+            data.sort(key=sort_key, reverse=reverse)
+            
+            # Rearrange items in treeview
+            for index, (val, child) in enumerate(data):
+                tv.move(child, '', index)
+            
+            # Update all headers - reset others, show arrow on sorted column
+            col_titles = {'name': 'Name', 'type': 'Type', 'info': 'Info'}
+            for c in tv['columns']:
+                base_title = col_titles.get(c, c.title())
+                if c == col:
+                    arrow = ' \u25bc' if reverse else ' \u25b2'  # ▼ or ▲
+                    tv.heading(c, text=base_title + arrow)
+                else:
+                    tv.heading(c, text=base_title)
+        
+        # Bind click handlers to each column header
+        for col in tv['columns']:
+            tv.heading(col, command=lambda c=col: sort_column(c))
+    
+    # --- Helper: bind Ctrl+A to select all items in treeview
+    def _bind_select_all(tv):
+        """Enable Ctrl+A to select all items in the treeview."""
+        def select_all(event):
+            # Select all items in the treeview
+            all_items = tv.get_children('')
+            if all_items:
+                tv.selection_set(all_items)
+            return "break"  # Prevent default behavior
+        
+        tv.bind('<Control-a>', select_all)
+        tv.bind('<Control-A>', select_all)  # Handle caps lock
+    
     # --- Helper: create object list frame in left pane
     def _make_objects_frame(parent, title):
         frame = tk.LabelFrame(parent, text=title, padx=6, pady=6)
@@ -799,6 +857,8 @@ def launch_tool_gui():
         index_btn.pack(side="left", padx=(0, 8))
         load_btn = tk.Button(top_bar, text="Load", width=10)
         load_btn.pack(side="left", padx=(0, 8))
+        drop_btn = tk.Button(top_bar, text="Drop", width=10)
+        drop_btn.pack(side="left", padx=(0, 8))
         status_lbl = tk.Label(top_bar, text="", font=("Arial", 8), fg=getattr(parent.master, "_dark_theme", {}).get("muted", "#444444"))
         status_lbl.pack(side="left")
 
@@ -807,20 +867,21 @@ def launch_tool_gui():
         content_area.pack(fill="both", expand=True)
 
         # Lock treeview width to avoid auto-resize when labels change
-        # Add a third column `pk` to show primary key info (comma-separated columns or empty)
-        tv = ttk.Treeview(content_area, columns=("name", "type", "pk"), show="headings")
+        # Third column `info` shows PK columns for tables or parent table for indexes
+        # selectmode="extended" enables multi-select with Ctrl+click and Shift+click
+        tv = ttk.Treeview(content_area, columns=("name", "type", "info"), show="headings", selectmode="extended")
         tv.heading("name", text="Name")
         tv.heading("type", text="Type")
-        tv.heading("pk", text="PK")
+        tv.heading("info", text="Info")
         tv.column("name", width=160, anchor="w", stretch=False)
         tv.column("type", width=120, anchor="center", stretch=False)
-        tv.column("pk", width=160, anchor="center", stretch=False)
+        tv.column("info", width=160, anchor="w", stretch=False)
         vs = tk.Scrollbar(content_area, orient="vertical", command=tv.yview)
         tv.configure(yscrollcommand=vs.set)
         tv.pack(side="left", fill="both", expand=True)
         vs.pack(side="right", fill="y")
 
-        return frame, tv, refresh_btn, index_btn, load_btn, status_lbl
+        return frame, tv, refresh_btn, index_btn, load_btn, drop_btn, status_lbl
 
     # Ensure Treeview style is configured before creating tree widgets so
     # style settings are honored by backends (especially on Windows ttk).
@@ -841,8 +902,16 @@ def launch_tool_gui():
         pre_style = None
 
     # Create the two object panes in the left_pane (stacked, share vertical space)
-    user_frame, user_tree, user_refresh_btn, user_index_btn, user_load_btn, user_status = _make_objects_frame(left_pane, "User Objects")
-    dwh_frame, dwh_tree, dwh_refresh_btn, dwh_index_btn, dwh_load_btn, dwh_status = _make_objects_frame(left_pane, "DWH Objects")
+    user_frame, user_tree, user_refresh_btn, user_index_btn, user_load_btn, user_drop_btn, user_status = _make_objects_frame(left_pane, "User Objects")
+    dwh_frame, dwh_tree, dwh_refresh_btn, dwh_index_btn, dwh_load_btn, dwh_drop_btn, dwh_status = _make_objects_frame(left_pane, "DWH Objects")
+    
+    # Enable sortable column headers for both treeviews
+    _make_sortable_tree(user_tree)
+    _make_sortable_tree(dwh_tree)
+    
+    # Enable Ctrl+A to select all for both treeviews
+    _bind_select_all(user_tree)
+    _bind_select_all(dwh_tree)
 
     # Keep cached row data so we can recreate trees when toggling theme
     user_rows = []
@@ -945,7 +1014,7 @@ def launch_tool_gui():
     # use_pane_style: when True, create with 'Pane.Treeview' style alias.
     def _recreate_tree(old_tv, use_pane_style=False):
         parent = old_tv.master
-        cols = ("name", "type", "pk")
+        cols = ("name", "type", "info")
         widths = {}
         try:
             for c in cols:
@@ -971,20 +1040,32 @@ def launch_tool_gui():
         except Exception:
             pass
 
-        # create the new tree using Pane.Treeview when requested
+        # create the new tree using Pane.Treeview when requested, with multi-select enabled
         try:
             style_name = 'Pane.Treeview' if use_pane_style else ''
-            new_tv = ttk.Treeview(parent, columns=cols, show="headings", style=style_name)
+            new_tv = ttk.Treeview(parent, columns=cols, show="headings", style=style_name, selectmode="extended")
         except Exception:
-            new_tv = ttk.Treeview(parent, columns=cols, show="headings")
+            new_tv = ttk.Treeview(parent, columns=cols, show="headings", selectmode="extended")
 
         try:
             new_tv.heading("name", text="Name")
             new_tv.heading("type", text="Type")
-            new_tv.heading("pk", text="PK")
+            new_tv.heading("info", text="Info")
             new_tv.column("name", width=widths.get('name', 160), anchor="w", stretch=False)
             new_tv.column("type", width=widths.get('type', 120), anchor="center", stretch=False)
-            new_tv.column("pk", width=widths.get('pk', 160), anchor="center", stretch=False)
+            new_tv.column("info", width=widths.get('info', 160), anchor="w", stretch=False)
+        except Exception:
+            pass
+        
+        # Enable sortable column headers
+        try:
+            _make_sortable_tree(new_tv)
+        except Exception:
+            pass
+        
+        # Enable Ctrl+A to select all
+        try:
+            _bind_select_all(new_tv)
         except Exception:
             pass
 
@@ -1041,6 +1122,9 @@ def launch_tool_gui():
                 return
             try:
                 cur = conn.cursor()
+                owner = conn.username.upper()
+                
+                # Query for tables, views, materialized views with PK info
                 cur.execute("""
                     SELECT ao.object_name,
                            ao.object_type,
@@ -1056,9 +1140,64 @@ def launch_tool_gui():
                     FROM all_objects ao
                     WHERE owner = :owner
                     AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
-                    ORDER BY object_name
-                """, [conn.username.upper()])
-                rows = cur.fetchall()
+                    ORDER BY object_type, object_name
+                """, [owner])
+                obj_rows = cur.fetchall()
+                
+                # Query for user-created indexes (excluding system and PK-backing indexes)
+                cur.execute("""
+                    SELECT ai.index_name,
+                           'INDEX' AS object_type,
+                           ai.table_name
+                    FROM all_indexes ai
+                    WHERE ai.owner = :owner
+                      AND ai.index_name NOT LIKE 'SYS_%'
+                      AND ai.index_name NOT LIKE 'BIN$%'
+                      AND NOT EXISTS (
+                        SELECT 1 FROM all_constraints ac
+                        WHERE ac.owner = ai.owner
+                          AND ac.constraint_type = 'P'
+                          AND ac.index_name = ai.index_name
+                      )
+                    ORDER BY ai.index_name
+                """, [owner])
+                idx_rows = cur.fetchall()
+                
+                # Query for primary key constraints (as droppable objects)
+                cur.execute("""
+                    SELECT ac.constraint_name,
+                           'PRIMARY KEY' AS object_type,
+                           ac.table_name
+                    FROM all_constraints ac
+                    WHERE ac.owner = :owner
+                      AND ac.constraint_type = 'P'
+                    ORDER BY ac.table_name, ac.constraint_name
+                """, [owner])
+                pk_rows = cur.fetchall()
+                
+                # Format rows for display: (name, type, info)
+                # For tables/views/mvs: info = "PK: col1, col2" or empty
+                # For indexes: info = "Table: TABLE_NAME"
+                # For PKs: info = "Table: TABLE_NAME"
+                # For MLOGs: type = "MVIEW LOG", info = "Table: BASE_TABLE"
+                formatted_rows = []
+                for name, obj_type, pk_cols in obj_rows:
+                    # Detect MLOG tables (materialized view logs) - they start with MLOG$
+                    if obj_type == 'TABLE' and name.upper().startswith('MLOG$'):
+                        # Extract base table name from MLOG$_TABLENAME or MLOG$TABLENAME
+                        base_table = name[5:].lstrip('_')  # Remove MLOG$ and optional underscore
+                        formatted_rows.append((name, 'MVIEW LOG', f"Table: {base_table}"))
+                    else:
+                        info = f"PK: {pk_cols}" if pk_cols else ""
+                        formatted_rows.append((name, obj_type, info))
+                for idx_name, obj_type, table_name in idx_rows:
+                    info = f"Table: {table_name}" if table_name else ""
+                    formatted_rows.append((idx_name, obj_type, info))
+                for pk_name, obj_type, table_name in pk_rows:
+                    info = f"Table: {table_name}" if table_name else ""
+                    formatted_rows.append((pk_name, obj_type, info))
+                
+                rows = formatted_rows
             except Exception as e:
                 rows = []
                 logger.exception(f"Failed to list user objects: {e}")
@@ -1099,6 +1238,8 @@ def launch_tool_gui():
                 try:
                     conn = oracledb.connect(user=creds["username"], password=creds["password"], dsn=creds["dsn"])
                     cur = conn.cursor()
+                    
+                    # Query for tables, views, materialized views with PK info
                     cur.execute("""
                         SELECT ao.object_name,
                                ao.object_type,
@@ -1114,9 +1255,64 @@ def launch_tool_gui():
                         FROM all_objects ao
                         WHERE owner = :owner
                         AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
-                        ORDER BY object_name
+                        ORDER BY object_type, object_name
                     """, ["DWH"])
-                    rows = cur.fetchall()
+                    obj_rows = cur.fetchall()
+                    
+                    # Query for user-created indexes (excluding system and PK-backing indexes)
+                    cur.execute("""
+                        SELECT ai.index_name,
+                               'INDEX' AS object_type,
+                               ai.table_name
+                        FROM all_indexes ai
+                        WHERE ai.owner = :owner
+                          AND ai.index_name NOT LIKE 'SYS_%'
+                          AND ai.index_name NOT LIKE 'BIN$%'
+                          AND NOT EXISTS (
+                            SELECT 1 FROM all_constraints ac
+                            WHERE ac.owner = ai.owner
+                              AND ac.constraint_type = 'P'
+                              AND ac.index_name = ai.index_name
+                          )
+                        ORDER BY ai.index_name
+                    """, ["DWH"])
+                    idx_rows = cur.fetchall()
+                    
+                    # Query for primary key constraints (as droppable objects)
+                    cur.execute("""
+                        SELECT ac.constraint_name,
+                               'PRIMARY KEY' AS object_type,
+                               ac.table_name
+                        FROM all_constraints ac
+                        WHERE ac.owner = :owner
+                          AND ac.constraint_type = 'P'
+                        ORDER BY ac.table_name, ac.constraint_name
+                    """, ["DWH"])
+                    pk_rows = cur.fetchall()
+                    
+                    # Format rows for display: (name, type, info)
+                    # For tables/views/mvs: info = "PK: col1, col2" or empty
+                    # For indexes: info = "Table: TABLE_NAME"
+                    # For PKs: info = "Table: TABLE_NAME"
+                    # For MLOGs: type = "MVIEW LOG", info = "Table: BASE_TABLE"
+                    formatted_rows = []
+                    for name, obj_type, pk_cols in obj_rows:
+                        # Detect MLOG tables (materialized view logs) - they start with MLOG$
+                        if obj_type == 'TABLE' and name.upper().startswith('MLOG$'):
+                            # Extract base table name from MLOG$_TABLENAME or MLOG$TABLENAME
+                            base_table = name[5:].lstrip('_')  # Remove MLOG$ and optional underscore
+                            formatted_rows.append((name, 'MVIEW LOG', f"Table: {base_table}"))
+                        else:
+                            info = f"PK: {pk_cols}" if pk_cols else ""
+                            formatted_rows.append((name, obj_type, info))
+                    for idx_name, obj_type, table_name in idx_rows:
+                        info = f"Table: {table_name}" if table_name else ""
+                        formatted_rows.append((idx_name, obj_type, info))
+                    for pk_name, obj_type, table_name in pk_rows:
+                        info = f"Table: {table_name}" if table_name else ""
+                        formatted_rows.append((pk_name, obj_type, info))
+                    
+                    rows = formatted_rows
                 except Exception as e:
                     rows = []
                     err_text = str(e)
@@ -1299,6 +1495,84 @@ def launch_tool_gui():
 
     user_load_btn.config(command=launch_load_user)
     dwh_load_btn.config(command=launch_load_dwh)
+
+    # --- Drop button handlers ---
+    def _get_selected_objects(tree):
+        """Return list of (name, type, info) tuples from all selected treeview rows."""
+        selections = tree.selection()
+        if not selections:
+            return []
+        result = []
+        for sel in selections:
+            item = tree.item(sel)
+            vals = item.get('values', ())
+            if len(vals) >= 2:
+                name = str(vals[0])
+                obj_type = str(vals[1])
+                info = str(vals[2]) if len(vals) > 2 else ''
+                result.append({'name': name, 'type': obj_type, 'info': info})
+        return result
+
+    def launch_drop_user():
+        """Handle Drop button click for User schema."""
+        objects = _get_selected_objects(user_tree)
+        if not objects:
+            from tkinter import messagebox
+            messagebox.showwarning('No Selection', 'Please select one or more objects to drop.', parent=root)
+            return
+        
+        # Get schema name from session credentials
+        from libs import session as _sess
+        owner = None
+        if _sess.stored_credentials:
+            owner = _sess.stored_credentials.get('username', '').upper()
+        if not owner:
+            try:
+                from libs.oracle_db_connector import get_db_connection
+                conn = get_db_connection(force_shared=False, root=root)
+                if conn:
+                    owner = conn.username.upper()
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        if not owner:
+            from tkinter import messagebox
+            messagebox.showerror('Error', 'Could not determine user schema.', parent=root)
+            return
+        
+        # Call the drop function
+        from tools.object_cleanup_gui import drop_objects
+        drop_objects(
+            schema_choice='user',
+            schema_name=owner,
+            objects=objects,
+            parent_window=root,
+            on_complete=lambda: refresh_user_objects()
+        )
+
+    def launch_drop_dwh():
+        """Handle Drop button click for DWH schema."""
+        objects = _get_selected_objects(dwh_tree)
+        if not objects:
+            from tkinter import messagebox
+            messagebox.showwarning('No Selection', 'Please select one or more objects to drop.', parent=root)
+            return
+        
+        # Call the drop function
+        from tools.object_cleanup_gui import drop_objects
+        drop_objects(
+            schema_choice='dwh',
+            schema_name='DWH',
+            objects=objects,
+            parent_window=root,
+            on_complete=lambda: refresh_dwh_objects()
+        )
+
+    user_drop_btn.config(command=launch_drop_user)
+    dwh_drop_btn.config(command=launch_drop_dwh)
 
     # Top toolbar (centered): tool selector + buttons
     # Create the toolbar at the root level and pack it before the main content_frame
@@ -2686,13 +2960,12 @@ def launch_tool_gui():
     root.mainloop()
 
 TOOLS = {
-    "☑ Object Dropper": drop_user_tables,
     "☑ SQL View Loader": run_sql_view_loader,
     "☑ SQL Materialized View Loader": run_sql_mv_loader,
     "☑ Materialized View Manager": None,  # placeholder, will be wired if available
     "☑ Designate PK": pk_designate_main,
     
-    # the repository for later separation.
+    # Object Dropper removed - functionality now integrated into Drop buttons in left pane
 }
 
 # Wire the MV refresh tool if present (keep the tool list construction separate
