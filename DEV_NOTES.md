@@ -496,3 +496,33 @@ Summary: This session delivered a major overhaul of the Excel/CSV loader, replac
 2. The `create_index_if_columns_exist()` function creates composite indexes from a list. For the loader's per-column indexing, we call it with single-element lists. Consider adding a dedicated `create_single_index()` helper for clarity.
 3. The old `load_multiple_files()` function and `select_sheets_gui()` are now dead code but remain in the file. Consider removing them in a cleanup pass.
 4. Add validation for batch mode: warn if files have different row counts or data types that might cause issues when merged.
+
+---
+
+### 🎨 Entry #13: SQL Preview Window Dark Mode (2026-02-20)
+
+Summary: Added pane-only dark mode support to the SQL preview window in `loaders/excel_csv_loader.py`. This window is used by all loader flows (create new, append, replace, upsert) to show formatted SQL before execution.
+
+Findings
+
+- The `show_sql_preview` function (line 762) creates all SQL preview windows — a single function serves all 9 call sites across the legacy and new loader flows.
+- The original implementation had zero dark mode awareness: the Text widget used default Tk colors (white background, black text) regardless of the main GUI's theme state.
+- The file already had a `_theme_cb` for the `load_files_gui` dialog's entry widgets (lines 2645-2664), but it did not cover the preview window.
+
+Implementation
+
+- Added the same `Pane.Treeview` style background check used by `sql_view_loader.py` and `sql_mv_loader.py` to detect dark mode at preview window creation time.
+- Applied **pane-only** theming: only the Text widget (`txt`) receives dark colors (`bg='#000000'`, `fg='#e6e6e6'`, `insertbackground='#ffffff'`, `selectbackground='#2a6bd6'`). The Toplevel frame, summary Label, button Frame, and Buttons all remain system default grey.
+- Added a `_apply_preview_theme(enable_dark)` callback that updates only the Text widget. Registered on `parent.register_theme_callback` (or `parent.master.register_theme_callback` as fallback) for live toggle support.
+- Unregistered callback on `<Destroy>` event to avoid memory leaks and stale references.
+
+Challenges / notes
+
+- Initial implementation applied dark colors to the entire window (Toplevel, Frames, Labels, Buttons), but user feedback clarified that only the SQL pane should change — matching the "pane-only" dark mode approach used in the main GUI.
+- The simplification reduced the color palette from 9 variables to 4 (`_txt_bg`, `_txt_fg`, `_sel_bg`, `_ins_bg`) and removed all button/frame styling code.
+- The `selectforeground='#ffffff'` is applied in both dark and light modes so selected text is always readable against the `#2a6bd6` selection background.
+
+Follow-ups
+
+1. The main `load_files_gui` dialog still uses default colors for most widgets (Treeviews, column preview). Consider extending pane-only dark mode to those as well for full consistency.
+2. Entry #11 noted `excel_csv_loader.py` as not having dark mode support — this entry partially addresses that (preview window only, not the main loader dialog).

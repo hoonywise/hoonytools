@@ -4,6 +4,25 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🚀 v1.5.1 — SQL Preview Window Dark Mode (2026-02-20)
+
+This patch adds pane-only dark mode support to the SQL preview window in the Excel/CSV loader.
+
+### Added
+
+- SQL preview window (`show_sql_preview`) now detects pane-only dark mode via the `Pane.Treeview` ttk style check and applies dark colors to the SQL text area.
+- Theme callback registered on the parent window so toggling dark mode while the preview is open updates the SQL text area live.
+
+### Changed
+
+- Only the SQL text area (Text widget) is themed — the window frame, summary label, and buttons remain system default grey, consistent with the pane-only dark mode approach used elsewhere.
+
+### Files touched
+
+- `loaders/excel_csv_loader.py` — `show_sql_preview` function (lines 762-930)
+
+---
+
 ## 🚀 v1.5.0 — Data Loader Overhaul + Index Tool (2026-02-20)
 
 This release delivers a complete overhaul of the Excel/CSV loader with a new structured dialog, tight VARCHAR2 sizing for index-friendly columns, inline index selection, and integrated abort functionality. The auto-indexing of PIDM/TERM/STUDENT_ID columns has been removed in favor of user-controlled indexing.
