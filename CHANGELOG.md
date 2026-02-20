@@ -4,6 +4,35 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🚀 v1.4.6 — Dark mode persistence + selection highlight improvements (2026-02-20)
+
+This patch adds persistent dark mode preference storage and improves dark mode visual fidelity across the launcher and tool windows.
+
+### Added
+
+- Dark mode preference now persists across sessions via a `[preferences]` section in `libs/config.ini`. Toggling dark mode writes `dark_mode = true/false`; on next launch the saved preference is restored automatically before `mainloop()`.
+- Selection highlight in dark mode changed from grey (`#444444`) to blue (`#2a6bd6`) across all themed widgets (Treeviews, log text, SQL editors, Listbox popups) for improved visibility.
+- `logtype` tag (the "Current Log Type" label in MV Manager) now switches to white `selectforeground` when highlighted, in both dark and light modes, so the blue text remains readable against the blue selection background.
+
+### Changed
+
+- Custom in-window "Dark Mode" menu item changed from a plain command to a proper `checkbutton` with indicator dot; also fixed the `_mb()` check-type handler to correctly extract command and variable from a tuple.
+- `selectcolor` (checkbutton indicator dot) set to white (`#ffffff`) in dark mode and black (`#000000`) in light mode on both the native `view_menu` and custom in-window submenus, so the toggle indicator is always visible.
+
+### Fixed
+
+- Dark mode menu checkbutton indicator was invisible (black dot on black background) because the custom menu used a `'command'` type instead of `'check'` type — no indicator was rendered at all. Now renders a proper checkbutton with a white dot in dark mode.
+- Inconsistency in initial `log_text` dark selection color (`#222222` from `DARK_THEME["border"]`) vs runtime toggle (`#444444`); both now use `#2a6bd6` via `DARK_THEME["selection_bg"]`.
+
+### Files touched
+
+- `HoonyTools.pyw` — `ConfigParser` import, `_save_dark_mode_pref()` helper, persistence in `_toggle_dark()`, startup restore, `selectcolor` on menus, selection highlight color updates (7 locations), custom menu `'check'` type fix
+- `loaders/sql_view_loader.py` — dark mode `selectbackground` updated (2 locations)
+- `loaders/sql_mv_loader.py` — dark mode `selectbackground` updated (2 locations)
+- `tools/mv_refresh_gui.py` — dark mode `selectbackground` updated (2 locations), `logtype` tag `selectforeground` added (3 locations)
+
+---
+
 ## 🚀 v1.4.5 — Pane-only dark mode + modal dialog hygiene (2026-02-20)
 
 This patch refines pane-only dark mode behavior for SQL loaders and hardens dialog parenting so tool windows remain properly modal to the launcher.

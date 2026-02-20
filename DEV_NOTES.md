@@ -344,3 +344,51 @@ Follow-ups
 
 1. Consider extracting the safe messagebox helper into `libs/ui_utils.py` if other non-loader modules need it (avoid circular imports).
 2. Run a linter pass after UI edits to catch unbound-variable warnings introduced by large refactors.
+
+---
+
+### 🎨 Entry #11: Dark mode persistence + selection highlight improvements (2026-02-20)
+
+Summary: This session added persistent dark mode preference storage to `libs/config.ini`, fixed an invisible menu checkbutton indicator, and changed the dark mode selection highlight from grey to blue across the launcher and all themed tool windows.
+
+Findings
+
+- Dark mode state (`dark_mode_var`) was a `BooleanVar` defaulting to `False` on every launch with no persistence mechanism. The `libs/config.ini` file was already created during first GUI launch (regardless of whether the user saves login credentials), making it a natural location for storing UI preferences without adding new files.
+- `configparser` is a Python standard library module — no addition to `requirements.txt` needed.
+- The custom in-window menu bar registered the "Dark Mode" item as a `('command', ...)` type, which renders as a plain text menu item with no indicator dot. The `_mb()` helper already had a `'check'` code path for checkbuttons, but it contained a latent bug: when `icmd` was a tuple `(command, variable)`, the whole tuple was passed as `command=` (not callable), and the variable was extracted correctly but the command was lost. Fixed by unpacking `cmd, var = icmd[0], icmd[1]`.
+- The `selectcolor` property on tkinter `Menu` widgets controls the checkbutton/radiobutton indicator color. Default is typically black or dark, which is invisible on a black menu background. Setting `selectcolor='#ffffff'` in dark mode and `'#000000'` in light mode resolves this.
+- Dark mode selection highlight was `#444444` (dark grey) across all widgets — nearly indistinguishable from the `#000000` background when selecting text or tree items. The `DARK_THEME` dict already defined `selection_bg: '#2a6bd6'` but it was unused in `set_panes_dark()`; all hardcoded values used `#444444` instead.
+- An inconsistency existed between initial `log_text` creation (used `DARK_THEME["border"]` = `#222222` for `selectbackground`) and runtime toggle in `set_panes_dark()` (used `#444444`). Both were changed to use `DARK_THEME["selection_bg"]` = `#2a6bd6`.
+- The `logtype` tag in `tools/mv_refresh_gui.py` uses `foreground='#66ccff'` (dark mode) or `foreground='blue'` (light mode). Both colors have poor contrast against the `#2a6bd6` selection background. Adding `selectforeground='#ffffff'` to the tag configuration in both modes ensures the text switches to white when highlighted.
+
+Changes made
+
+- `HoonyTools.pyw`:
+  - Added `from configparser import ConfigParser` import.
+  - Added `_save_dark_mode_pref(is_dark)` helper that safely reads `libs/config.ini`, adds/updates `[preferences] dark_mode`, and writes back without clobbering credential sections (same read-then-write pattern used by DWH credential save).
+  - Added `_save_dark_mode_pref(dark_mode_var.get())` call at the end of `_toggle_dark()`.
+  - Added startup restore block before `root.mainloop()` that reads `[preferences] dark_mode` from config.ini and applies dark mode if `true`.
+  - Changed custom menu "Dark Mode" from `('command', ...)` to `('check', ..., (_toggle_dark, dark_mode_var))`.
+  - Fixed `_mb()` check-type handler to correctly unpack `(cmd, var)` from tuple.
+  - Added `selectcolor='#ffffff'` to `view_menu` and custom submenus in `set_panes_dark()`; `selectcolor='#000000'` in `set_panes_light()`.
+  - Changed 6 dark mode `selectbackground` values from `#444444` to `#2a6bd6` (Treeview style.map x2, log_text x2, Listbox option_add, combobox popup).
+  - Fixed initial `log_text` creation to use `DARK_THEME["selection_bg"]` instead of `DARK_THEME["border"]`.
+
+- `loaders/sql_view_loader.py`: Changed 2 dark mode `selectbackground` from `#444444` to `#2a6bd6` (`_apply_theme` and initial creation).
+
+- `loaders/sql_mv_loader.py`: Changed 2 dark mode `selectbackground` from `#444444` to `#2a6bd6` (`_apply_theme` and initial creation).
+
+- `tools/mv_refresh_gui.py`: Changed 2 dark mode `selectbackground` from `#444444` to `#2a6bd6`. Added `selectforeground='#ffffff'` to `logtype` tag in 3 places (dark toggle, light toggle, on-demand re-apply) so the blue text remains readable when selected.
+
+Challenges / notes
+
+- The `_save_dark_mode_pref` helper must re-read `config.ini` from disk before writing (not reuse the module-level `ConfigParser` from `oracle_db_connector.py`) to avoid clobbering credential sections that may have been updated since import. This follows the same pattern established in Entry #4 for DWH credential saving.
+- Loaders and tools with dark mode support (`sql_view_loader`, `sql_mv_loader`, `mv_refresh_gui`, `pk_designate_gui`) did not need changes for persistence — they already detect the current theme dynamically from the ttk `Pane.Treeview` style or via `register_theme_callback`. When the main GUI starts in dark mode, child windows pick it up automatically.
+- Tools without any dark mode support (`object_cleanup_gui.py`, `excel_csv_loader.py`) remain unchanged — adding dark mode to them is a separate effort.
+- The `selectforeground` property on tkinter text tags overrides the foreground color only when that text range is selected. Setting it to an empty string (`''`) resets it to the widget default; setting it to `'#ffffff'` forces white text on selection. We use `'#ffffff'` in both dark and light modes for the `logtype` tag since both `#66ccff` and `blue` have poor contrast against `#2a6bd6`.
+
+Follow-ups
+
+1. Consider adding more UI preferences to the `[preferences]` section (e.g., window geometry, last-used tool, font size) now that the infrastructure exists.
+2. Add dark mode support to `tools/object_cleanup_gui.py` and `loaders/excel_csv_loader.py` for full visual consistency.
+3. The `apply_dark_theme()` and `apply_light_theme()` functions defined at the top of `HoonyTools.pyw` (lines 32-90) are never called at runtime — they are remnants of an older full-window dark mode approach. Consider removing them or repurposing them if full-window dark mode is planned.
