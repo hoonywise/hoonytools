@@ -613,6 +613,14 @@ def run_sql_mv_loader(on_finish=None):
         conn = get_db_connection(force_shared=True) if use_dwh else get_db_connection()
         if not conn:
             return
+        try:
+            if use_dwh:
+                # Register with central DWH session manager for cleanup
+                from tkinter import _default_root
+                from libs import dwh_session
+                dwh_session.register_connection(_default_root, conn)
+        except Exception:
+            logger.debug('Failed to register dwh connection', exc_info=True)
         cursor = None
 
         # Ensure the DB connection is always closed even on early returns

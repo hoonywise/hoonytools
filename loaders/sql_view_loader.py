@@ -3,6 +3,8 @@ from tkinter import messagebox, scrolledtext
 import logging
 from libs.oracle_db_connector import get_db_connection
 from libs import session
+from tkinter import _default_root
+from libs import dwh_session
 import ctypes
 from libs.paths import ASSETS_PATH
 
@@ -26,6 +28,15 @@ def run_sql_view_loader(on_finish=None):
         conn = get_db_connection(force_shared=True) if use_dwh else get_db_connection()
         if not conn:
             return
+        try:
+            if use_dwh:
+                # register against the global default root so cleanup can clear in-memory creds
+                dwh_session.register_connection(_default_root, conn)
+        except Exception:
+            try:
+                logger.debug('Failed to register dwh connection', exc_info=True)
+            except Exception:
+                pass
 
         try:
             cursor = conn.cursor()
@@ -56,6 +67,10 @@ def run_sql_view_loader(on_finish=None):
             try:
                 if conn:
                     conn.close()
+                    try:
+                        dwh_session.cleanup(_default_root)
+                    except Exception:
+                        logger.debug('DWH cleanup failed', exc_info=True)
             except Exception as e:
                 logger.warning(f"⚠️ Failed to close connection: {e}")
 

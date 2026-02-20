@@ -705,10 +705,22 @@ def run_mv_refresh_gui(on_finish=None):
             conn.close()
         except Exception:
             pass
+
+        # Central DWH cleanup: close dwh connection and clear in-memory creds
+        try:
+            from libs.dwh_session import cleanup as dwh_cleanup
+            try:
+                dwh_cleanup(root)
+            except Exception:
+                logger.exception("DWH cleanup failed")
+        except Exception:
+            logger.debug("Could not import dwh_session cleanup", exc_info=True)
+
         try:
             root.destroy()
         except Exception:
             pass
+
         # Call on_finish only if provided and callable
         if callable(on_finish):
             try:

@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 from libs.oracle_db_connector import get_db_connection
 from libs import abort_manager
+from libs import dwh_session
 
 def center_window(window, width, height):
     window.update_idletasks()
@@ -1058,6 +1059,12 @@ def load_multiple_files():
     if not conn:
         logger.error("❌ Failed to connect to Oracle.")
         return
+    try:
+        if schema_choice == 'dwh':
+            # register connection so central cleanup can clear in-memory creds when finished
+            dwh_session.register_connection(root, conn)
+    except Exception:
+        logger.debug('Failed to register dwh connection', exc_info=True)
 
     file_paths = filedialog.askopenfilenames(filetypes=[("Excel or CSV", ["*.xlsx", "*.xls", "*.csv"])])
     if not file_paths:
@@ -1411,6 +1418,11 @@ def load_multiple_files():
             logger.warning(f"⚠️ Failed to close connection: {e}")
 
     try:
+        # Ensure DWH session cleanup (close any shared connection(s) and clear in-memory creds if not saved)
+        try:
+            dwh_session.cleanup(root)
+        except Exception:
+            logger.debug('DWH cleanup failed', exc_info=True)
         root.destroy()
     except Exception:
         pass

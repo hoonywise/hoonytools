@@ -8,6 +8,7 @@ from tkinter.constants import MULTIPLE, END, LEFT, RIGHT, Y, BOTH
 from libs.paths import PROJECT_PATH as base_path
 
 from libs.oracle_db_connector import get_db_connection
+from libs import dwh_session
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,13 @@ def main(parent=None):
     if not conn:
         logger.error('Failed to get DB connection')
         return
+    try:
+        # register connection on parent if provided so cleanup can clear it
+        if schema_choice == 'dwh':
+            if parent:
+                dwh_session.register_connection(parent, conn)
+    except Exception:
+        logger.debug('Failed to register dwh connection', exc_info=True)
 
     owner = 'DWH' if schema_choice == 'dwh' else conn.username.upper()
 
@@ -683,6 +691,12 @@ def main(parent=None):
         except tk.TclError:
             logger.info('PK mainloop terminated unexpectedly')
 
+    # Ensure DWH session cleanup for this window/parent
+    try:
+        target = parent if parent else win
+        dwh_session.cleanup(target)
+    except Exception:
+        logger.debug('DWH cleanup failed', exc_info=True)
 
 if __name__ == '__main__':
     main()

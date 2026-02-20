@@ -6,6 +6,7 @@ import logging
 from tkinter import Toplevel, Label, Checkbutton, IntVar, Button, messagebox, simpledialog, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, Y, BOTH
 from tkinter import _default_root
 from libs.oracle_db_connector import get_db_connection
+from libs import dwh_session
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,14 @@ def drop_user_tables():
 
     from tkinter import _default_root
     conn = get_db_connection(force_shared=(schema_choice == "dwh"), root=_default_root)
+
+    # Register the connection with the central DWH session manager so it can
+    # be cleaned up if the app/window requests it later.
+    try:
+        if schema_choice == 'dwh' and conn:
+            dwh_session.register_connection(_default_root, conn)
+    except Exception:
+        logger.debug('Failed to register dwh connection', exc_info=True)
 
     if not conn:
         logger.error("❌ Failed to connect.")
@@ -269,11 +278,21 @@ def drop_user_tables():
     conn.commit()
     cursor.close()
     conn.close()
+    try:
+        # Ensure in-memory DWH credentials are cleared when appropriate
+        dwh_session.cleanup(_default_root)
+    except Exception:
+        logger.debug('DWH cleanup failed', exc_info=True)
     messagebox.showinfo("Done", "✅ Cleanup complete.")
     logger.info("✅ Cleanup complete.")
 
 def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     conn = get_db_connection(force_shared=True, root=_default_root)
+    try:
+        if conn:
+            dwh_session.register_connection(_default_root, conn)
+    except Exception:
+        logger.debug('Failed to register dwh connection', exc_info=True)
     if not conn:
         logger.error("❌ Failed to connect to DWH.")
         return
@@ -358,5 +377,9 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     conn.commit()
     cursor.close()
     conn.close()
+    try:
+        dwh_session.cleanup(_default_root)
+    except Exception:
+        logger.debug('DWH cleanup failed', exc_info=True)
     messagebox.showinfo("Done", f"✅ Deleted rows where {label} = {value}")
     logger.info("✅ Row deletion complete.")
