@@ -1828,6 +1828,14 @@ def launch_tool_gui():
                                 pass
                     except Exception:
                         pass
+                    # Restore Listbox option defaults to light values so native
+                    # popups created after this will be white on black text
+                    try:
+                        root.option_add('*Listbox.background', 'white')
+                        root.option_add('*Listbox.foreground', 'black')
+                        root.option_add('*Listbox.selectBackground', '#2a6bd6')
+                    except Exception:
+                        pass
                     # Restore heading lookups if available
                     try:
                         oh = po.get('orig_heading_lookup') or {}
