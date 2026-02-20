@@ -362,6 +362,7 @@ def run_sql_mv_loader(on_finish=None):
 
         # Gather low-level diagnostic counts to help debug false positives
         diag = {}
+        mlog_name = None
         try:
             master_name = table.split('.')[-1].upper()
             try:
@@ -613,240 +614,243 @@ def run_sql_mv_loader(on_finish=None):
         if not conn:
             return
         cursor = None
-        # If ON COMMIT requested, detect base tables and offer to create logs
-        need_logs = (refresh_trigger == "ON COMMIT")
-        if need_logs:
-            tables = detect_tables_from_sql(sql_query)
-            # Only proceed to show dialog if any tables detected
-            if tables:
-                dlg_result = show_create_logs_dialog(tables)
-                if dlg_result is None:
-                    # user cancelled
-                    return
-                create_logs_flag, selected_tables, log_type, include_new_values = dlg_result
-                if create_logs_flag and selected_tables:
-                    # attempt to create logs before creating MV
-                    try:
-                        cursor = conn.cursor()
-                        # ensure include_new_values is a bool (default True)
-                        if include_new_values is None:
-                            include_new_values = True
 
-                        # Check for existing logs and ask user for safer handling
-                        final_results = []
-                        # get current user for ownership checks
+        # Ensure the DB connection is always closed even on early returns
+        try:
+            # If ON COMMIT requested, detect base tables and offer to create logs
+            need_logs = (refresh_trigger == "ON COMMIT")
+            if need_logs:
+                tables = detect_tables_from_sql(sql_query)
+                # Only proceed to show dialog if any tables detected
+                if tables:
+                    dlg_result = show_create_logs_dialog(tables)
+                    if dlg_result is None:
+                        # user cancelled
+                        return
+                    create_logs_flag, selected_tables, log_type, include_new_values = dlg_result
+                    if create_logs_flag and selected_tables:
+                        # attempt to create logs before creating MV
                         try:
-                            cursor.execute("SELECT USER FROM DUAL")
-                            current_user = cursor.fetchone()[0]
-                        except Exception:
-                            current_user = None
+                            cursor = conn.cursor()
+                            # ensure include_new_values is a bool (default True)
+                            if include_new_values is None:
+                                include_new_values = True
 
-                        # Use shared detection helper when available for a simpler flow
-                        final_results = []
-                        helper = _MV_HELPERS.get('detect_existing_mlog') if _MV_HELPERS else None
-                        for t in selected_tables:
+                            # Check for existing logs and ask user for safer handling
+                            final_results = []
+                            # get current user for ownership checks
                             try:
-                                exists = False
-                                # Prefer helper-based detection
-                                if helper:
-                                    try:
-                                        meta = helper(cursor, t)
-                                        exists = bool(meta.get('exists'))
-                                        # If helper reports exists but has no readable columns or deps,
-                                        # verify the physical MLOG$_<master> presence; if not visible,
-                                        # treat as not existing to avoid false positives.
+                                cursor.execute("SELECT USER FROM DUAL")
+                                current_user = cursor.fetchone()[0]
+                            except Exception:
+                                current_user = None
+
+                            # Use shared detection helper when available for a simpler flow
+                            final_results = []
+                            helper = _MV_HELPERS.get('detect_existing_mlog') if _MV_HELPERS else None
+                            for t in selected_tables:
+                                try:
+                                    exists = False
+                                    # Prefer helper-based detection
+                                    if helper:
                                         try:
-                                            if exists and not (meta.get('cols') or meta.get('deps')):
-                                                master_name = t.split('.')[-1].upper()
-                                                mlog_name = f"MLOG$_{master_name}"
-                                                phys = False
-                                                try:
-                                                    if '.' in t:
-                                                        owner_part = t.split('.')[0].upper()
-                                                        cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE OWNER = :own AND TABLE_NAME = :tn", (owner_part, mlog_name))
-                                                        phys = cursor.fetchone()[0] > 0
-                                                    else:
-                                                        # For unqualified master names, only consider USER_TABLES to avoid
-                                                        # treating a log owned by another schema as 'existing' for the current user.
-                                                        cursor.execute("SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
-                                                        cnt = cursor.fetchone()[0]
-                                                        phys = cnt > 0
-                                                except Exception:
+                                            meta = helper(cursor, t)
+                                            exists = bool(meta.get('exists'))
+                                            # If helper reports exists but has no readable columns or deps,
+                                            # verify the physical MLOG$_<master> presence; if not visible,
+                                            # treat as not existing to avoid false positives.
+                                            try:
+                                                if exists and not (meta.get('cols') or meta.get('deps')):
+                                                    master_name = t.split('.')[-1].upper()
+                                                    mlog_name = f"MLOG$_{master_name}"
                                                     phys = False
-                                                if not phys:
-                                                    exists = False
                                                     try:
-                                                        # also update meta to reflect conservative view
-                                                        meta['exists'] = False
+                                                        if '.' in t:
+                                                            owner_part = t.split('.')[0].upper()
+                                                            cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE OWNER = :own AND TABLE_NAME = :tn", (owner_part, mlog_name))
+                                                            phys = cursor.fetchone()[0] > 0
+                                                        else:
+                                                            # For unqualified master names, only consider USER_TABLES to avoid
+                                                            # treating a log owned by another schema as 'existing' for the current user.
+                                                            cursor.execute("SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
+                                                            cnt = cursor.fetchone()[0]
+                                                            phys = cnt > 0
                                                     except Exception:
-                                                        pass
-                                        except Exception:
-                                            pass
-                                    except Exception:
-                                        exists = False
-                                else:
-                                    # Minimal fallback: check USER_MVIEW_LOGS presence
-                                    try:
-                                        master_name = t.split('.')[-1].upper()
-                                        try:
-                                            cursor.execute("SELECT COUNT(*) FROM USER_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
-                                            exists = cursor.fetchone()[0] > 0
+                                                        phys = False
+                                                    if not phys:
+                                                        exists = False
+                                                        try:
+                                                            # also update meta to reflect conservative view
+                                                            meta['exists'] = False
+                                                        except Exception:
+                                                            pass
+                                            except Exception:
+                                                pass
                                         except Exception:
                                             exists = False
-                                    except Exception:
-                                        exists = False
-
-                                if exists:
-                                    desired_sql = f"DROP MATERIALIZED VIEW LOG ON {t};\nCREATE MATERIALIZED VIEW LOG ON {t} \n"
-                                    if log_type == 'ROWID':
-                                        desired_sql += "  WITH ROWID\n"
                                     else:
-                                        desired_sql += "  WITH PRIMARY KEY\n"
-                                    if include_new_values:
-                                        desired_sql += "  INCLUDING NEW VALUES"
-
-                                    choice = show_existing_log_options(t, cursor, desired_sql)
-                                    if choice == 'reuse':
-                                        final_results.append((t, 'reused', None))
-                                        continue
-                                    elif choice == 'drop':
+                                        # Minimal fallback: check USER_MVIEW_LOGS presence
                                         try:
-                                            cursor.execute(f"DROP MATERIALIZED VIEW LOG ON {t}")
-                                            conn.commit()
-                                        except Exception as e:
-                                            final_results.append((t, False, str(e)))
+                                            master_name = t.split('.')[-1].upper()
+                                            try:
+                                                cursor.execute("SELECT COUNT(*) FROM USER_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
+                                                exists = cursor.fetchone()[0] > 0
+                                            except Exception:
+                                                exists = False
+                                        except Exception:
+                                            exists = False
+
+                                    if exists:
+                                        desired_sql = f"DROP MATERIALIZED VIEW LOG ON {t};\nCREATE MATERIALIZED VIEW LOG ON {t} \n"
+                                        if log_type == 'ROWID':
+                                            desired_sql += "  WITH ROWID\n"
+                                        else:
+                                            desired_sql += "  WITH PRIMARY KEY\n"
+                                        if include_new_values:
+                                            desired_sql += "  INCLUDING NEW VALUES"
+
+                                        choice = show_existing_log_options(t, cursor, desired_sql)
+                                        if choice == 'reuse':
+                                            final_results.append((t, 'reused', None))
                                             continue
-                                    else:
-                                        final_results.append((t, False, 'user_cancel'))
-                                        continue
+                                        elif choice == 'drop':
+                                            try:
+                                                cursor.execute(f"DROP MATERIALIZED VIEW LOG ON {t}")
+                                                conn.commit()
+                                            except Exception as e:
+                                                final_results.append((t, False, str(e)))
+                                                continue
+                                        else:
+                                            final_results.append((t, False, 'user_cancel'))
+                                            continue
 
-                                # Verify target object exists and is a table
-                                try:
-                                    if '.' in t:
-                                        owner_part, table_part = t.split('.', 1)
-                                        owner_check = owner_part.strip().upper()
-                                        table_check = table_part.strip().upper()
-                                    else:
-                                        owner_check = current_user
-                                        table_check = t.strip().upper()
+                                    # Verify target object exists and is a table
                                     try:
-                                        cursor.execute(
-                                            "SELECT OWNER, OBJECT_TYPE FROM ALL_OBJECTS WHERE OWNER = :own AND OBJECT_NAME = :tbl",
-                                            (owner_check, table_check)
-                                        )
-                                        obj = cursor.fetchone()
-                                    except Exception:
-                                        obj = None
-                                    if not obj:
-                                        err_msg = f"target object {t} not found or not accessible"
-                                        final_results.append((t, False, err_msg))
+                                        if '.' in t:
+                                            owner_part, table_part = t.split('.', 1)
+                                            owner_check = owner_part.strip().upper()
+                                            table_check = table_part.strip().upper()
+                                        else:
+                                            owner_check = current_user
+                                            table_check = t.strip().upper()
+                                        try:
+                                            cursor.execute(
+                                                "SELECT OWNER, OBJECT_TYPE FROM ALL_OBJECTS WHERE OWNER = :own AND OBJECT_NAME = :tbl",
+                                                (owner_check, table_check)
+                                            )
+                                            obj = cursor.fetchone()
+                                        except Exception:
+                                            obj = None
+                                        if not obj:
+                                            err_msg = f"target object {t} not found or not accessible"
+                                            final_results.append((t, False, err_msg))
+                                            continue
+                                        owner_found, obj_type = obj[0], obj[1]
+                                        if obj_type.upper() != 'TABLE':
+                                            err_msg = f"target object {t} is not a TABLE (found type: {obj_type})"
+                                            final_results.append((t, False, err_msg))
+                                            continue
+                                    except Exception as e:
+                                        final_results.append((t, False, str(e)))
                                         continue
-                                    owner_found, obj_type = obj[0], obj[1]
-                                    if obj_type.upper() != 'TABLE':
-                                        err_msg = f"target object {t} is not a TABLE (found type: {obj_type})"
-                                        final_results.append((t, False, err_msg))
-                                        continue
+
+                                    # Attempt to create the log
+                                    try:
+                                        sql = f"CREATE MATERIALIZED VIEW LOG ON {t} \n"
+                                        if log_type == 'ROWID':
+                                            sql += "  WITH ROWID\n"
+                                        else:
+                                            sql += "  WITH PRIMARY KEY\n"
+                                        if include_new_values:
+                                            sql += "  INCLUDING NEW VALUES"
+                                        cursor.execute(sql)
+                                        conn.commit()
+                                        final_results.append((t, True, None))
+                                    except Exception as e:
+                                        final_results.append((t, False, str(e)))
                                 except Exception as e:
                                     final_results.append((t, False, str(e)))
-                                    continue
 
-                                # Attempt to create the log
+                            results = final_results
+                            # summarize results and ask user whether to continue on failures
+                            created = [r[0] for r in results if r[1] is True]
+                            reused = [r[0] for r in results if r[1] == 'reused']
+                            failed = [(r[0], r[2]) for r in results if r[1] is False or (isinstance(r[1], str) and r[1] not in ("reused",))]
+                            msgs = []
+                            if created:
+                                msgs.append(f"Created logs on: {', '.join(created)}")
+                            if reused:
+                                msgs.append(f"Reused existing logs: {', '.join(reused)}")
+                            if msgs:
                                 try:
-                                    sql = f"CREATE MATERIALIZED VIEW LOG ON {t} \n"
-                                    if log_type == 'ROWID':
-                                        sql += "  WITH ROWID\n"
-                                    else:
-                                        sql += "  WITH PRIMARY KEY\n"
-                                    if include_new_values:
-                                        sql += "  INCLUDING NEW VALUES"
-                                    cursor.execute(sql)
-                                    conn.commit()
-                                    final_results.append((t, True, None))
-                                except Exception as e:
-                                    final_results.append((t, False, str(e)))
-                            except Exception as e:
-                                final_results.append((t, False, str(e)))
-
-                        results = final_results
-                        # summarize results and ask user whether to continue on failures
-                        created = [r[0] for r in results if r[1] is True]
-                        reused = [r[0] for r in results if r[1] == 'reused']
-                        failed = [(r[0], r[2]) for r in results if r[1] is False or (isinstance(r[1], str) and r[1] not in ("reused",))]
-                        msgs = []
-                        if created:
-                            msgs.append(f"Created logs on: {', '.join(created)}")
-                        if reused:
-                            msgs.append(f"Reused existing logs: {', '.join(reused)}")
-                        if msgs:
-                            try:
-                                messagebox.showinfo("MV Logs Created", "\n".join(msgs))
-                            except Exception:
-                                pass
-                        if failed:
-                            msg_lines = [f"{t}: {err}" for (t, err) in failed]
-                            msg = "Some MV logs could not be created:\n\n" + "\n".join(msg_lines) + "\n\nDo you want to continue creating the materialized view anyway?"
-                            try:
-                                cont = messagebox.askyesno("MV Log Creation Failed", msg)
-                            except Exception:
-                                cont = False
-                            if not cont:
-                                try:
-                                    cursor.close()
+                                    messagebox.showinfo("MV Logs Created", "\n".join(msgs))
                                 except Exception:
                                     pass
-                                return
-                    except Exception as e:
-                        logger.warning(f"Failed to create MV logs: {e}")
-                    finally:
-                        try:
-                            if cursor:
-                                cursor.close()
-                        except Exception:
-                            pass
+                            if failed:
+                                msg_lines = [f"{t}: {err}" for (t, err) in failed]
+                                msg = "Some MV logs could not be created:\n\n" + "\n".join(msg_lines) + "\n\nDo you want to continue creating the materialized view anyway?"
+                                try:
+                                    cont = messagebox.askyesno("MV Log Creation Failed", msg)
+                                except Exception:
+                                    cont = False
+                                if not cont:
+                                    try:
+                                        cursor.close()
+                                    except Exception:
+                                        pass
+                                    return
+                        except Exception as e:
+                            logger.warning(f"Failed to create MV logs: {e}")
+                        finally:
+                            try:
+                                if cursor:
+                                    cursor.close()
+                            except Exception:
+                                pass
 
-        try:
-            cursor = conn.cursor()
-
-            # Build DDL pieces
-            build_clause = f"BUILD {build_mode}"
-            refresh_clause = f"REFRESH {refresh_method} {refresh_trigger}"
-            rewrite_clause = "ENABLE QUERY REWRITE" if query_rewrite else ""
-
-            ddl = f"CREATE MATERIALIZED VIEW {mv_name} \n  {build_clause}\n  {refresh_clause}"
-            if rewrite_clause:
-                ddl += f"\n  {rewrite_clause}"
-            ddl += f"\nAS {sql_query}"
-
-            cursor.execute(ddl)
-
-            # Grant select to PUBLIC (same behavior as view loader)
-            grant_stmt = f'GRANT SELECT ON {mv_name} TO PUBLIC'
-            cursor.execute(grant_stmt)
-
-            conn.commit()
-            logger.info(f"✅ Materialized View '{mv_name}' created and granted SELECT to PUBLIC.")
-
-            messagebox.showinfo("Success", f"✅ Materialized View '{mv_name}' created successfully.")
-            builder_window.destroy()
-            if on_finish:
-                on_finish()
-        except Exception as e:
-            # Log full traceback to help debugging
-            import traceback
-            tb = traceback.format_exc()
-            logger.exception("❌ Error creating materialized view: %s", e)
-            # write trace file for easier capture
             try:
-                trace_file = Path.cwd() / "mv_debug_trace.txt"
-                with trace_file.open("a", encoding="utf-8") as f:
-                    f.write("EXCEPTION_DDL:\n")
-                    f.write(tb + "\n")
-            except Exception:
-                pass
-            # Provide helpful hint for common MV issues
-            hint = "\n\nTip: REFRESH FAST/ON COMMIT may require materialized view logs or PKs on source tables."
-            # Show dialog with concise message but include trace in log file
-            messagebox.showerror("Error", f"❌ Failed to create materialized view:\n{e}{hint}")
+                cursor = conn.cursor()
+
+                # Build DDL pieces
+                build_clause = f"BUILD {build_mode}"
+                refresh_clause = f"REFRESH {refresh_method} {refresh_trigger}"
+                rewrite_clause = "ENABLE QUERY REWRITE" if query_rewrite else ""
+
+                ddl = f"CREATE MATERIALIZED VIEW {mv_name} \n  {build_clause}\n  {refresh_clause}"
+                if rewrite_clause:
+                    ddl += f"\n  {rewrite_clause}"
+                ddl += f"\nAS {sql_query}"
+
+                cursor.execute(ddl)
+
+                # Grant select to PUBLIC (same behavior as view loader)
+                grant_stmt = f'GRANT SELECT ON {mv_name} TO PUBLIC'
+                cursor.execute(grant_stmt)
+
+                conn.commit()
+                logger.info(f"✅ Materialized View '{mv_name}' created and granted SELECT to PUBLIC.")
+
+                messagebox.showinfo("Success", f"✅ Materialized View '{mv_name}' created successfully.")
+                builder_window.destroy()
+                if on_finish:
+                    on_finish()
+            except Exception as e:
+                # Log full traceback to help debugging
+                import traceback
+                tb = traceback.format_exc()
+                logger.exception("❌ Error creating materialized view: %s", e)
+                # write trace file for easier capture
+                try:
+                    trace_file = Path.cwd() / "mv_debug_trace.txt"
+                    with trace_file.open("a", encoding="utf-8") as f:
+                        f.write("EXCEPTION_DDL:\n")
+                        f.write(tb + "\n")
+                except Exception:
+                    pass
+                # Provide helpful hint for common MV issues
+                hint = "\n\nTip: REFRESH FAST/ON COMMIT may require materialized view logs or PKs on source tables."
+                # Show dialog with concise message but include trace in log file
+                messagebox.showerror("Error", f"❌ Failed to create materialized view:\n{e}{hint}")
         finally:
             try:
                 if cursor:
