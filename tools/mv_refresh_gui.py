@@ -1,6 +1,10 @@
 import tkinter as tk
 from tkinter import messagebox
 import logging
+try:
+    import tkinter.ttk as ttk
+except Exception:
+    ttk = None
 from libs.oracle_db_connector import get_db_connection
 from libs import dwh_session
 import ctypes
@@ -109,6 +113,66 @@ def run_mv_refresh_gui(on_finish=None):
 
     sql_text = tk.Text(right, height=16)
     sql_text.pack(fill="both", expand=True, pady=(6, 0))
+
+    # Theme helper: detect launcher pane-only dark mode by checking ttk style
+    # lookups (launcher configures Pane.Treeview when toggling). We poll
+    # periodically and update the two right-side Text widgets to match.
+    last_dark = None
+    def _detect_dark_from_style():
+        try:
+            if ttk:
+                st = ttk.Style()
+                bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+                if isinstance(bg, str) and bg.strip():
+                    b = bg.strip().lower()
+                    if b in ('#000000', '#000') or 'black' in b:
+                        return True
+        except Exception:
+            pass
+        return False
+
+    def _apply_text_theme(dark):
+        try:
+            if dark:
+                info_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+                try:
+                    info_text.tag_configure('logtype', foreground='#66ccff')
+                except Exception:
+                    pass
+            else:
+                info_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
+                sql_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
+                try:
+                    info_text.tag_configure('logtype', foreground='blue')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _poll_theme():
+        nonlocal last_dark
+        try:
+            dark = _detect_dark_from_style()
+            if dark is not last_dark:
+                last_dark = dark
+                _apply_text_theme(dark)
+        except Exception:
+            pass
+        try:
+            root.after(600, _poll_theme)
+        except Exception:
+            pass
+
+    # Apply initial theme and start polling
+    try:
+        _apply_text_theme(_detect_dark_from_style())
+    except Exception:
+        pass
+    try:
+        root.after(600, _poll_theme)
+    except Exception:
+        pass
 
     btn_frame = tk.Frame(right)
     btn_frame.pack(fill="x", pady=6)
