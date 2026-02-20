@@ -115,8 +115,9 @@ def run_mv_refresh_gui(on_finish=None):
     sql_text.pack(fill="both", expand=True, pady=(6, 0))
 
     # Theme helper: detect launcher pane-only dark mode by checking ttk style
-    # lookups (launcher configures Pane.Treeview when toggling). We poll
-    # periodically and update the two right-side Text widgets to match.
+    # lookups (launcher configures Pane.Treeview when toggling). Prefer using
+    # the launcher's callback registration API when available; fall back to
+    # polling the style lookup.
     last_dark = None
     def _detect_dark_from_style():
         try:
@@ -150,27 +151,61 @@ def run_mv_refresh_gui(on_finish=None):
         except Exception:
             pass
 
-    def _poll_theme():
-        nonlocal last_dark
+    # Callback invoked by launcher when theme toggles
+    def _theme_cb(enable_dark: bool):
         try:
-            dark = _detect_dark_from_style()
-            if dark is not last_dark:
-                last_dark = dark
-                _apply_text_theme(dark)
-        except Exception:
-            pass
-        try:
-            root.after(600, _poll_theme)
+            _apply_text_theme(bool(enable_dark))
         except Exception:
             pass
 
-    # Apply initial theme and start polling
+    # Register with parent if possible; otherwise start polling as a fallback
     try:
-        _apply_text_theme(_detect_dark_from_style())
-    except Exception:
-        pass
-    try:
-        root.after(600, _poll_theme)
+        if parent and hasattr(parent, 'register_theme_callback'):
+            try:
+                parent.register_theme_callback(_theme_cb)
+            except Exception:
+                pass
+
+            # Ensure we unregister when this window is destroyed
+            def _on_destroy(event=None):
+                try:
+                    if parent and hasattr(parent, 'unregister_theme_callback'):
+                        parent.unregister_theme_callback(_theme_cb)
+                except Exception:
+                    pass
+            try:
+                root.bind('<Destroy>', _on_destroy)
+            except Exception:
+                pass
+
+            # Apply current style immediately
+            try:
+                _apply_text_theme(_detect_dark_from_style())
+            except Exception:
+                pass
+        else:
+            # Polling fallback
+            def _poll_theme():
+                nonlocal last_dark
+                try:
+                    dark = _detect_dark_from_style()
+                    if dark is not last_dark:
+                        last_dark = dark
+                        _apply_text_theme(dark)
+                except Exception:
+                    pass
+                try:
+                    root.after(600, _poll_theme)
+                except Exception:
+                    pass
+            try:
+                _apply_text_theme(_detect_dark_from_style())
+            except Exception:
+                pass
+            try:
+                root.after(600, _poll_theme)
+            except Exception:
+                pass
     except Exception:
         pass
 
