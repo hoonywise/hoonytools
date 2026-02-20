@@ -13,6 +13,7 @@ from pystray import MenuItem as item
 import json
 import random
 import webbrowser
+from configparser import ConfigParser
 
 APP_VERSION = "1.4.5"
 
@@ -1417,7 +1418,7 @@ def launch_tool_gui():
                     try:
                         # Apply popup colors consistent with entry colors
                         if getattr(self, '_dark', False):
-                            lb.config(bg='#000000', fg='#ffffff', selectbackground='#444444')
+                            lb.config(bg='#000000', fg='#ffffff', selectbackground='#2a6bd6')
                         else:
                             lb.config(bg='white', fg='black', selectbackground='#2a6bd6')
                     except Exception:
@@ -1655,7 +1656,7 @@ def launch_tool_gui():
         # Default to light log colors; only change when user enables pane dark mode
         if getattr(root, '_dark_theme', None):
             lt = getattr(root, "_dark_theme", {})
-            log_text.config(bg=lt.get("panel", "#0b0b0b"), fg=lt.get("fg", "#e6e6e6"), insertbackground=lt.get("fg", "#e6e6e6"), selectbackground=lt.get("border", "#222222"))
+            log_text.config(bg=lt.get("panel", "#0b0b0b"), fg=lt.get("fg", "#e6e6e6"), insertbackground=lt.get("fg", "#e6e6e6"), selectbackground=lt.get("selection_bg", "#2a6bd6"))
         else:
             log_text.config(bg='white', fg='black', insertbackground='black')
     except Exception:
@@ -1943,8 +1944,8 @@ def launch_tool_gui():
                 try:
                     style.configure('Treeview', background='#000000', fieldbackground='#000000', foreground='#ffffff', rowheight=18)
                     style.configure('Pane.Treeview', background='#000000', fieldbackground='#000000', foreground='#ffffff', rowheight=18)
-                    style.map('Treeview', background=[('selected', '#444444')], foreground=[('selected', '#ffffff')])
-                    style.map('Pane.Treeview', background=[('selected', '#444444')], foreground=[('selected', '#ffffff')])
+                    style.map('Treeview', background=[('selected', '#2a6bd6')], foreground=[('selected', '#ffffff')])
+                    style.map('Pane.Treeview', background=[('selected', '#2a6bd6')], foreground=[('selected', '#ffffff')])
                     # Explicitly configure heading style as well; on Windows the
                     # heading often needs its own configure call to update at runtime.
                     try:
@@ -1973,7 +1974,7 @@ def launch_tool_gui():
                 try:
                     root.option_add('*Listbox.background', '#000000')
                     root.option_add('*Listbox.foreground', '#ffffff')
-                    root.option_add('*Listbox.selectBackground', '#444444')
+                    root.option_add('*Listbox.selectBackground', '#2a6bd6')
                     pane_orig['listbox_options_set'] = True
                 except Exception:
                     pass
@@ -1985,6 +1986,10 @@ def launch_tool_gui():
                     root.option_add('*Menu.activeForeground', '#ffffff')
                     try:
                         menu_bar.config(background='#000000', foreground='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                        try:
+                            view_menu.config(selectcolor='#ffffff')
+                        except Exception:
+                            pass
                     except Exception:
                         pass
                     # If using the custom in-window menu, style its frame/menubuttons too
@@ -2006,7 +2011,7 @@ def launch_tool_gui():
                                                 pass
                                         if m:
                                             try:
-                                                m.config(bg='#000000', fg='#ffffff')
+                                                m.config(bg='#000000', fg='#ffffff', selectcolor='#ffffff')
                                             except Exception:
                                                 pass
                                     except Exception:
@@ -2069,7 +2074,7 @@ def launch_tool_gui():
                 if not pane_orig.get('log'):
                     pane_orig['log'] = (log_text.cget('bg'), log_text.cget('fg'), log_text.cget('insertbackground'))
                 try:
-                    log_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+                    log_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
                 except Exception:
                     pass
         except Exception:
@@ -2099,7 +2104,7 @@ def launch_tool_gui():
             if 'log_text' in globals():
                 if not pane_orig.get('log'):
                     pane_orig['log'] = (log_text.cget('bg'), log_text.cget('fg'), log_text.cget('insertbackground'))
-                log_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+                log_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
         except Exception:
             pass
 
@@ -2220,6 +2225,10 @@ def launch_tool_gui():
                             menu_bar.config(background='#d0d0d0', foreground='black', activebackground='#ffffff', activeforeground='black')
                         except Exception:
                             pass
+                        try:
+                            view_menu.config(selectcolor='#000000')
+                        except Exception:
+                            pass
                     except Exception:
                         pass
 
@@ -2241,7 +2250,7 @@ def launch_tool_gui():
                                                 pass
                                         if m:
                                             try:
-                                                m.config(bg='white', fg='black')
+                                                m.config(bg='white', fg='black', selectcolor='#000000')
                                             except Exception:
                                                 pass
                                     except Exception:
@@ -2376,6 +2385,25 @@ def launch_tool_gui():
     # Dark mode toggle variable (pane-only). Default off.
     dark_mode_var = tk.BooleanVar(value=False)
 
+    def _save_dark_mode_pref(is_dark):
+        """Persist dark mode preference to libs/config.ini [preferences]."""
+        try:
+            from libs.paths import PROJECT_PATH as _BASE
+            _cfg_path = _BASE / "libs" / "config.ini"
+            _cfg = ConfigParser()
+            try:
+                _cfg.read(_cfg_path)
+            except Exception:
+                _cfg = ConfigParser()
+            if not _cfg.has_section("preferences"):
+                _cfg.add_section("preferences")
+            _cfg.set("preferences", "dark_mode", str(is_dark).lower())
+            _cfg_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(_cfg_path, "w", encoding="utf-8") as f:
+                _cfg.write(f)
+        except Exception:
+            pass
+
     def _toggle_dark():
         try:
             if dark_mode_var.get():
@@ -2391,6 +2419,8 @@ def launch_tool_gui():
                         pass
             except Exception:
                 pass
+            # Persist dark mode preference
+            _save_dark_mode_pref(dark_mode_var.get())
         except Exception:
             pass
 
@@ -2492,11 +2522,12 @@ def launch_tool_gui():
                 if itype == 'command':
                     m.add_command(label=ilabel, command=icmd)
                 elif itype == 'check':
-                    # icon: pass variable as part of icmd tuple if provided
+                    # icmd can be callable or tuple (command, variable)
                     var = None
+                    cmd = icmd
                     if isinstance(icmd, tuple) and len(icmd) > 1:
-                        var = icmd[1]
-                    m.add_checkbutton(label=ilabel, command=(icmd if callable(icmd) else None), variable=var)
+                        cmd, var = icmd[0], icmd[1]
+                    m.add_checkbutton(label=ilabel, command=(cmd if callable(cmd) else None), variable=var)
                 elif itype == 'cascade':
                     m.add_cascade(label=ilabel, menu=icmd)
             # show popup on click
@@ -2507,7 +2538,7 @@ def launch_tool_gui():
         # Build View and Help menus using existing menu definitions
         # View: copy items from view_menu
         view_items = [
-            ('command', 'Dark Mode', lambda: view_menu.invoke(0))
+            ('check', 'Dark Mode', (_toggle_dark, dark_mode_var))
         ]
         # Help: use existing functions
         help_items = [
@@ -2584,7 +2615,19 @@ def launch_tool_gui():
     # menu_bar structure around for compatibility but do not reattach it as
     # the root menubar (native menubars ignore styling on some platforms).
     tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#b0b0b0")).pack(fill="x")
-        
+
+    # Restore dark mode preference from config.ini on startup
+    try:
+        from libs.paths import PROJECT_PATH as _BASE
+        _cfg_path = _BASE / "libs" / "config.ini"
+        _cfg = ConfigParser()
+        _cfg.read(_cfg_path)
+        if _cfg.getboolean("preferences", "dark_mode", fallback=False):
+            dark_mode_var.set(True)
+            _toggle_dark()
+    except Exception:
+        pass
+
     root.mainloop()
 
 TOOLS = {    

@@ -1036,7 +1036,7 @@ def run_sql_mv_loader(parent=None, on_finish=None):
         # light so only the content panes change.
         try:
             if dark:
-                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
                 try:
                     mv_name_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
                 except Exception:
@@ -1149,7 +1149,7 @@ def run_sql_mv_loader(parent=None, on_finish=None):
     # Create SQL text with initial theme to avoid visible white -> black flip
     try:
         if _initial_dark:
-            sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+            sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
         else:
             sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
     except Exception:

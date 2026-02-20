@@ -45,7 +45,7 @@ def run_sql_view_loader(parent=None, on_finish=None):
         # or other chrome — the launcher wants pane-only dark mode.
         try:
             if dark:
-                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
             else:
                 sql_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
         except Exception:
@@ -229,7 +229,7 @@ def run_sql_view_loader(parent=None, on_finish=None):
     # Create SQL text with initial theme to avoid visible white -> black flip
     try:
         if _initial_dark:
-            sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10), bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+            sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10), bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
         else:
             sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10), bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
     except Exception:
