@@ -1236,6 +1236,58 @@ def launch_tool_gui():
     tool_menu.pack(side="left")
     tool_menu.current(0)
 
+    # Helper to recreate the toolbar combobox under a specified style so
+    # theme changes are honored across backends (some ttk widgets only
+    # pick up style at creation time).
+    def _recreate_tool_menu(use_pane_style=False):
+        global tool_menu, selected_tool
+        parent = toolbar_inner
+        values = list(TOOLS.keys())
+        # attempt to preserve current selection index/value
+        cur_idx = None
+        try:
+            cur_idx = tool_menu.current()
+        except Exception:
+            try:
+                val = selected_tool.get()
+                cur_idx = values.index(val) if val in values else 0
+            except Exception:
+                cur_idx = 0
+
+        try:
+            tool_menu.destroy()
+        except Exception:
+            pass
+
+        style_name = 'Pane.TCombobox' if use_pane_style else 'TCombobox'
+        try:
+            tool_menu = ttk.Combobox(parent, textvariable=selected_tool, values=values, font=("Arial", 11), state="readonly", width=22, style=style_name)
+            tool_menu.pack(side="left")
+            try:
+                if cur_idx is not None and 0 <= cur_idx < len(values):
+                    tool_menu.current(cur_idx)
+                else:
+                    tool_menu.current(0)
+            except Exception:
+                try:
+                    tool_menu.current(0)
+                except Exception:
+                    pass
+        except Exception:
+            # fallback: create without explicit style
+            try:
+                tool_menu = ttk.Combobox(parent, textvariable=selected_tool, values=values, font=("Arial", 11), state="readonly", width=22)
+                tool_menu.pack(side="left")
+                try:
+                    tool_menu.current(cur_idx or 0)
+                except Exception:
+                    try:
+                        tool_menu.current(0)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
     btn_frame = tk.Frame(toolbar_inner)
     btn_frame.pack(side="left", padx=12)
 
@@ -1517,6 +1569,15 @@ def launch_tool_gui():
                 pane_orig['dwh_item_tags'] = tags
         except Exception:
             pass
+        # Save current combobox style so we can restore it later
+        try:
+            if 'tool_menu' in globals() and not pane_orig.get('tool_menu_style'):
+                try:
+                    pane_orig['tool_menu_style'] = tool_menu.cget('style')
+                except Exception:
+                    pane_orig['tool_menu_style'] = None
+        except Exception:
+            pass
 
         # Save master backgrounds
         try:
@@ -1554,6 +1615,26 @@ def launch_tool_gui():
                             pass
                 except Exception:
                     pass
+                # Configure a pane-specific Combobox style and apply it to the toolbar combobox
+                try:
+                    style.configure('Pane.TCombobox', fieldbackground='#000000', background='#000000', foreground='#ffffff')
+                    # map readonly state colors explicitly
+                    try:
+                        # Map common states so the combobox stays dark when focused
+                        style.map('Pane.TCombobox', fieldbackground=[('readonly', '#000000'), ('focus', '#000000')], foreground=[('readonly', '#ffffff'), ('focus', '#ffffff')])
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                # Recreate the combobox under Pane.TCombobox so backends that
+                # only honor style at creation time will show the dark colors.
+                try:
+                    _recreate_tool_menu(use_pane_style=True)
+                except Exception:
+                    try:
+                        tool_menu.configure(style='Pane.TCombobox')
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -1674,6 +1755,48 @@ def launch_tool_gui():
                             style.configure('Pane.Treeview', background=op.get('background') or '', fieldbackground=op.get('fieldbackground') or '', foreground=op.get('foreground') or '')
                         except Exception:
                             pass
+                    # Restore combobox style if we saved it
+                    try:
+                        tms = po.get('tool_menu_style')
+                        if tms and 'tool_menu' in globals():
+                            try:
+                                # Recreate under the saved style to ensure backend honors it
+                                _recreate_tool_menu(use_pane_style=(tms == 'Pane.TCombobox'))
+                            except Exception:
+                                try:
+                                    tool_menu.configure(style=tms)
+                                except Exception:
+                                    pass
+                        else:
+                            # ensure default (light) combobox style and recreate
+                            try:
+                                style.configure('TCombobox', fieldbackground='white', background='white', foreground='black')
+                                try:
+                                    _recreate_tool_menu(use_pane_style=False)
+                                    try:
+                                        # Move focus away from the combobox to avoid the
+                                        # focused color state remaining visible on some backends.
+                                        try:
+                                            if 'run_btn' in globals() and run_btn:
+                                                run_btn.focus_set()
+                                            else:
+                                                root.focus_force()
+                                        except Exception:
+                                            try:
+                                                root.focus_force()
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+                                except Exception:
+                                    try:
+                                        tool_menu.configure(style='TCombobox')
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                     # Restore heading lookups if available
                     try:
                         oh = po.get('orig_heading_lookup') or {}
