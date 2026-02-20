@@ -373,8 +373,8 @@ def launch_tool_gui():
     # Create the main Tk root directly and keep it hidden while login dialog appears.
     root = tk.Tk()
     root.withdraw()
-    # Ensure closing the window quits the app
-    root.protocol("WM_DELETE_WINDOW", root.quit)
+    # NOTE: Do not bind WM_DELETE_WINDOW here because safe_exit (defined later)
+    # performs full cleanup. Bind the protocol to safe_exit after it's defined.
 
     # Set Windows AppUserModelID for taskbar icon
     if sys.platform.startswith("win"):
@@ -811,10 +811,27 @@ def launch_tool_gui():
             root.destroy()
         except Exception:
             pass
-        # ❌ DO NOT destroy hidden_root — let the process exit handle it
+        # Best-effort: if a hidden_root exists, destroy it to avoid leaving
+        # an orphaned Tk root that could interfere with future WM events.
+        try:
+            if 'hidden_root' in globals() and getattr(hidden_root, 'winfo_exists', lambda: False)():
+                try:
+                    hidden_root.destroy()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # ❌ DO NOT rely on hidden_root being present in other modules — prefer
+        # explicit lifecycle management. Exit the process now.
         sys.exit()
 
     tk.Button(btn_frame, text="Exit", width=10, command=safe_exit).pack(side="left", padx=7)
+
+    # Ensure the window manager close button performs the same cleanup
+    try:
+        root.protocol("WM_DELETE_WINDOW", safe_exit)
+    except Exception:
+        pass
 
     # Divider between toolbar and content
     tk.Frame(right_pane, height=1, bg="#ccc").pack(fill="x", padx=10, pady=(8, 12))
