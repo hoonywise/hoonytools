@@ -1507,11 +1507,11 @@ def launch_tool_gui():
     # --- Load button handlers ---
     def launch_load_user():
         from loaders.excel_csv_loader import load_files_gui
-        load_files_gui(parent=root, schema_choice='user')
+        load_files_gui(parent=root, schema_choice='user', on_status_change=_update_status_light)
 
     def launch_load_dwh():
         from loaders.excel_csv_loader import load_files_gui
-        load_files_gui(parent=root, schema_choice='dwh')
+        load_files_gui(parent=root, schema_choice='dwh', on_status_change=_update_status_light)
 
     user_load_btn.config(command=launch_load_user)
     dwh_load_btn.config(command=launch_load_dwh)
@@ -1535,11 +1535,13 @@ def launch_tool_gui():
 
     # Status callback function - uses global status_light
     def _update_status_light(status):
-        """Update the status light indicator. Called during drop operations."""
+        """Update the status light indicator. Called during drop/load operations."""
         try:
             global status_light
             if status == 'busy':
                 status_light.config(text="🔴")
+            elif status == 'aborting':
+                status_light.config(text="⏳")  # amber/yellow
             else:  # idle
                 status_light.config(text="🟢")
             # Force UI update during synchronous operations
