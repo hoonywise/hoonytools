@@ -84,6 +84,25 @@ def run_mv_refresh_gui(on_finish=None):
         pass
 
     root.geometry("1200x650")
+    # If this dialog was launched from the main launcher, make it modal so
+    # the main GUI cannot be interacted with while the MV Manager is open.
+    grabbed = False
+    try:
+        if parent is not None:
+            try:
+                root.transient(parent)
+                root.update_idletasks()
+                root.deiconify()
+                root.lift()
+            except Exception:
+                pass
+            try:
+                root.grab_set()
+                grabbed = True
+            except Exception:
+                grabbed = False
+    except Exception:
+        pass
 
     left = tk.Frame(root)
     left.pack(side="left", fill="y", padx=8, pady=8)
@@ -876,6 +895,16 @@ def run_mv_refresh_gui(on_finish=None):
         except Exception:
             logger.debug("Could not import dwh_session cleanup", exc_info=True)
 
+        # Release modal grab if we set it
+        try:
+            if grabbed:
+                try:
+                    root.grab_release()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         try:
             root.destroy()
         except Exception:
@@ -890,7 +919,26 @@ def run_mv_refresh_gui(on_finish=None):
 
     root.protocol("WM_DELETE_WINDOW", on_close)
     try:
-        root.mainloop()
+        # If a parent was provided, block until this dialog is closed so the
+        # caller (launcher) cannot be interacted with — matching modal behavior
+        # of other tools. Otherwise run a normal mainloop for standalone use.
+        if parent is not None:
+            try:
+                root.wait_window()
+            except Exception:
+                # ignore errors from wait_window
+                pass
+        else:
+            try:
+                root.mainloop()
+            except KeyboardInterrupt:
+                # If the process is force-terminated or interrupted while the GUI is open,
+                # attempt a graceful shutdown to avoid printing a traceback to the user.
+                try:
+                    logger.info("mv_refresh_gui interrupted by KeyboardInterrupt; closing window")
+                    on_close()
+                except Exception:
+                    pass
     except KeyboardInterrupt:
         # If the process is force-terminated or interrupted while the GUI is open,
         # attempt a graceful shutdown to avoid printing a traceback to the user.
