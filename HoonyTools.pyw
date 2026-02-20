@@ -1263,6 +1263,19 @@ def launch_tool_gui():
         try:
             tool_menu = ttk.Combobox(parent, textvariable=selected_tool, values=values, font=("Arial", 11), state="readonly", width=22, style=style_name)
             tool_menu.pack(side="left")
+            # Bind to attempts to open the popup so we can style the native
+            # popdown Listbox (best-effort; backend dependent).
+            try:
+                # Record known toplevels before popup appears so we can detect
+                # newly created popup windows and style them specifically.
+                try:
+                    root._known_combobox_popups = set(str(w) for w in root.winfo_children() if isinstance(w, tk.Toplevel))
+                except Exception:
+                    root._known_combobox_popups = set()
+                tool_menu.bind('<Button-1>', lambda e: root.after(80, lambda: _style_combobox_popup(tool_menu, dark_mode_var.get())))
+                tool_menu.bind('<Key-Down>', lambda e: root.after(80, lambda: _style_combobox_popup(tool_menu, dark_mode_var.get())))
+            except Exception:
+                pass
             try:
                 if cur_idx is not None and 0 <= cur_idx < len(values):
                     tool_menu.current(cur_idx)
@@ -1278,6 +1291,15 @@ def launch_tool_gui():
             try:
                 tool_menu = ttk.Combobox(parent, textvariable=selected_tool, values=values, font=("Arial", 11), state="readonly", width=22)
                 tool_menu.pack(side="left")
+                try:
+                    try:
+                        root._known_combobox_popups = set(str(w) for w in root.winfo_children() if isinstance(w, tk.Toplevel))
+                    except Exception:
+                        root._known_combobox_popups = set()
+                    tool_menu.bind('<Button-1>', lambda e: root.after(80, lambda: _style_combobox_popup(tool_menu, dark_mode_var.get())))
+                    tool_menu.bind('<Key-Down>', lambda e: root.after(80, lambda: _style_combobox_popup(tool_menu, dark_mode_var.get())))
+                except Exception:
+                    pass
                 try:
                     tool_menu.current(cur_idx or 0)
                 except Exception:
@@ -1624,6 +1646,15 @@ def launch_tool_gui():
                         style.map('Pane.TCombobox', fieldbackground=[('readonly', '#000000'), ('focus', '#000000')], foreground=[('readonly', '#ffffff'), ('focus', '#ffffff')])
                     except Exception:
                         pass
+                except Exception:
+                    pass
+                # Best-effort: set Listbox option defaults so native popups (which
+                # sometimes use Listbox widgets) inherit dark colors.
+                try:
+                    root.option_add('*Listbox.background', '#000000')
+                    root.option_add('*Listbox.foreground', '#ffffff')
+                    root.option_add('*Listbox.selectBackground', '#444444')
+                    pane_orig['listbox_options_set'] = True
                 except Exception:
                     pass
                 # Recreate the combobox under Pane.TCombobox so backends that
@@ -1974,6 +2005,35 @@ def launch_tool_gui():
                 pass
 
     view_menu.add_command(label='Debug Panes', command=_debug_panes)
+
+    # Best-effort: style the combobox popup Listbox used by some backends
+    def _style_combobox_popup(tv, dark):
+        """Try to find the popup Listbox/Toplevel for a ttk.Combobox and
+        configure its background/foreground. This is backend-dependent and
+        best-effort — it attempts common window naming/conventions.
+        """
+        try:
+            # The popup is often a Toplevel child of the root with a widget
+            # name like 'tk_popup' or a Listbox child. We search recently
+            # created toplevels and look for Listbox children.
+            for w in root.winfo_children():
+                try:
+                    # Skip regular frames
+                    if isinstance(w, tk.Toplevel):
+                        for ch in w.winfo_children():
+                            try:
+                                # If there's a Listbox inside, style it
+                                if isinstance(ch, tk.Listbox):
+                                    if dark:
+                                        ch.config(bg='#000000', fg='#ffffff', selectbackground='#444444')
+                                    else:
+                                        ch.config(bg='white', fg='black', selectbackground='#2a6bd6')
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     help_menu = tk.Menu(menu_bar, tearoff=0)
     
