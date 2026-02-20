@@ -263,21 +263,39 @@ def main(parent=None):
     # at creation time and adjusts the entry accordingly.
     def _apply_entry_theme():
         try:
-            bg = win.cget('bg')
             dark = False
-            if isinstance(bg, str):
-                b = bg.strip()
-                if b.startswith('#') and len(b) >= 7:
-                    try:
-                        r = int(b[1:3], 16)
-                        g = int(b[3:5], 16)
-                        bl = int(b[5:7], 16)
-                        lum = 0.2126 * r + 0.7152 * g + 0.0722 * bl
-                        dark = lum < 128
-                    except Exception:
-                        dark = b.lower() in ('#000000', 'black')
-                else:
-                    dark = b.lower() in ('black',)
+            # Prefer checking the ttk style lookup (launcher toggles this).
+            try:
+                if ttk:
+                    st = ttk.Style()
+                    sbg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+                    if isinstance(sbg, str) and sbg.strip():
+                        sb = sbg.strip().lower()
+                        if sb in ('#000000', '#000') or 'black' in sb:
+                            dark = True
+            except Exception:
+                dark = False
+
+            # Fallback: inspect window bg only if style lookup wasn't decisive
+            if not dark:
+                try:
+                    bg = win.cget('bg')
+                    if isinstance(bg, str):
+                        b = bg.strip()
+                        if b.startswith('#') and len(b) >= 7:
+                            try:
+                                r = int(b[1:3], 16)
+                                g = int(b[3:5], 16)
+                                bl = int(b[5:7], 16)
+                                lum = 0.2126 * r + 0.7152 * g + 0.0722 * bl
+                                dark = lum < 128
+                            except Exception:
+                                dark = b.lower() in ('#000000', 'black')
+                        else:
+                            dark = b.lower() in ('black',)
+                except Exception:
+                    pass
+
             if dark:
                 try:
                     cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
