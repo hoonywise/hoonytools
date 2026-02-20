@@ -1969,6 +1969,46 @@ def launch_tool_gui():
                     pane_orig['listbox_options_set'] = True
                 except Exception:
                     pass
+                # Style the top menu bar for pane-only dark mode
+                try:
+                    root.option_add('*Menu.background', '#000000')
+                    root.option_add('*Menu.foreground', '#ffffff')
+                    root.option_add('*Menu.activeBackground', '#222222')
+                    root.option_add('*Menu.activeForeground', '#ffffff')
+                    try:
+                        menu_bar.config(background='#000000', foreground='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                    except Exception:
+                        pass
+                    # If using the custom in-window menu, style its frame/menubuttons too
+                    try:
+                        if 'custom_menu_frame' in globals() and getattr(custom_menu_frame, 'winfo_exists', lambda: False)():
+                            try:
+                                custom_menu_frame.config(bg='#000000')
+                            except Exception:
+                                pass
+                            try:
+                                # custom_view/custom_help are tuples: (mb, menu)
+                                for t in ('custom_view', 'custom_help'):
+                                    try:
+                                        mb, m = globals().get(t, (None, None))
+                                        if mb:
+                                            try:
+                                                mb.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                                            except Exception:
+                                                pass
+                                        if m:
+                                            try:
+                                                m.config(bg='#000000', fg='#ffffff')
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
                 # Recreate the combobox under Pane.TCombobox so backends that
                 # only honor style at creation time will show the dark colors.
                 try:
@@ -2162,6 +2202,46 @@ def launch_tool_gui():
                         root.option_add('*Listbox.selectBackground', '#2a6bd6')
                     except Exception:
                         pass
+                    # Restore menu bar to light appearance
+                    try:
+                        root.option_add('*Menu.background', '#d0d0d0')
+                        root.option_add('*Menu.foreground', 'black')
+                        root.option_add('*Menu.activeBackground', '#ffffff')
+                        root.option_add('*Menu.activeForeground', 'black')
+                        try:
+                            menu_bar.config(background='#d0d0d0', foreground='black', activebackground='#ffffff', activeforeground='black')
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
+                    # Restore custom in-window menu if present
+                    try:
+                        if 'custom_menu_frame' in globals() and getattr(custom_menu_frame, 'winfo_exists', lambda: False)():
+                            try:
+                                custom_menu_frame.config(bg=root.cget('bg'))
+                            except Exception:
+                                pass
+                            try:
+                                for t in ('custom_view', 'custom_help'):
+                                    try:
+                                        mb, m = globals().get(t, (None, None))
+                                        if mb:
+                                            try:
+                                                mb.config(bg=root.cget('bg'), fg='black', activebackground='#ececec', activeforeground='black')
+                                            except Exception:
+                                                pass
+                                        if m:
+                                            try:
+                                                m.config(bg='white', fg='black')
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                     # Restore heading lookups if available
                     try:
                         oh = po.get('orig_heading_lookup') or {}
@@ -2339,6 +2419,97 @@ def launch_tool_gui():
                 pass
 
     view_menu.add_command(label='Debug Panes', command=_debug_panes)
+    
+    # Replace native menu bar with a custom in-window menu bar composed of
+    # Menubuttons inside a Frame so it can be reliably styled per-pane.
+    # This is safer than relying on platform-drawn native menu bars which
+    # frequently ignore Tk color configuration on Windows.
+    def _create_custom_menu_bar(parent):
+        # Container frame sits at the top of the window (below the verse row)
+        f = tk.Frame(parent)
+
+        # Helper to create a Menubutton + Menu pair
+        def _show_menu(btn, menu):
+            try:
+                x = btn.winfo_rootx()
+                y = btn.winfo_rooty() + btn.winfo_height()
+                # For Tk >= 8.6 use tk_popup
+                try:
+                    menu.tk_popup(x, y)
+                except Exception:
+                    menu.post(x, y)
+            except Exception:
+                pass
+
+        def _mb(label_text, menu_items):
+            # Use a Button instead of Menubutton for more reliable styling
+            mb = tk.Button(f, text=label_text, relief='flat', padx=6, pady=2)
+            m = tk.Menu(f, tearoff=0)
+            for item in menu_items:
+                # item is a tuple: (type, label, command)
+                itype, ilabel, icmd = item
+                if itype == 'command':
+                    m.add_command(label=ilabel, command=icmd)
+                elif itype == 'check':
+                    # icon: pass variable as part of icmd tuple if provided
+                    var = None
+                    if isinstance(icmd, tuple) and len(icmd) > 1:
+                        var = icmd[1]
+                    m.add_checkbutton(label=ilabel, command=(icmd if callable(icmd) else None), variable=var)
+                elif itype == 'cascade':
+                    m.add_cascade(label=ilabel, menu=icmd)
+            # show popup on click
+            mb.config(command=lambda b=mb, mm=m: _show_menu(b, mm))
+            mb.pack(side='left', padx=(6, 2))
+            return mb, m
+
+        # Build View and Help menus using existing menu definitions
+        # View: copy items from view_menu
+        view_items = [
+            ('command', 'Dark Mode', lambda: view_menu.invoke(0)),
+            ('command', 'Debug Panes', _debug_panes)
+        ]
+        # Help: use existing functions
+        help_items = [
+            ('command', 'About', show_about_popup),
+            ('command', 'Check for Updates', lambda: webbrowser.open("https://github.com/hoonywise/HoonyTools/releases"))
+        ]
+
+        # Create menubuttons
+        mb_view, m_view = _mb('View', view_items)
+        mb_help, m_help = _mb('Help', help_items)
+
+        return f, (mb_view, m_view), (mb_help, m_help)
+
+    # Create the custom in-window menu bar and hide the native one
+    try:
+        # Create custom bar and then unset native menubar so it doesn't show
+        custom_menu_frame, custom_view, custom_help = _create_custom_menu_bar(root)
+        # Expose references globally so nested theme functions can style them
+        try:
+            globals()['custom_menu_frame'] = custom_menu_frame
+            globals()['custom_view'] = custom_view
+            globals()['custom_help'] = custom_help
+        except Exception:
+            pass
+        # Pack the custom menu before the verse row so it appears at the top
+        try:
+            custom_menu_frame.pack(fill='x', side='top', before=verse_frame)
+        except Exception:
+            try:
+                custom_menu_frame.pack(fill='x', side='top')
+            except Exception:
+                pass
+        try:
+            root.config(menu=None)
+        except Exception:
+            pass
+    except Exception:
+        # Fallback: keep the native menu if anything fails
+        try:
+            root.config(menu=menu_bar)
+        except Exception:
+            pass
 
     # Best-effort: style the combobox popup Listbox used by some backends
     def _style_combobox_popup(tv, dark):
@@ -2369,15 +2540,9 @@ def launch_tool_gui():
         except Exception:
             pass
 
-    help_menu = tk.Menu(menu_bar, tearoff=0)
-    
-    help_menu.add_command(label="About", command=show_about_popup)
-    help_menu.add_command(
-        label="Check for Updates",
-        command=lambda: webbrowser.open("https://github.com/hoonywise/HoonyTools/releases")
-    )
-    menu_bar.add_cascade(label="Help", menu=help_menu, underline=0)
-    root.config(menu=menu_bar)    
+    # We replaced the native menu with a custom in-window menu. Keep the
+    # menu_bar structure around for compatibility but do not reattach it as
+    # the root menubar (native menubars ignore styling on some platforms).
     tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#b0b0b0")).pack(fill="x")
         
     root.mainloop()
