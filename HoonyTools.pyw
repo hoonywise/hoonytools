@@ -508,25 +508,34 @@ def launch_tool_gui():
         frame = tk.LabelFrame(parent, text=title, padx=6, pady=6)
         # allow frames to share available vertical space equally
         frame.pack(fill="both", pady=(0, 8), expand=True)
+
+        # Top bar inside the LabelFrame: Refresh button near the left (next to title)
+        # Add left padding so the button is visually separated from the frame border
+        top_bar = tk.Frame(frame)
+        top_bar.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
+        refresh_btn = tk.Button(top_bar, text="Refresh", width=10)
+        refresh_btn.pack(side="left", padx=(0, 8))
+        status_lbl = tk.Label(top_bar, text="", font=("Arial", 8), fg="#444444")
+        status_lbl.pack(side="left")
+
+        # Content area (treeview + scrollbar) sits below the top bar and expands
+        content_area = tk.Frame(frame)
+        content_area.pack(fill="both", expand=True)
+
         # Lock treeview width to avoid auto-resize when labels change
         # Add a third column `pk` to show primary key info (comma-separated columns or empty)
-        tv = ttk.Treeview(frame, columns=("name", "type", "pk"), show="headings")
+        tv = ttk.Treeview(content_area, columns=("name", "type", "pk"), show="headings")
         tv.heading("name", text="Name")
         tv.heading("type", text="Type")
         tv.heading("pk", text="PK")
         tv.column("name", width=160, anchor="w", stretch=False)
         tv.column("type", width=120, anchor="center", stretch=False)
         tv.column("pk", width=160, anchor="center", stretch=False)
-        vs = tk.Scrollbar(frame, orient="vertical", command=tv.yview)
+        vs = tk.Scrollbar(content_area, orient="vertical", command=tv.yview)
         tv.configure(yscrollcommand=vs.set)
         tv.pack(side="left", fill="both", expand=True)
         vs.pack(side="right", fill="y")
-        btn_frame_local = tk.Frame(frame)
-        btn_frame_local.pack(fill="x", pady=(6, 0))
-        refresh_btn = tk.Button(btn_frame_local, text="Refresh", width=10)
-        refresh_btn.pack(side="left")
-        status_lbl = tk.Label(btn_frame_local, text="", font=("Arial", 8), fg="#444444")
-        status_lbl.pack(side="left", padx=(6, 0))
+
         return frame, tv, refresh_btn, status_lbl
 
     # Create the two object panes in the left_pane (stacked, share vertical space)
