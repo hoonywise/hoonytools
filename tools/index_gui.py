@@ -38,12 +38,64 @@ except Exception:
 
 
 def center_window(window, width, height):
+    """Center *window* on the monitor that contains it (or the cursor)."""
+    try:
+        window.geometry(f"{width}x{height}")
+    except Exception:
+        pass
+
     window.update_idletasks()
+    try:
+        window.update()
+    except Exception:
+        pass
+
+    w = window.winfo_width() or width
+    h = window.winfo_height() or height
+
+    # Try DPI-aware, multi-monitor centering on Windows
+    try:
+        import sys
+        if sys.platform.startswith("win"):
+            import ctypes
+
+            class POINT(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+            class RECT(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                            ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", RECT),
+                            ("rcWork", RECT), ("dwFlags", ctypes.c_ulong)]
+
+            user32 = ctypes.windll.user32
+            pt = POINT()
+            if user32.GetCursorPos(ctypes.byref(pt)):
+                MONITOR_DEFAULTTONEAREST = 2
+                hmon = user32.MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST)
+                if hmon:
+                    mi = MONITORINFO()
+                    mi.cbSize = ctypes.sizeof(MONITORINFO)
+                    if user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+                        left = mi.rcWork.left
+                        top = mi.rcWork.top
+                        mon_w = mi.rcWork.right - mi.rcWork.left
+                        mon_h = mi.rcWork.bottom - mi.rcWork.top
+                        x = int(left + (mon_w - w) / 2)
+                        y = int(top + (mon_h - h) / 2)
+                        window.geometry(f"{w}x{h}+{x}+{y}")
+                        return
+    except Exception:
+        pass
+
+    # Fallback: center on primary screen
     sw = window.winfo_screenwidth()
     sh = window.winfo_screenheight()
-    x = int((sw - width) / 2)
-    y = int((sh - height) / 2)
-    window.geometry(f"{width}x{height}+{x}+{y}")
+    x = int((sw - w) / 2)
+    y = int((sh - h) / 2)
+    window.geometry(f"{w}x{h}+{x}+{y}")
 
 
 def _quote_ident(name):
@@ -51,31 +103,28 @@ def _quote_ident(name):
     return f'"{name}"'
 
 
-def _sanitize_index_name(name: str) -> str:
-    """Sanitize and truncate an index name to Oracle's 30-char limit."""
+def _sanitize_index_name(name: str, max_len: int = 128) -> str:
+    """Sanitize and truncate an index name to Oracle's identifier limit.
+
+    Oracle 12.2+ supports up to 128-character identifiers.
+    Older versions use a 30-character limit.  Default to 128; callers
+    targeting older databases can pass max_len=30.
+    """
     cand = re.sub(r'[^A-Za-z0-9]', '_', name).upper()
-    return cand[:30]
+    return cand[:max_len]
 
 
 def _ensure_dialog_parent(parent):
-    """Return a Toplevel attached to parent, or a new Tk root when None."""
+    """Return a Toplevel attached to parent, or a new Tk root when None.
+
+    The window is created but NOT yet centered — the caller should call
+    ``center_window`` after building the dialog contents so the geometry
+    request reflects the final size.
+    """
     if parent:
         win = Toplevel(parent)
         try:
             win.transient(parent)
-            win.update_idletasks()
-            win.deiconify()
-            win.lift()
-            win.focus_force()
-            try:
-                win.attributes('-topmost', True)
-                win.after(150, lambda: win.attributes('-topmost', False))
-            except Exception:
-                pass
-            for _ in range(60):
-                win.update()
-                if win.winfo_ismapped():
-                    break
         except Exception:
             pass
         return win
@@ -121,17 +170,6 @@ def main(parent=None, schema=None, object_name=None, object_type=None):
     # --- Build the dialog ---
     win = _ensure_dialog_parent(parent)
     win.title(f'Index Manager - {owner}.{object_name}')
-    center_window(win, 900, 560)
-
-    try:
-        try:
-            win.attributes('-topmost', True)
-            win.after(200, lambda: win.attributes('-topmost', False))
-        except Exception:
-            pass
-        win.grab_set()
-    except Exception:
-        logger.exception('Failed to grab_set index main window')
 
     # === Main layout: left (columns) + right (existing indexes) ===
     main_frame = tk.Frame(win)
@@ -205,9 +243,13 @@ def main(parent=None, schema=None, object_name=None, object_type=None):
     name_entry = Entry(name_frame, textvariable=index_name_var, width=40)
     name_entry.pack(side=LEFT)
 
-    # Info label about individual mode
+    # Info label — shows mode hint or key size estimate
     info_label = Label(name_frame, text='(auto-generated per column in Individual mode)', font=("Arial", 8), fg='#666666')
     info_label.pack(side=LEFT, padx=(8, 0))
+
+    # Key size label — shows estimated total bytes for composite index
+    key_size_label = Label(ctrl_frame, text='', font=("Arial", 8), fg='#666666')
+    key_size_label.pack(fill='x', pady=(0, 4))
 
     # --- Theme support ---
     def _apply_entry_theme(dark=None):
@@ -264,22 +306,42 @@ def main(parent=None, schema=None, object_name=None, object_type=None):
     except Exception:
         pass
 
+    # --- Column metadata cache (name -> data_length in bytes) ---
+    col_data_lengths = {}  # populated by load_columns()
+
+    # Query the database block size once to determine the max key length
+    db_max_key_bytes = 6398  # conservative default for 8 KB block size
+    try:
+        _param_cur = conn.cursor()
+        _param_cur.execute("SELECT value FROM v$parameter WHERE name = 'db_block_size'")
+        _row = _param_cur.fetchone()
+        if _row:
+            _block_size = int(_row[0])
+            # Oracle reserves some overhead per block; max key ~ 75% of block size
+            db_max_key_bytes = int(_block_size * 0.75) - 6
+        _param_cur.close()
+    except Exception:
+        # v$parameter may not be accessible; keep the default
+        pass
+
     # --- Data loading functions ---
     def load_columns():
         """Load columns for the selected object into the column list."""
         col_list.delete(0, END)
+        col_data_lengths.clear()
         cur = conn.cursor()
         try:
             cur.execute('''
-                SELECT column_name, data_type, nullable
+                SELECT column_name, data_type, data_length, nullable
                 FROM all_tab_columns
                 WHERE owner = :own AND table_name = :tbl
                 ORDER BY column_id
             ''', [owner, object_name])
             rows = cur.fetchall()
-            for col_name, data_type, nullable in rows:
+            for col_name, data_type, data_length, nullable in rows:
+                col_data_lengths[col_name] = int(data_length) if data_length else 0
                 nullable_str = ' (NULLABLE)' if nullable == 'Y' else ''
-                display = f"{col_name}  [{data_type}]{nullable_str}"
+                display = f"{col_name}  [{data_type}({data_length})]{nullable_str}"
                 col_list.insert(END, display)
         except Exception as e:
             logger.exception('Failed to list columns: %s', e)
@@ -345,16 +407,29 @@ def main(parent=None, schema=None, object_name=None, object_type=None):
         cols = _get_selected_columns()
         if not cols:
             index_name_var.set('')
+            key_size_label.config(text='')
             return
+
+        # Calculate total key size for the selection
+        total_bytes = sum(col_data_lengths.get(c, 0) for c in cols)
 
         if mode_var.get() == 0:
             # Individual mode: show hint
             index_name_var.set(f'(auto: {object_name}_<COL>_IDX)')
+            key_size_label.config(text=f'{len(cols)} column(s) selected')
         else:
-            # Composite mode: generate name
+            # Composite mode: generate name and show key size
             col_part = '_'.join(cols)
             name = _sanitize_index_name(f'{object_name}_{col_part}_IDX')
             index_name_var.set(name)
+            if total_bytes > db_max_key_bytes:
+                key_size_label.config(
+                    text=f'Estimated key size: {total_bytes:,} bytes  --  EXCEEDS max ({db_max_key_bytes:,} bytes)',
+                    fg='red')
+            else:
+                key_size_label.config(
+                    text=f'Estimated key size: {total_bytes:,} / {db_max_key_bytes:,} bytes',
+                    fg='#666666')
 
     # Bind selection change to update index name
     col_list.bind('<<ListboxSelect>>', _update_index_name)
@@ -395,6 +470,7 @@ def main(parent=None, schema=None, object_name=None, object_type=None):
                         success_count += 1
                     except Exception as e:
                         err_str = str(e)
+                        logger.warning(f'Index creation failed. SQL: {sql}\nError: {err_str}')
                         if 'ORA-01408' in err_str:
                             logger.info(f'Index on same column(s) already exists for {idx_name}. Skipping.')
                             skip_count += 1
@@ -402,10 +478,13 @@ def main(parent=None, schema=None, object_name=None, object_type=None):
                             logger.info(f'Index name {idx_name} already exists. Skipping.')
                             skip_count += 1
                         elif 'ORA-01450' in err_str:
-                            logger.warning(f'Cannot create index {idx_name} - max key length exceeded.')
+                            logger.warning(f'Cannot create index {idx_name} - max key length exceeded: {err_str}')
+                            fail_count += 1
+                        elif 'ORA-00972' in err_str:
+                            logger.warning(f'Index name {idx_name} too long for this database: {err_str}')
                             fail_count += 1
                         else:
-                            logger.warning(f'Failed to create index {idx_name}: {e}')
+                            logger.warning(f'Failed to create index {idx_name}: {err_str}')
                             fail_count += 1
 
                 msg_parts = []
@@ -419,6 +498,21 @@ def main(parent=None, schema=None, object_name=None, object_type=None):
 
             else:
                 # Composite mode: one index on all selected columns
+
+                # Pre-validate: estimate total key size in bytes
+                total_key_bytes = sum(col_data_lengths.get(c, 0) for c in cols)
+                if total_key_bytes > db_max_key_bytes:
+                    detail_lines = [f'  {c}: {col_data_lengths.get(c, "?")} bytes' for c in cols]
+                    detail = '\n'.join(detail_lines)
+                    _safe_messagebox(
+                        'showerror', 'Key Too Large',
+                        f'The combined column size ({total_key_bytes:,} bytes) exceeds the '
+                        f'Oracle max index key length (~{db_max_key_bytes:,} bytes).\n\n'
+                        f'Column sizes:\n{detail}\n\n'
+                        f'Select fewer or narrower columns for the composite index.',
+                        dlg=win)
+                    return
+
                 custom_name = index_name_var.get().strip()
                 if not custom_name or custom_name.startswith('(auto:'):
                     col_part = '_'.join(cols)
@@ -428,8 +522,14 @@ def main(parent=None, schema=None, object_name=None, object_type=None):
                 col_list_sql = ', '.join([_quote_ident(c) for c in cols])
                 sql = f'CREATE INDEX {_quote_ident(custom_name)} ON {_quote_ident(owner)}.{_quote_ident(object_name)} ({col_list_sql})'
 
+                # Show total key size in confirmation
+                size_info = f'Estimated key size: {total_key_bytes:,} / {db_max_key_bytes:,} bytes'
                 if not _safe_messagebox('askyesno', 'Confirm Index Creation',
-                                        f'Create composite index on {owner}.{object_name}?\n\nIndex: {custom_name}\nColumns: {", ".join(cols)}\n\nSQL:\n{sql}',
+                                        f'Create composite index on {owner}.{object_name}?\n\n'
+                                        f'Index: {custom_name}\n'
+                                        f'Columns: {", ".join(cols)}\n'
+                                        f'{size_info}\n\n'
+                                        f'SQL:\n{sql}',
                                         dlg=win):
                     return
 
@@ -439,15 +539,18 @@ def main(parent=None, schema=None, object_name=None, object_type=None):
                     _safe_messagebox('showinfo', 'Success', f'Composite index {custom_name} created.', dlg=win)
                 except Exception as e:
                     err_str = str(e)
+                    logger.warning(f'Composite index creation failed. SQL: {sql}\nError: {err_str}')
                     if 'ORA-01408' in err_str:
                         _safe_messagebox('showinfo', 'Already Exists', f'An index on the same column(s) already exists.', dlg=win)
                     elif 'ORA-00955' in err_str:
                         _safe_messagebox('showinfo', 'Already Exists', f'Index name {custom_name} already exists.', dlg=win)
                     elif 'ORA-01450' in err_str:
-                        _safe_messagebox('showerror', 'Error', f'Max key length exceeded. Try fewer or shorter columns.', dlg=win)
+                        _safe_messagebox('showerror', 'Key Too Large', f'ORA-01450: Max key length exceeded.\n\n{err_str}', dlg=win)
+                    elif 'ORA-00972' in err_str:
+                        _safe_messagebox('showerror', 'Name Too Long', f'Index name is too long for this database.\n\nTry a shorter custom name.\n\n{err_str}', dlg=win)
                     else:
                         logger.exception(f'Failed to create composite index: {e}')
-                        _safe_messagebox('showerror', 'Error', f'Failed to create index: {e}', dlg=win)
+                        _safe_messagebox('showerror', 'Error', f'Failed to create index:\n\n{err_str}', dlg=win)
 
             # Refresh the existing indexes list after creation
             load_existing_indexes()
@@ -494,6 +597,21 @@ def main(parent=None, schema=None, object_name=None, object_type=None):
     Button(btn_frame, text='Drop Selected Index', command=drop_selected_index, width=18).pack(side=LEFT, padx=(0, 6))
     Button(btn_frame, text='Refresh', command=lambda: (load_columns(), load_existing_indexes()), width=10).pack(side=LEFT, padx=(0, 6))
     Button(btn_frame, text='Close', command=win.destroy, width=10).pack(side=RIGHT)
+
+    # --- Center and show the dialog after all widgets are built ---
+    center_window(win, 900, 560)
+    try:
+        win.deiconify()
+        win.lift()
+        win.focus_force()
+        try:
+            win.attributes('-topmost', True)
+            win.after(200, lambda: win.attributes('-topmost', False))
+        except Exception:
+            pass
+        win.grab_set()
+    except Exception:
+        logger.exception('Failed to show/grab index main window')
 
     # --- Initial data load ---
     load_columns()
