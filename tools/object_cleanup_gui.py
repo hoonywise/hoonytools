@@ -3,12 +3,35 @@ from pathlib import Path
 from libs.paths import PROJECT_PATH as BASE_PATH
 import oracledb
 import logging
-from tkinter import Toplevel, Label, Checkbutton, IntVar, Button, messagebox, simpledialog, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, Y, BOTH
+from tkinter import Toplevel, Label, Checkbutton, IntVar, Button, simpledialog, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, Y, BOTH
 from tkinter import _default_root
 from libs.oracle_db_connector import get_db_connection
 from libs import dwh_session
 
 logger = logging.getLogger(__name__)
+
+# Use shared safe messagebox helper when available for consistent parenting
+try:
+    from loaders import safe_messagebox as _safe_messagebox
+except Exception:
+    def _safe_messagebox(fn_name: str, *args, dlg=None):
+        try:
+            from tkinter import messagebox as _messagebox
+        except Exception:
+            _messagebox = None
+        try:
+            if _messagebox is None:
+                return None
+            if dlg is not None:
+                return getattr(_messagebox, fn_name)(*args, parent=dlg)
+            return getattr(_messagebox, fn_name)(*args)
+        except Exception:
+            try:
+                return getattr(_messagebox, fn_name)(*args)
+            except Exception:
+                if fn_name.startswith('ask'):
+                    return False
+                return None
 
 def center_window(window, width, height):
     window.update_idletasks()
@@ -170,10 +193,10 @@ def drop_user_tables():
 
     if not rows:
         try:
-            messagebox.showinfo("No Objects", f"No tables, views or materialized views found in schema {schema}", parent=_default_root)
+            _safe_messagebox('showinfo', "No Objects", f"No tables, views or materialized views found in schema {schema}", dlg=_default_root)
         except Exception:
             try:
-                messagebox.showinfo("No Objects", f"No tables, views or materialized views found in schema {schema}")
+                _safe_messagebox('showinfo', "No Objects", f"No tables, views or materialized views found in schema {schema}")
             except Exception:
                 pass
         try:
@@ -237,10 +260,10 @@ def drop_user_tables():
     selected = select_tables_gui(display_list, f"Select objects to drop from schema: {schema}")
     if not selected:
         try:
-            messagebox.showinfo("Cancelled", "No objects selected.", parent=_default_root)
+            _safe_messagebox('showinfo', "Cancelled", "No objects selected.", dlg=_default_root)
         except Exception:
             try:
-                messagebox.showinfo("Cancelled", "No objects selected.")
+                _safe_messagebox('showinfo', "Cancelled", "No objects selected.")
             except Exception:
                 pass
         try:
@@ -250,9 +273,9 @@ def drop_user_tables():
         return
 
     try:
-        confirmed = messagebox.askyesno("Confirm", f"Drop {len(selected)} object(s) from schema {schema}?", parent=_default_root)
+        confirmed = _safe_messagebox('askyesno', "Confirm", f"Drop {len(selected)} object(s) from schema {schema}?", dlg=_default_root)
     except Exception:
-        confirmed = messagebox.askyesno("Confirm", f"Drop {len(selected)} object(s) from schema {schema}?")
+        confirmed = _safe_messagebox('askyesno', "Confirm", f"Drop {len(selected)} object(s) from schema {schema}?")
     if not confirmed:
         return
 
@@ -319,10 +342,10 @@ def drop_user_tables():
     except Exception:
         logger.debug('DWH cleanup failed', exc_info=True)
     try:
-        messagebox.showinfo("Done", "✅ Cleanup complete.", parent=_default_root)
+        _safe_messagebox('showinfo', "Done", "✅ Cleanup complete.", dlg=_default_root)
     except Exception:
         try:
-            messagebox.showinfo("Done", "✅ Cleanup complete.")
+            _safe_messagebox('showinfo', "Done", "✅ Cleanup complete.")
         except Exception:
             pass
     try:
@@ -349,10 +372,10 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
 
     if not tables:
         try:
-            messagebox.showinfo("No Tables", f"No matching tables found in schema {schema}", parent=(parent_window if parent_window is not None else _default_root))
+            _safe_messagebox('showinfo', "No Tables", f"No matching tables found in schema {schema}", dlg=(parent_window if parent_window is not None else _default_root))
         except Exception:
             try:
-                messagebox.showinfo("No Tables", f"No matching tables found in schema {schema}")
+                _safe_messagebox('showinfo', "No Tables", f"No matching tables found in schema {schema}")
             except Exception:
                 pass
         try:
@@ -364,10 +387,10 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     selected = select_tables_gui(tables, f"Select {schema} tables to delete rows from:")
     if not selected:
         try:
-            messagebox.showinfo("Cancelled", "No tables selected.", parent=(parent_window if parent_window is not None else _default_root))
+            _safe_messagebox('showinfo', "Cancelled", "No tables selected.", dlg=(parent_window if parent_window is not None else _default_root))
         except Exception:
             try:
-                messagebox.showinfo("Cancelled", "No tables selected.")
+                _safe_messagebox('showinfo', "Cancelled", "No tables selected.")
             except Exception:
                 pass
         try:
@@ -427,10 +450,10 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     if not value:
         try:
             parent = parent_window if parent_window is not None else _default_root
-            messagebox.showwarning("Missing Input", f"{label} is required.", parent=parent)
+            _safe_messagebox('showwarning', "Missing Input", f"{label} is required.", dlg=parent)
         except Exception:
             try:
-                messagebox.showwarning("Missing Input", f"{label} is required.")
+                _safe_messagebox('showwarning', "Missing Input", f"{label} is required.")
             except Exception:
                 pass
         try:
@@ -440,9 +463,9 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
         return
 
     try:
-        confirmed = messagebox.askyesno("Confirm", f"Delete rows from {len(selected)} tables where {label} = '{value}'?", parent=(parent_window if parent_window is not None else _default_root))
+        confirmed = _safe_messagebox('askyesno', "Confirm", f"Delete rows from {len(selected)} tables where {label} = '{value}'?", dlg=(parent_window if parent_window is not None else _default_root))
     except Exception:
-        confirmed = messagebox.askyesno("Confirm", f"Delete rows from {len(selected)} tables where {label} = '{value}'?")
+        confirmed = _safe_messagebox('askyesno', "Confirm", f"Delete rows from {len(selected)} tables where {label} = '{value}'?")
     if not confirmed:
         return
 
@@ -462,10 +485,10 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     except Exception:
         logger.debug('DWH cleanup failed', exc_info=True)
     try:
-        messagebox.showinfo("Done", f"✅ Deleted rows where {label} = {value}", parent=(parent_window if parent_window is not None else _default_root))
+        _safe_messagebox('showinfo', "Done", f"✅ Deleted rows where {label} = {value}", dlg=(parent_window if parent_window is not None else _default_root))
     except Exception:
         try:
-            messagebox.showinfo("Done", f"✅ Deleted rows where {label} = {value}")
+            _safe_messagebox('showinfo', "Done", f"✅ Deleted rows where {label} = {value}")
         except Exception:
             pass
     try:

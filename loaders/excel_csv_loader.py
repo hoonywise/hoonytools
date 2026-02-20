@@ -6,7 +6,7 @@ import re
 import time
 import threading
 import queue as _queue
-from tkinter import Tk, filedialog, simpledialog, Toplevel, Label, Checkbutton, IntVar, Button, Entry, messagebox
+from tkinter import Tk, filedialog, simpledialog, Toplevel, Label, Checkbutton, IntVar, Button, Entry
 import sys
 from pathlib import Path
 from libs.table_utils import create_index_if_columns_exist
@@ -17,6 +17,29 @@ from libs.paths import PROJECT_PATH as base_path
 
 # Logging setup
 logger = logging.getLogger(__name__)
+
+# Use shared safe messagebox helper when available for consistent parenting
+try:
+    from loaders import safe_messagebox as _safe_messagebox
+except Exception:
+    def _safe_messagebox(fn_name: str, *args, dlg=None):
+        try:
+            from tkinter import messagebox as _messagebox
+        except Exception:
+            _messagebox = None
+        try:
+            if _messagebox is None:
+                return None
+            if dlg is not None:
+                return getattr(_messagebox, fn_name)(*args, parent=dlg)
+            return getattr(_messagebox, fn_name)(*args)
+        except Exception:
+            try:
+                return getattr(_messagebox, fn_name)(*args)
+            except Exception:
+                if fn_name.startswith('ask'):
+                    return False
+                return None
 
 from libs.oracle_db_connector import get_db_connection
 from libs import abort_manager
@@ -352,7 +375,7 @@ def show_key_selector(parent, cols):
         result["key_columns"] = [c for i, c in enumerate(cols) if vars_[i].get()]
         if not result["key_columns"]:
             from tkinter import messagebox
-            messagebox.showwarning("Key Required", "Please select at least one key column for MERGE.")
+            _safe_messagebox('showwarning', "Key Required", "Please select at least one key column for MERGE.")
             return
         win.destroy()
 
@@ -400,7 +423,7 @@ def show_key_selector(parent, cols):
         key_list = [c.strip().upper() for c in keys.split(',') if c.strip()]
         invalid = [c for c in key_list if c not in [x.upper() for x in cols]]
         if invalid:
-            messagebox.showerror("Invalid Columns", f"Invalid key columns: {invalid}")
+            _safe_messagebox('showerror', "Invalid Columns", f"Invalid key columns: {invalid}")
             return None
         return {"key_columns": key_list}
 
@@ -539,7 +562,7 @@ def show_upsert_selector(parent, cols):
             keys = [c for i, c in enumerate(cols) if key_vars[i].get()]
             ups = [c for i, c in enumerate(cols) if update_vars[i].get()]
             if not keys:
-                messagebox.showwarning("Key Required", "Please select at least one key column for MERGE.")
+                _safe_messagebox('showwarning', "Key Required", "Please select at least one key column for MERGE.")
                 return
             nonlocal_result["key_columns"] = keys
             nonlocal_result["update_columns"] = ups
@@ -586,7 +609,7 @@ def show_upsert_selector(parent, cols):
         invalid_keys = [c for c in key_list if c not in [x.upper() for x in cols]]
         invalid_upd = [c for c in upd_list if c not in [x.upper() for x in cols]]
         if invalid_keys or invalid_upd:
-            messagebox.showerror("Invalid Columns", f"Invalid columns selected. Keys invalid: {invalid_keys}; Updates invalid: {invalid_upd}")
+            _safe_messagebox('showerror', "Invalid Columns", f"Invalid columns selected. Keys invalid: {invalid_keys}; Updates invalid: {invalid_upd}")
             return None
         return {"key_columns": key_list, "update_columns": upd_list}
 
@@ -776,7 +799,7 @@ def show_sql_preview(parent, title, summary, sql):
             # ensure clipboard content persists after window closes
             pv.update()
             try:
-                messagebox.showinfo("Copied", "SQL copied to clipboard.", parent=pv)
+                _safe_messagebox('showinfo', "Copied", "SQL copied to clipboard.", dlg=pv)
             except Exception:
                 logger.info("SQL copied to clipboard.")
         except Exception as e:
@@ -790,7 +813,7 @@ def show_sql_preview(parent, title, summary, sql):
             with open(fname, 'w', encoding='utf-8') as fh:
                 fh.write(formatted)
             try:
-                messagebox.showinfo("Saved", f"SQL saved to: {fname}", parent=pv)
+                _safe_messagebox('showinfo', "Saved", f"SQL saved to: {fname}", dlg=pv)
             except Exception:
                 logger.info(f"SQL saved to: {fname}")
         except Exception as e:
@@ -1041,7 +1064,7 @@ def replace_table_with_df(conn, cursor, root, schema, table_name, df):
     incoming_set = set(incoming_cols)
 
     # final confirm before destructive replace
-    proceed_confirm = call_ui(root, lambda: messagebox.askyesno("Confirm Replace", f"This will REMOVE ALL ROWS from {schema}.{table_name} and replace with the uploaded file.\n\nProceed?", parent=root))
+    proceed_confirm = call_ui(root, lambda: _safe_messagebox('askyesno', "Confirm Replace", f"This will REMOVE ALL ROWS from {schema}.{table_name} and replace with the uploaded file.\n\nProceed?", dlg=root))
     if not proceed_confirm:
         logger.info("User cancelled destructive Replace.")
         return
@@ -1050,16 +1073,16 @@ def replace_table_with_df(conn, cursor, root, schema, table_name, df):
     if existing_set == incoming_set:
         insert_df = df
     elif incoming_set.issubset(existing_set):
-        ok = call_ui(root, lambda: messagebox.askyesno("Subset Replace", f"Incoming columns are a subset of target table columns.\nInsert only the incoming columns into {schema}.{table_name}?\n(Other target columns will be set to NULL)", parent=root))
+        ok = call_ui(root, lambda: _safe_messagebox('askyesno', "Subset Replace", f"Incoming columns are a subset of target table columns.\nInsert only the incoming columns into {schema}.{table_name}?\n(Other target columns will be set to NULL)", dlg=root))
         if not ok:
             logger.info("Replace cancelled by user (subset confirmation).")
             return
         insert_df = df[[c for c in df.columns if c.upper() in existing_set]]
     else:
         extras = list(incoming_set - existing_set)
-        ok = call_ui(root, lambda: messagebox.askyesno("Extra Columns", f"Incoming data contains columns not present in target table: {extras}\n\nIgnore extra columns and insert matching columns?", parent=root))
+        ok = call_ui(root, lambda: _safe_messagebox('askyesno', "Extra Columns", f"Incoming data contains columns not present in target table: {extras}\n\nIgnore extra columns and insert matching columns?", dlg=root))
         if not ok:
-            call_ui(root, lambda: messagebox.showerror("Schema Mismatch", f"Replace cancelled.\n\nTarget columns: {existing_cols}\nIncoming columns: {incoming_cols}", parent=root))
+            call_ui(root, lambda: _safe_messagebox('showerror', "Schema Mismatch", f"Replace cancelled.\n\nTarget columns: {existing_cols}\nIncoming columns: {incoming_cols}", dlg=root))
             logger.warning(f"Replace aborted due to column mismatch for {schema}.{table_name}")
             return
         insert_df = df[[c for c in df.columns if c.upper() in existing_set]]
@@ -1343,7 +1366,7 @@ def load_multiple_files(launcher_root=None):
                                         inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df)
                                         logger.info(f"✅ Appended {inserted} rows to {schema}.{table_name}")
                                 elif incoming_set.issubset(existing_set):
-                                    ok = call_ui(parent, lambda: messagebox.askyesno("Subset Append", f"Incoming columns are a subset of target table columns.\n\nInsert only the incoming columns into {schema}.{table_name}?\n(This will insert values only for these columns and leave other target columns NULL)", parent=parent))
+                                    ok = call_ui(parent, lambda: _safe_messagebox('askyesno', "Subset Append", f"Incoming columns are a subset of target table columns.\n\nInsert only the incoming columns into {schema}.{table_name}?\n(This will insert values only for these columns and leave other target columns NULL)", dlg=parent))
                                     if ok:
                                         insert_cols = list(df.columns)
                                         if preview:
@@ -1360,7 +1383,7 @@ def load_multiple_files(launcher_root=None):
                                             logger.info(f"✅ Appended {inserted} rows (subset) to {schema}.{table_name}")
                                 else:
                                     extras = list(incoming_set - existing_set)
-                                    ok = call_ui(parent, lambda: messagebox.askyesno("Extra Columns", f"Incoming data contains columns not present in target table: {extras}\n\nIgnore extra columns and insert matching columns?", parent=parent))
+                                    ok = call_ui(parent, lambda: _safe_messagebox('askyesno', "Extra Columns", f"Incoming data contains columns not present in target table: {extras}\n\nIgnore extra columns and insert matching columns?", dlg=parent))
                                     if ok:
                                         df = df[[c for c in df.columns if c.upper() in existing_set]]
                                         insert_cols = list(df.columns)
@@ -1377,7 +1400,7 @@ def load_multiple_files(launcher_root=None):
                                             inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df, insert_columns=insert_cols)
                                             logger.info(f"✅ Appended {inserted} rows (with extras dropped) to {schema}.{table_name}")
                                     else:
-                                        call_ui(parent, lambda: messagebox.showerror("Schema Mismatch", f"Append cancelled.\n\nTarget columns: {existing_cols}\nIncoming columns: {incoming_cols}", parent=parent))
+                                        call_ui(parent, lambda: _safe_messagebox('showerror', "Schema Mismatch", f"Append cancelled.\n\nTarget columns: {existing_cols}\nIncoming columns: {incoming_cols}", dlg=parent))
                                         logger.warning(f"Append aborted due to column mismatch for {schema}.{table_name}")
                             elif mode == "replace":
                                 logger.info(f"♻️ Replacing {schema}.{table_name} with file contents (destructive)")

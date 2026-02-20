@@ -14,6 +14,20 @@ config.read(BASE_PATH / "libs" / "config.ini")
 
 logger = logging.getLogger(__name__)
 
+# Local safe messagebox helper to avoid parent-less dialogs when possible
+def _safe_messagebox(fn_name: str, *args, parent=None):
+    try:
+        if parent is not None:
+            return getattr(messagebox, fn_name)(*args, parent=parent)
+        return getattr(messagebox, fn_name)(*args)
+    except Exception:
+        try:
+            return getattr(messagebox, fn_name)(*args)
+        except Exception:
+            if fn_name.startswith('ask'):
+                return False
+            return None
+
 _credentials = {}
 _error_queue = queue.Queue()
 
@@ -23,13 +37,13 @@ def process_queued_errors(root=None):
             title, message = _error_queue.get_nowait()
             if root:
                 root.update()
-            messagebox.showerror(title, message)
+            _safe_messagebox('showerror', title, message, parent=root)
     except Exception as e:
         print(f"Error displaying queued error: {e}")
 
 def show_error_safe(title, message):
     if threading.current_thread() is threading.main_thread():
-        messagebox.showerror(title, message)
+        _safe_messagebox('showerror', title, message)
     else:
         _error_queue.put((title, message))
 
@@ -202,7 +216,7 @@ def _show_login_dialog(hardcoded_user=None, hardcoded_dsn="DWHDB_DB", parent=Non
             except Exception:
                 pass
         else:
-            messagebox.showerror("Error", "Username, password, and DSN are all required.")
+            _safe_messagebox('showerror', "Error", "Username, password, and DSN are all required.", parent=login_window)
 
     def cancel():
         try:

@@ -16,6 +16,101 @@ import webbrowser
 
 APP_VERSION = "1.4.0"
 
+
+# Theme helpers
+DARK_THEME = {
+    "bg": "#000000",
+    "panel": "#0b0b0b",
+    "border": "#222222",
+    "fg": "#e6e6e6",
+    "accent_green": "#39ff14",
+    "muted": "#7a7a7a",
+    "selection_bg": "#2a6bd6",
+}
+
+
+def apply_dark_theme(root, accent="white"):
+    try:
+        from tkinter import ttk as _ttk
+    except Exception:
+        _ttk = None
+
+    bg = DARK_THEME["bg"]
+    panel = DARK_THEME["panel"]
+    border = DARK_THEME["border"]
+    fg = DARK_THEME["fg"] if accent == "white" else DARK_THEME["accent_green"]
+    muted = DARK_THEME["muted"]
+    sel = DARK_THEME["selection_bg"]
+
+    try:
+        root.configure(bg=bg)
+    except Exception:
+        pass
+
+    if _ttk:
+        style = _ttk.Style()
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+    # Create the initial combobox so it's present at startup (light mode by default)
+    try:
+        _recreate_tool_menu(use_pane_style=False)
+    except Exception:
+        pass
+        try:
+            style.configure("Treeview", background=panel, fieldbackground=panel, foreground=fg, rowheight=20)
+            style.map("Treeview", background=[("selected", sel)], foreground=[("selected", "white")])
+            style.configure("TCombobox", fieldbackground=panel, background=panel, foreground=fg)
+            style.configure("TButton", background=panel, foreground=fg)
+            style.map("TButton", background=[("active", border)])
+        except Exception:
+            pass
+
+    try:
+        root.option_add('*Menu.background', panel)
+        root.option_add('*Menu.foreground', fg)
+        root.option_add('*Menu.activeBackground', border)
+        root.option_add('*Menu.activeForeground', fg)
+        root.option_add('*Label.background', bg)
+        root.option_add('*Label.foreground', fg)
+        root.option_add('*Frame.background', bg)
+        root.option_add('*Button.background', panel)
+        root.option_add('*Button.foreground', fg)
+    except Exception:
+        pass
+
+    try:
+        root._dark_theme = {"bg": bg, "panel": panel, "border": border, "fg": fg, "muted": muted, "sel": sel}
+    except Exception:
+        pass
+
+
+def apply_light_theme(root):
+    # Restore light-ish defaults; not exhaustive but improves readability
+    try:
+        root.configure(bg="#f0f0f0")
+    except Exception:
+        pass
+    try:
+        root.option_add('*Menu.background', '#d0d0d0')
+        root.option_add('*Menu.foreground', 'black')
+        root.option_add('*Menu.activeBackground', '#ffffff')
+        root.option_add('*Menu.activeForeground', 'black')
+        root.option_add('*Label.background', '#f0f0f0')
+        root.option_add('*Label.foreground', '#444444')
+        root.option_add('*Frame.background', '#f0f0f0')
+        root.option_add('*Button.background', '#f0f0f0')
+        root.option_add('*Button.foreground', 'black')
+    except Exception:
+        pass
+    try:
+        if hasattr(root, '_dark_theme'):
+            delattr(root, '_dark_theme')
+    except Exception:
+        pass
+
 # Safely climb until we find the project root folder
 project_name = "HoonyTools"
 path = Path(__file__).resolve()
@@ -436,7 +531,15 @@ def run_selected():
             # can update its status light. Treat SQL View and SQL Materialized View loaders
             # the same way.
             if tool_name in ("☑ SQL View Loader", "☑ SQL Materialized View Loader"):
-                TOOLS[tool_name](on_finish=lambda: status_light.config(text="🟢"))
+                # Pass launcher root as parent so loaders can register theme callbacks
+                try:
+                    TOOLS[tool_name](root, on_finish=lambda: status_light.config(text="🟢"))
+                except TypeError:
+                    # fallback for older signatures
+                    try:
+                        TOOLS[tool_name](on_finish=lambda: status_light.config(text="🟢"))
+                    except Exception:
+                        TOOLS[tool_name]()
             else:
                 try:
                     # Prefer passing launcher root to tools when supported so dialogs are parented correctly
@@ -448,9 +551,24 @@ def run_selected():
                         # Last resort: call without args
                         TOOLS[tool_name]()
                 status_light.config(text="🟢")
+        except KeyboardInterrupt:
+            # User or system interrupted the tool; attempt graceful cleanup and avoid
+            # letting KeyboardInterrupt propagate into Tk's callback machinery.
+            try:
+                logger.info(f"Tool run interrupted by KeyboardInterrupt: {tool_name}")
+            except Exception:
+                pass
+            try:
+                status_light.config(text="🟢")
+            except Exception:
+                pass
+            return
         except Exception as e:
             logger.exception(f"❌ Error running {tool_name}: {e}")
-            status_light.config(text="🟢")
+            try:
+                status_light.config(text="🟢")
+            except Exception:
+                pass
 
     run_and_update()
 
@@ -635,7 +753,7 @@ def launch_tool_gui():
         verse_frame,
         text=get_random_verse(),
         font=("Arial", 9, "italic"),
-        fg="#444444",
+        fg=getattr(root, "_dark_theme", {}).get("muted", "#444444"),
         anchor="center",
         justify="center",
         wraplength=1000
@@ -650,7 +768,7 @@ def launch_tool_gui():
     rotate_verse()    
         
     # Horizontal divider below verse
-    tk.Frame(root, height=1, bg="#ccc").pack(fill="x", padx=10, pady=(5, 10))    
+    tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10, pady=(5, 10))    
 
     # ✅ Set GUI icon (.ico for taskbar)
     icon_ico_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
@@ -697,7 +815,7 @@ def launch_tool_gui():
         top_bar.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
         refresh_btn = tk.Button(top_bar, text="Refresh", width=10)
         refresh_btn.pack(side="left", padx=(0, 8))
-        status_lbl = tk.Label(top_bar, text="", font=("Arial", 8), fg="#444444")
+        status_lbl = tk.Label(top_bar, text="", font=("Arial", 8), fg=getattr(parent.master, "_dark_theme", {}).get("muted", "#444444"))
         status_lbl.pack(side="left")
 
         # Content area (treeview + scrollbar) sits below the top bar and expands
@@ -720,17 +838,39 @@ def launch_tool_gui():
 
         return frame, tv, refresh_btn, status_lbl
 
+    # Ensure Treeview style is configured before creating tree widgets so
+    # style settings are honored by backends (especially on Windows ttk).
+    try:
+        pre_style = ttk.Style()
+        try:
+            pre_style.theme_use('clam')
+        except Exception:
+            pass
+        try:
+            # Default (light) appearance for Pane.Treeview; setters below will
+            # override when user enables pane-only dark mode.
+            pre_style.configure('Pane.Treeview', background='white', fieldbackground='white', foreground='black', rowheight=20)
+            pre_style.configure('Treeview.Heading', background='#e8e8e8', foreground='black')
+        except Exception:
+            pass
+    except Exception:
+        pre_style = None
+
     # Create the two object panes in the left_pane (stacked, share vertical space)
     user_frame, user_tree, user_refresh_btn, user_status = _make_objects_frame(left_pane, "User Objects")
     dwh_frame, dwh_tree, dwh_refresh_btn, dwh_status = _make_objects_frame(left_pane, "DWH Objects")
+
+    # Keep cached row data so we can recreate trees when toggling theme
+    user_rows = []
+    dwh_rows = []
 
     # Prevent the left pane from auto-resizing when internal labels change
     left_pane.pack_propagate(False)
 
     # Create external count labels aligned to the right of each object frame
     # Use grid placement so they don't affect the inner frame widths
-    user_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg="#444444")
-    dwh_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg="#444444")
+    user_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
+    dwh_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
     # start with a placeholder placement; we'll position these next to the LabelFrame titles
     user_count_label.place(x=0, y=0)
     dwh_count_label.place(x=0, y=0)
@@ -800,7 +940,111 @@ def launch_tool_gui():
                 pk = row[2] if len(row) > 2 else ""
             except Exception:
                 continue
-            tv.insert("", "end", values=(name, obj_type, pk or ""))
+            # Insert with a consistent tag so we can theme row backgrounds later
+            try:
+                tv.insert("", "end", values=(name, obj_type, pk or ""), tags=("row",))
+            except Exception:
+                tv.insert("", "end", values=(name, obj_type, pk or ""))
+
+        # cache rows for possible rebuild
+        try:
+            if tv is user_tree:
+                nonlocal user_rows
+                user_rows = list(rows)
+            elif tv is dwh_tree:
+                nonlocal dwh_rows
+                dwh_rows = list(rows)
+        except Exception:
+            pass
+
+    # Recreate a Treeview widget under the current style and repopulate it.
+    # use_pane_style: when True, create with 'Pane.Treeview' style alias.
+    def _recreate_tree(old_tv, use_pane_style=False):
+        parent = old_tv.master
+        cols = ("name", "type", "pk")
+        widths = {}
+        try:
+            for c in cols:
+                widths[c] = old_tv.column(c, option='width')
+        except Exception:
+            widths = {}
+        try:
+            y0 = old_tv.yview()[0]
+        except Exception:
+            y0 = 0.0
+        try:
+            sel = old_tv.selection()
+        except Exception:
+            sel = ()
+
+        # destroy existing children (tree + scrollbar)
+        try:
+            for ch in list(parent.winfo_children()):
+                try:
+                    ch.destroy()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # create the new tree using Pane.Treeview when requested
+        try:
+            style_name = 'Pane.Treeview' if use_pane_style else ''
+            new_tv = ttk.Treeview(parent, columns=cols, show="headings", style=style_name)
+        except Exception:
+            new_tv = ttk.Treeview(parent, columns=cols, show="headings")
+
+        try:
+            new_tv.heading("name", text="Name")
+            new_tv.heading("type", text="Type")
+            new_tv.heading("pk", text="PK")
+            new_tv.column("name", width=widths.get('name', 160), anchor="w", stretch=False)
+            new_tv.column("type", width=widths.get('type', 120), anchor="center", stretch=False)
+            new_tv.column("pk", width=widths.get('pk', 160), anchor="center", stretch=False)
+        except Exception:
+            pass
+
+        try:
+            vs = tk.Scrollbar(parent, orient="vertical", command=new_tv.yview)
+            new_tv.configure(yscrollcommand=vs.set)
+            new_tv.pack(side="left", fill="both", expand=True)
+            vs.pack(side="right", fill="y")
+        except Exception:
+            new_tv.pack(fill="both", expand=True)
+
+        try:
+            rows = user_rows if old_tv is user_tree else dwh_rows if old_tv is dwh_tree else []
+        except Exception:
+            rows = []
+
+        try:
+            for r in rows:
+                try:
+                    new_tv.insert("", "end", values=(r[0], r[1], r[2] if len(r) > 2 else ""), tags=("row",))
+                except Exception:
+                    try:
+                        new_tv.insert("", "end", values=(r[0], r[1], ""))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        try:
+            new_tv.update_idletasks()
+            new_tv.yview_moveto(y0)
+        except Exception:
+            pass
+        try:
+            if sel:
+                for s in sel:
+                    try:
+                        new_tv.selection_add(s)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        return new_tv
 
     # Background refreshers
     def refresh_user_objects():
@@ -1009,20 +1253,359 @@ def launch_tool_gui():
     # Give the toolbar some extra top padding so it visually lines up with the log
     toolbar_inner.configure(pady=6)
 
+    # Layout will use grid inside toolbar_inner to ensure deterministic
+    # placement: label (col0), combobox (col1), buttons (col2).
     tk.Label(
         toolbar_inner,
         text="Select Tool:",
         font=("Arial", 12, "bold")
-    ).pack(side="left", padx=(0, 10))
+    ).grid(row=0, column=0, padx=(0, 10))
 
     # Tool selector and buttons
     selected_tool = tk.StringVar()
-    tool_menu = ttk.Combobox(toolbar_inner, textvariable=selected_tool, values=list(TOOLS.keys()), font=("Arial", 11), state="readonly", width=22)
-    tool_menu.pack(side="left")
-    tool_menu.current(0)
+
+    # Helper to recreate the toolbar combobox under a specified style so
+    # theme changes are honored across backends (some ttk widgets only
+    # pick up style at creation time).
+    def _recreate_tool_menu(use_pane_style=False):
+        global tool_menu, selected_tool
+        parent = toolbar_inner
+        values = list(TOOLS.keys())
+        # attempt to preserve current selection index/value
+        cur_idx = None
+        try:
+            cur_idx = tool_menu.current()
+        except Exception:
+            try:
+                val = selected_tool.get()
+                cur_idx = values.index(val) if val in values else 0
+            except Exception:
+                cur_idx = 0
+
+        try:
+            try:
+                logger.debug("DESTROYING existing tool_menu (if any)")
+            except Exception:
+                pass
+            tool_menu.destroy()
+        except Exception:
+            pass
+
+        # If ttk.Combobox is unreliable on this platform, use a small
+        # custom combobox implementation that uses a Toplevel + Listbox
+        # popup. This guarantees consistent popup behavior and styling.
+        class _CustomCombobox:
+            def __init__(self, master, textvariable, values, width=22, font=None, state='readonly', style=None):
+                self.master = master
+                self.var = textvariable
+                self.values = list(values)
+                self._dark = False
+                self.frame = tk.Frame(master)
+                # Use a normal Entry so background/foreground changes apply
+                # reliably across platforms. Prevent typing by blocking key events.
+                self.entry = tk.Entry(self.frame, textvariable=self.var, width=width, font=font, state='normal', relief='sunken')
+                # Prevent user edits (readonly behavior)
+                try:
+                    self.entry.bind('<Key>', lambda e: 'break')
+                except Exception:
+                    pass
+                self.entry.pack(side='left')
+                # Use a neutral grey arrow button background so the arrow remains
+                # visually consistent in both themes. Keep it non-focused.
+                self.btn = tk.Button(self.frame, text='\u25BC', width=2, command=self._on_button, takefocus=False, relief='raised', bd=1)
+                try:
+                    self.btn.config(bg='#c0c0c0', fg='black')
+                except Exception:
+                    pass
+                self.btn.pack(side='left')
+                self._popup = None
+                self._bindings = {}
+
+            def grid(self, **kw):
+                return self.frame.grid(**kw)
+
+            def pack(self, **kw):
+                return self.frame.pack(**kw)
+
+            def destroy(self):
+                try:
+                    if self._popup and getattr(self._popup, 'winfo_exists', lambda: False)():
+                        try:
+                            self._popup.destroy()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                try:
+                    self.frame.destroy()
+                except Exception:
+                    pass
+
+            def bind(self, sequence, func, add=None):
+                # Bind to the entry widget; store handler for possible removal
+                try:
+                    self.entry.bind(sequence, func, add=add if add else None)
+                except Exception:
+                    try:
+                        self.frame.bind(sequence, func, add=add if add else None)
+                    except Exception:
+                        pass
+
+            def current(self, idx):
+                try:
+                    if idx is None:
+                        return
+                    v = self.values[idx]
+                    self.var.set(v)
+                except Exception:
+                    pass
+
+            def get(self):
+                return self.var.get()
+
+            def cget(self, key):
+                if key == 'style':
+                    return None
+                try:
+                    return self.entry.cget(key)
+                except Exception:
+                    return None
+
+            def configure(self, **kw):
+                try:
+                    self.entry.configure(**kw)
+                except Exception:
+                    pass
+
+            def _on_button(self):
+                # show popup
+                if self._popup and getattr(self._popup, 'winfo_exists', lambda: False)():
+                    try:
+                        self._popup.destroy()
+                    except Exception:
+                        pass
+                    return
+                try:
+                    x = self.frame.winfo_rootx()
+                    y = self.frame.winfo_rooty() + self.frame.winfo_height()
+                    self._popup = tk.Toplevel(self.frame)
+                    self._popup.wm_overrideredirect(True)
+                    self._popup.wm_geometry(f"+{x}+{y}")
+                    lb = tk.Listbox(self._popup, exportselection=False)
+                    # Make the popup list wider than the entry so long names are visible.
+                    try:
+                        ew = self.entry.cget('width')
+                        try:
+                            ew = int(ew)
+                        except Exception:
+                            ew = None
+                        if ew:
+                            desired = min(max(ew + 6, 30), 120)  # chars, clamp to reasonable range
+                            lb.config(width=desired)
+                    except Exception:
+                        pass
+                    # Use same font as entry for consistent sizing
+                    try:
+                        f = self.entry.cget('font')
+                        if f:
+                            lb.config(font=f)
+                    except Exception:
+                        pass
+                    for v in self.values:
+                        lb.insert('end', v)
+                    lb.pack()
+                    try:
+                        # Apply popup colors consistent with entry colors
+                        if getattr(self, '_dark', False):
+                            lb.config(bg='#000000', fg='#ffffff', selectbackground='#444444')
+                        else:
+                            lb.config(bg='white', fg='black', selectbackground='#2a6bd6')
+                    except Exception:
+                        pass
+                    def on_select(evt=None):
+                        try:
+                            sel = lb.curselection()
+                            if sel:
+                                val = lb.get(sel[0])
+                                self.var.set(val)
+                                # generate virtual event
+                                try:
+                                    self.frame.event_generate('<<ComboboxSelected>>')
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        try:
+                            self._popup.destroy()
+                        except Exception:
+                            pass
+                    lb.bind('<Double-Button-1>', lambda e: on_select())
+                    lb.bind('<Return>', lambda e: on_select())
+                    # Single click release should also confirm selection
+                    lb.bind('<ButtonRelease-1>', lambda e: on_select())
+                    lb.bind('<<ListboxSelect>>', lambda e: None)
+                    # click outside closes popup
+                    def on_focus_out(ev=None):
+                        try:
+                            if self._popup and getattr(self._popup, 'winfo_exists', lambda: False)():
+                                self._popup.destroy()
+                        except Exception:
+                            pass
+                    self._popup.bind('<FocusOut>', on_focus_out)
+                    # give focus to popup so clicks register
+                    try:
+                        self._popup.focus_force()
+                        try:
+                            lb.focus_set()
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
+            # helper to set dark/light colors
+            def set_colors(self, dark=False):
+                try:
+                    self._dark = bool(dark)
+                    if self._dark:
+                        # Entry background, text and caret color
+                        try:
+                            self.entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', disabledbackground='#000000')
+                        except Exception:
+                            pass
+                        # Keep arrow button neutral grey so it remains visible on both themes
+                        try:
+                            self.btn.config(bg='#c0c0c0', fg='black')
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            self.entry.config(bg='white', fg='black', insertbackground='black', disabledbackground='white')
+                        except Exception:
+                            pass
+                        try:
+                            self.btn.config(bg='#c0c0c0', fg='black')
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+        # end _CustomCombobox
+
+        style_name = 'Pane.TCombobox' if use_pane_style else 'TCombobox'
+        try:
+            # helper: clear visual selection and move focus after use so the
+            # toolbar combobox doesn't keep a highlighted selection.
+            def _clear_combobox_selection(w):
+                try:
+                    try:
+                        w.selection_clear()
+                    except Exception:
+                        pass
+                    try:
+                        w.icursor('end')
+                    except Exception:
+                        pass
+                    try:
+                        if 'run_btn' in globals() and run_btn:
+                            run_btn.focus_set()
+                        else:
+                            root.focus_force()
+                    except Exception:
+                        try:
+                            root.focus_force()
+                        except Exception:
+                            pass
+                    # Small state flip can clear lingering native selection highlights
+                    try:
+                        prev_state = None
+                        try:
+                            prev_state = w.cget('state')
+                        except Exception:
+                            prev_state = None
+                        try:
+                            w.configure(state='disabled')
+                            root.update_idletasks()
+                        except Exception:
+                            pass
+                        try:
+                            if prev_state is not None:
+                                w.configure(state=prev_state)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
+            # Use custom combobox for reliable popup behavior
+            try:
+                tool_menu = _CustomCombobox(parent, textvariable=selected_tool, values=values, width=22, font=("Arial", 11))
+                try:
+                    tool_menu.grid(row=0, column=1)
+                except Exception:
+                    tool_menu.pack(side='left')
+                try:
+                    logger.debug("CREATED toolbar custom combobox (tool_menu)")
+                except Exception:
+                    pass
+                # bind selection event to clear selection visual
+                try:
+                    parent_ref = tool_menu.frame
+                    parent_ref.bind('<<ComboboxSelected>>', lambda e: _clear_combobox_selection(tool_menu.entry), add='+')
+                except Exception:
+                    pass
+                try:
+                    if cur_idx is not None and 0 <= cur_idx < len(values):
+                        tool_menu.current(cur_idx)
+                    else:
+                        tool_menu.current(0)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        except Exception:
+            # fallback: create without explicit style
+            try:
+                try:
+                    tool_menu = _CustomCombobox(parent, textvariable=selected_tool, values=values, width=22, font=("Arial", 11))
+                    try:
+                        tool_menu.grid(row=0, column=1)
+                    except Exception:
+                        tool_menu.pack(side='left')
+                    try:
+                        if cur_idx is not None:
+                            tool_menu.current(cur_idx)
+                        else:
+                            tool_menu.current(0)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+    # Ensure a toolbar combobox exists at startup. Some backends only apply
+    # style at widget creation time, and earlier code sometimes recreated
+    # the combobox only when toggling themes. Create it here once so the
+    # control is present immediately after the toolbar is built.
+    try:
+        _recreate_tool_menu(use_pane_style=False)
+        try:
+            logger.info("Initial toolbar combobox created at startup")
+        except Exception:
+            pass
+    except Exception:
+        try:
+            logger.exception("Initial toolbar combobox creation failed")
+        except Exception:
+            pass
 
     btn_frame = tk.Frame(toolbar_inner)
-    btn_frame.pack(side="left", padx=12)
+    # Use grid to place the button frame in column 2 so we avoid mixing
+    # pack and grid in the same parent (toolbar_inner uses grid for children).
+    btn_frame.grid(row=0, column=2, padx=12)
 
     # Keep references to these controls so abort handler can disable/enable them
     run_btn = tk.Button(btn_frame, text="Run", width=10, command=lambda: run_selected())
@@ -1063,14 +1646,23 @@ def launch_tool_gui():
     # Keyboard shortcuts should not override platform copy behavior.
 
     # Divider between toolbar and content
-    tk.Frame(right_pane, height=1, bg="#ccc").pack(fill="x", padx=10, pady=(8, 12))
+    tk.Frame(right_pane, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10, pady=(8, 12))
 
     # Place the log area in the right pane (narrower because left pane uses space)
     log_text = scrolledtext.ScrolledText(right_pane, width=80, height=25)
     log_text.pack(padx=10, pady=(0, 5), fill="both", expand=True)
+    try:
+        # Default to light log colors; only change when user enables pane dark mode
+        if getattr(root, '_dark_theme', None):
+            lt = getattr(root, "_dark_theme", {})
+            log_text.config(bg=lt.get("panel", "#0b0b0b"), fg=lt.get("fg", "#e6e6e6"), insertbackground=lt.get("fg", "#e6e6e6"), selectbackground=lt.get("border", "#222222"))
+        else:
+            log_text.config(bg='white', fg='black', insertbackground='black')
+    except Exception:
+        pass
     
     # === Status Bar (under verse) ===
-    tk.Frame(root, height=1, bg="#ccc").pack(fill="x", padx=10)
+    tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10)
     status_bar = tk.Frame(root)
     status_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
 
@@ -1203,32 +1795,796 @@ def launch_tool_gui():
             f"HoonyTools v{APP_VERSION}\n\nCreated by hoonywise\n\nFor enterprise use, contact hoonywise@proton.me"
         )
 
-    # Add menu bar with "Help > About"
-    menu_bar = tk.Menu(
-        root,
-        bg="#d0d0d0",                # darker gray for menu bar
-        fg="black",
-        activebackground="#ffffff",  # white hover for dropdown
-        activeforeground="black"
-    )
+    # Add menu bar with "View" toggles and "Help > About"
+    menu_bar = tk.Menu(root)
+    view_menu = tk.Menu(menu_bar, tearoff=0)
+
+    # Pane-only dark toggle: only affects the two object treeviews and the log pane
+    try:
+        style = ttk.Style()
+    except Exception:
+        style = None
+
+    # store originals so we can restore
+    try:
+        pane_orig = getattr(root, '_pane_orig', {})
+    except Exception:
+        pane_orig = {}
+
+    # Helper: safe tree info (avoid calling widget cget('background') which
+    # may raise on some ttk backends). Prefer style.lookup values.
+    def _tree_info(tv):
+        try:
+            sty = None
+            try:
+                sty = tv.cget('style')
+            except Exception:
+                sty = None
+            st = ttk.Style()
+            bg = None
+            fg = None
+            try:
+                if sty:
+                    bg = st.lookup(sty, 'fieldbackground') or st.lookup(sty, 'background')
+                    fg = st.lookup(sty, 'foreground')
+                if not bg:
+                    bg = st.lookup('Treeview', 'fieldbackground') or st.lookup('Treeview', 'background')
+                if not fg:
+                    fg = st.lookup('Treeview', 'foreground')
+            except Exception:
+                pass
+            return f"style={sty} bg={bg} fg={fg}"
+        except Exception as e:
+            return f"error:{e}"
+
+    def set_panes_dark():
+        nonlocal user_tree, dwh_tree
+        # Record original theme/style/lookups the first time so we can
+        # reliably restore them later. Also capture per-item tags and
+        # master background colors.
+        try:
+            if style:
+                try:
+                    # Save current theme
+                    if not pane_orig.get('orig_theme'):
+                        pane_orig['orig_theme'] = style.theme_use()
+                except Exception:
+                    pass
+                # Save lookup values for Treeview and Pane.Treeview
+                try:
+                    if not pane_orig.get('orig_tree_lookup'):
+                        pane_orig['orig_tree_lookup'] = {
+                            'background': style.lookup('Treeview', 'background'),
+                            'fieldbackground': style.lookup('Treeview', 'fieldbackground'),
+                            'foreground': style.lookup('Treeview', 'foreground'),
+                        }
+                except Exception:
+                    pane_orig['orig_tree_lookup'] = {}
+                try:
+                    if not pane_orig.get('orig_pane_lookup'):
+                        pane_orig['orig_pane_lookup'] = {
+                            'background': style.lookup('Pane.Treeview', 'background'),
+                            'fieldbackground': style.lookup('Pane.Treeview', 'fieldbackground'),
+                            'foreground': style.lookup('Pane.Treeview', 'foreground'),
+                        }
+                except Exception:
+                    pane_orig['orig_pane_lookup'] = {}
+                try:
+                    # Save heading colors too (some backends use a separate heading style)
+                    if not pane_orig.get('orig_heading_lookup'):
+                        pane_orig['orig_heading_lookup'] = {
+                            'background': style.lookup('Treeview.Heading', 'background'),
+                            'foreground': style.lookup('Treeview.Heading', 'foreground'),
+                        }
+                except Exception:
+                    pane_orig['orig_heading_lookup'] = {}
+
+        except Exception:
+            pass
+
+        # Save per-item tags so we can restore after recreating
+        try:
+            if not pane_orig.get('user_item_tags'):
+                tags = {}
+                try:
+                    for it in list(user_tree.get_children()):
+                        try:
+                            tags[it] = tuple(user_tree.item(it).get('tags') or ())
+                        except Exception:
+                            tags[it] = ()
+                except Exception:
+                    tags = {}
+                pane_orig['user_item_tags'] = tags
+        except Exception:
+            pass
+        try:
+            if not pane_orig.get('dwh_item_tags'):
+                tags = {}
+                try:
+                    for it in list(dwh_tree.get_children()):
+                        try:
+                            tags[it] = tuple(dwh_tree.item(it).get('tags') or ())
+                        except Exception:
+                            tags[it] = ()
+                except Exception:
+                    tags = {}
+                pane_orig['dwh_item_tags'] = tags
+        except Exception:
+            pass
+        # Save current combobox style so we can restore it later
+        try:
+            if 'tool_menu' in globals() and not pane_orig.get('tool_menu_style'):
+                try:
+                    pane_orig['tool_menu_style'] = tool_menu.cget('style')
+                except Exception:
+                    pane_orig['tool_menu_style'] = None
+        except Exception:
+            pass
+
+        # Save master backgrounds
+        try:
+            if not pane_orig.get('user_master_bg'):
+                pane_orig['user_master_bg'] = user_tree.master.cget('bg')
+        except Exception:
+            pass
+        try:
+            if not pane_orig.get('dwh_master_bg'):
+                pane_orig['dwh_master_bg'] = dwh_tree.master.cget('bg')
+        except Exception:
+            pass
+
+        # Now apply dark style settings and recreate the trees using Pane.Treeview
+        try:
+            if style:
+                try:
+                    style.theme_use('clam')
+                except Exception:
+                    pass
+                try:
+                    style.configure('Treeview', background='#000000', fieldbackground='#000000', foreground='#ffffff', rowheight=18)
+                    style.configure('Pane.Treeview', background='#000000', fieldbackground='#000000', foreground='#ffffff', rowheight=18)
+                    style.map('Treeview', background=[('selected', '#444444')], foreground=[('selected', '#ffffff')])
+                    style.map('Pane.Treeview', background=[('selected', '#444444')], foreground=[('selected', '#ffffff')])
+                    # Explicitly configure heading style as well; on Windows the
+                    # heading often needs its own configure call to update at runtime.
+                    try:
+                        style.configure('Treeview.Heading', background='#000000', foreground='#ffffff')
+                    except Exception:
+                        # Some backends expose the heading as 'Heading' element
+                        try:
+                            style.configure('Heading', background='#000000', foreground='#ffffff')
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                # Configure a pane-specific Combobox style and apply it to the toolbar combobox
+                try:
+                    style.configure('Pane.TCombobox', fieldbackground='#000000', background='#000000', foreground='#ffffff')
+                    # map readonly state colors explicitly
+                    try:
+                        # Map common states so the combobox stays dark when focused
+                        style.map('Pane.TCombobox', fieldbackground=[('readonly', '#000000'), ('focus', '#000000')], foreground=[('readonly', '#ffffff'), ('focus', '#ffffff')])
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                # Best-effort: set Listbox option defaults so native popups (which
+                # sometimes use Listbox widgets) inherit dark colors.
+                try:
+                    root.option_add('*Listbox.background', '#000000')
+                    root.option_add('*Listbox.foreground', '#ffffff')
+                    root.option_add('*Listbox.selectBackground', '#444444')
+                    pane_orig['listbox_options_set'] = True
+                except Exception:
+                    pass
+                # Style the top menu bar for pane-only dark mode
+                try:
+                    root.option_add('*Menu.background', '#000000')
+                    root.option_add('*Menu.foreground', '#ffffff')
+                    root.option_add('*Menu.activeBackground', '#222222')
+                    root.option_add('*Menu.activeForeground', '#ffffff')
+                    try:
+                        menu_bar.config(background='#000000', foreground='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                    except Exception:
+                        pass
+                    # If using the custom in-window menu, style its frame/menubuttons too
+                    try:
+                        if 'custom_menu_frame' in globals() and getattr(custom_menu_frame, 'winfo_exists', lambda: False)():
+                            try:
+                                custom_menu_frame.config(bg='#000000')
+                            except Exception:
+                                pass
+                            try:
+                                # custom_view/custom_help are tuples: (mb, menu)
+                                for t in ('custom_view', 'custom_help'):
+                                    try:
+                                        mb, m = globals().get(t, (None, None))
+                                        if mb:
+                                            try:
+                                                mb.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                                            except Exception:
+                                                pass
+                                        if m:
+                                            try:
+                                                m.config(bg='#000000', fg='#ffffff')
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                # Recreate the combobox under Pane.TCombobox so backends that
+                # only honor style at creation time will show the dark colors.
+                try:
+                    _recreate_tool_menu(use_pane_style=True)
+                    # If our custom combobox is used, ensure it applies dark colors
+                    try:
+                        if 'tool_menu' in globals() and hasattr(tool_menu, 'set_colors'):
+                            try:
+                                tool_menu.set_colors(dark=True)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                except Exception:
+                    try:
+                        tool_menu.configure(style='Pane.TCombobox')
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # Recreate trees under the new Pane.Treeview style so backend honors fieldbackground
+        try:
+            try:
+                user_tree = _recreate_tree(user_tree, use_pane_style=True)
+            except Exception:
+                pass
+            try:
+                dwh_tree = _recreate_tree(dwh_tree, use_pane_style=True)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        # Set master backgrounds and darken log
+        try:
+            try:
+                user_tree.master.config(bg='#000000')
+            except Exception:
+                pass
+            try:
+                dwh_tree.master.config(bg='#000000')
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        try:
+            if 'log_text' in globals():
+                if not pane_orig.get('log'):
+                    pane_orig['log'] = (log_text.cget('bg'), log_text.cget('fg'), log_text.cget('insertbackground'))
+                try:
+                    log_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        try:
+            root._pane_orig = pane_orig
+        except Exception:
+            pass
+
+        # Debug write
+        try:
+            dbg = base_path / 'theme_debug.log'
+            with open(dbg, 'a', encoding='utf-8') as df:
+                df.write(f"SET DARK: user_tree.style={getattr(user_tree, 'cget', lambda k: None)('style')} bg={getattr(user_tree, 'cget', lambda k: None)('background')} fg={getattr(user_tree, 'cget', lambda k: None)('foreground')}\n")
+                try:
+                    its = list(user_tree.get_children())
+                    df.write(f"SET DARK: user_tree items={len(its)} sample_tags={[user_tree.item(its[0]).get('tags') if its else None]}\n")
+                except Exception:
+                    pass
+                df.write(f"SET DARK: dwh_tree.style={getattr(dwh_tree, 'cget', lambda k: None)('style')} bg={getattr(dwh_tree, 'cget', lambda k: None)('background')} fg={getattr(dwh_tree, 'cget', lambda k: None)('foreground')}\n")
+        except Exception:
+            pass
+
+        # Log text: remember originals and set dark colors
+        try:
+            if 'log_text' in globals():
+                if not pane_orig.get('log'):
+                    pane_orig['log'] = (log_text.cget('bg'), log_text.cget('fg'), log_text.cget('insertbackground'))
+                log_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+        except Exception:
+            pass
+
+        try:
+            root._pane_orig = pane_orig
+        except Exception:
+            pass
+
+        # Debug: write status to debug log
+        try:
+            dbg = base_path / 'theme_debug.log'
+            with open(dbg, 'a', encoding='utf-8') as df:
+                df.write(f"SET DARK: user_tree.style={getattr(user_tree, 'cget', lambda k: None)('style')} bg={getattr(user_tree, 'cget', lambda k: None)('background')} fg={getattr(user_tree, 'cget', lambda k: None)('foreground')}\n")
+                try:
+                    its = list(user_tree.get_children())
+                    df.write(f"SET DARK: user_tree items={len(its)} sample_tags={[user_tree.item(its[0]).get('tags') if its else None]}\n")
+                except Exception:
+                    pass
+                df.write(f"SET DARK: dwh_tree.style={getattr(dwh_tree, 'cget', lambda k: None)('style')} bg={getattr(dwh_tree, 'cget', lambda k: None)('background')} fg={getattr(dwh_tree, 'cget', lambda k: None)('foreground')}\n")
+        except Exception:
+            pass
+
+    def set_panes_light():
+        nonlocal user_tree, dwh_tree
+        # First, if we recorded the original theme or style lookups, restore
+        # them so newly-created Treeviews are created under the original rules.
+        try:
+            if style:
+                try:
+                    po = getattr(root, '_pane_orig', {}) or {}
+                except Exception:
+                    po = {}
+                try:
+                    orig_theme = po.get('orig_theme')
+                    if orig_theme:
+                        try:
+                            style.theme_use(orig_theme)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                try:
+                    # restore Treeview lookups if we captured them
+                    ot = po.get('orig_tree_lookup') or {}
+                    if ot:
+                        try:
+                            style.configure('Treeview', background=ot.get('background') or '', fieldbackground=ot.get('fieldbackground') or '', foreground=ot.get('foreground') or '')
+                        except Exception:
+                            pass
+                    op = po.get('orig_pane_lookup') or {}
+                    if op:
+                        try:
+                            style.configure('Pane.Treeview', background=op.get('background') or '', fieldbackground=op.get('fieldbackground') or '', foreground=op.get('foreground') or '')
+                        except Exception:
+                            pass
+                    # Restore combobox style if we saved it
+                    try:
+                        tms = po.get('tool_menu_style')
+                        if tms and 'tool_menu' in globals():
+                            try:
+                                # Recreate under the saved style to ensure backend honors it
+                                _recreate_tool_menu(use_pane_style=(tms == 'Pane.TCombobox'))
+                            except Exception:
+                                try:
+                                    tool_menu.configure(style=tms)
+                                except Exception:
+                                    pass
+                        else:
+                            # ensure default (light) combobox style and recreate
+                            try:
+                                style.configure('TCombobox', fieldbackground='white', background='white', foreground='black')
+                                try:
+                                    _recreate_tool_menu(use_pane_style=False)
+                                    try:
+                                        # Move focus away from the combobox to avoid the
+                                        # focused color state remaining visible on some backends.
+                                        try:
+                                            if 'tool_menu' in globals() and hasattr(tool_menu, 'set_colors'):
+                                                try:
+                                                    tool_menu.set_colors(dark=False)
+                                                except Exception:
+                                                    pass
+                                            if 'run_btn' in globals() and run_btn:
+                                                run_btn.focus_set()
+                                            else:
+                                                root.focus_force()
+                                        except Exception:
+                                            try:
+                                                root.focus_force()
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+                                except Exception:
+                                    try:
+                                        tool_menu.configure(style='TCombobox')
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    # Restore Listbox option defaults to light values so native
+                    # popups created after this will be white on black text
+                    try:
+                        root.option_add('*Listbox.background', 'white')
+                        root.option_add('*Listbox.foreground', 'black')
+                        root.option_add('*Listbox.selectBackground', '#2a6bd6')
+                    except Exception:
+                        pass
+                    # Restore menu bar to light appearance
+                    try:
+                        root.option_add('*Menu.background', '#d0d0d0')
+                        root.option_add('*Menu.foreground', 'black')
+                        root.option_add('*Menu.activeBackground', '#ffffff')
+                        root.option_add('*Menu.activeForeground', 'black')
+                        try:
+                            menu_bar.config(background='#d0d0d0', foreground='black', activebackground='#ffffff', activeforeground='black')
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
+                    # Restore custom in-window menu if present
+                    try:
+                        if 'custom_menu_frame' in globals() and getattr(custom_menu_frame, 'winfo_exists', lambda: False)():
+                            try:
+                                custom_menu_frame.config(bg=root.cget('bg'))
+                            except Exception:
+                                pass
+                            try:
+                                for t in ('custom_view', 'custom_help'):
+                                    try:
+                                        mb, m = globals().get(t, (None, None))
+                                        if mb:
+                                            try:
+                                                mb.config(bg=root.cget('bg'), fg='black', activebackground='#ececec', activeforeground='black')
+                                            except Exception:
+                                                pass
+                                        if m:
+                                            try:
+                                                m.config(bg='white', fg='black')
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    # Restore heading lookups if available
+                    try:
+                        oh = po.get('orig_heading_lookup') or {}
+                        if oh:
+                            try:
+                                style.configure('Treeview.Heading', background=oh.get('background') or '', foreground=oh.get('foreground') or '')
+                            except Exception:
+                                try:
+                                    style.configure('Heading', background=oh.get('background') or '', foreground=oh.get('foreground') or '')
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
+        except Exception:
+            pass
+
+        # Recreate the treeviews without the Pane style so they return to
+        # the light/default appearance on backends that only apply style
+        # at creation time.
+        try:
+            try:
+                user_tree = _recreate_tree(user_tree, use_pane_style=False)
+            except Exception:
+                pass
+            try:
+                dwh_tree = _recreate_tree(dwh_tree, use_pane_style=False)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        # restore master bg and any saved per-widget properties
+        try:
+            try:
+                umbg = getattr(root, '_pane_orig', {}).get('user_master_bg', None)
+                if umbg is not None:
+                    user_tree.master.config(bg=umbg)
+            except Exception:
+                pass
+            try:
+                dmbg = getattr(root, '_pane_orig', {}).get('dwh_master_bg', None)
+                if dmbg is not None:
+                    dwh_tree.master.config(bg=dmbg)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        # Ensure every inserted item uses the standard 'row' tag and configure
+        # that tag to match the restored Treeview lookups (some backends rely
+        # on tag_configure for per-instance coloring).
+        try:
+            # determine appropriate colors from saved lookups or sensible defaults
+            po = getattr(root, '_pane_orig', {}) or {}
+            ot = po.get('orig_tree_lookup') or {}
+            bg = ot.get('fieldbackground') or ot.get('background') or 'white'
+            fg = ot.get('foreground') or 'black'
+            try:
+                user_tree.tag_configure('row', background=bg, foreground=fg)
+            except Exception:
+                pass
+            try:
+                for it in list(user_tree.get_children()):
+                    try:
+                        user_tree.item(it, tags=('row',))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            try:
+                dwh_tree.tag_configure('row', background=bg, foreground=fg)
+            except Exception:
+                pass
+            try:
+                for it in list(dwh_tree.get_children()):
+                    try:
+                        dwh_tree.item(it, tags=('row',))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        try:
+            po = getattr(root, '_pane_orig', None)
+            if po and po.get('log'):
+                bg, fg, ins = po.get('log')
+                try:
+                    # restore to the saved original or fallback to default light colors
+                    log_text.config(bg=bg or 'white', fg=fg or 'black', insertbackground=ins or 'black', selectbackground=None)
+                except Exception:
+                    try:
+                        log_text.config(bg='white', fg='black', insertbackground='black', selectbackground=None)
+                    except Exception:
+                        pass
+            else:
+                # ensure log resets to white if we have no saved original
+                try:
+                    log_text.config(bg='white', fg='black', insertbackground='black', selectbackground=None)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Debug: write status to debug log
+        try:
+            dbg = base_path / 'theme_debug.log'
+            with open(dbg, 'a', encoding='utf-8') as df:
+                df.write(f"SET LIGHT: user_tree.style={getattr(user_tree, 'cget', lambda k: None)('style')} bg={getattr(user_tree, 'cget', lambda k: None)('background')} fg={getattr(user_tree, 'cget', lambda k: None)('foreground')}\n")
+                try:
+                    its = list(user_tree.get_children())
+                    df.write(f"SET LIGHT: user_tree items={len(its)} sample_tags={[user_tree.item(its[0]).get('tags') if its else None]}\n")
+                except Exception:
+                    pass
+                df.write(f"SET LIGHT: dwh_tree.style={getattr(dwh_tree, 'cget', lambda k: None)('style')} bg={getattr(dwh_tree, 'cget', lambda k: None)('background')} fg={getattr(dwh_tree, 'cget', lambda k: None)('foreground')}\n")
+        except Exception:
+            pass
+
+    # Dark mode toggle variable (pane-only). Default off.
+    dark_mode_var = tk.BooleanVar(value=False)
+
+    def _toggle_dark():
+        try:
+            if dark_mode_var.get():
+                set_panes_dark()
+            else:
+                set_panes_light()
+            # Notify registered callbacks about theme change
+            try:
+                for cb in getattr(root, '_theme_callbacks', [])[:]:
+                    try:
+                        cb(dark_mode_var.get())
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    # Expose a registration API on the root so child dialogs can register
+    # callbacks to be notified when the pane-only dark mode changes.
+    try:
+        root._theme_callbacks = []
+
+        def _register_theme_callback(cb):
+            try:
+                if callable(cb):
+                    root._theme_callbacks.append(cb)
+            except Exception:
+                pass
+
+        def _unregister_theme_callback(cb):
+            try:
+                if cb in getattr(root, '_theme_callbacks', []):
+                    root._theme_callbacks.remove(cb)
+            except Exception:
+                pass
+
+        root.register_theme_callback = _register_theme_callback
+        root.unregister_theme_callback = _unregister_theme_callback
+    except Exception:
+        pass
+
+    view_menu.add_checkbutton(label="Dark Mode", variable=dark_mode_var, command=_toggle_dark)
+    menu_bar.add_cascade(label="View", menu=view_menu)
+    # Debug helper to inspect treeview style/tags at runtime
+    def _debug_panes():
+        try:
+            s = []
+            try:
+                s.append(f"user_tree {_tree_info(user_tree)}")
+                items = list(user_tree.get_children())
+                s.append(f"user_tree.items={len(items)}")
+                if items:
+                    s.append(f"sample_item_tags={user_tree.item(items[0]).get('tags')}")
+            except Exception as e:
+                s.append(f"user_tree error: {e}")
+            try:
+                s.append(f"dwh_tree {_tree_info(dwh_tree)}")
+                items2 = list(dwh_tree.get_children())
+                s.append(f"dwh_tree.items={len(items2)}")
+                if items2:
+                    s.append(f"sample_item_tags2={dwh_tree.item(items2[0]).get('tags')}")
+            except Exception as e:
+                s.append(f"dwh_tree error: {e}")
+            try:
+                style = ttk.Style()
+                s.append(f"Pane.Treeview lookup background={style.lookup('Pane.Treeview','background')} fieldbackground={style.lookup('Pane.Treeview','fieldbackground')} foreground={style.lookup('Pane.Treeview','foreground')}")
+                s.append(f"Treeview lookup background={style.lookup('Treeview','background')} fieldbackground={style.lookup('Treeview','fieldbackground')} foreground={style.lookup('Treeview','foreground')}")
+            except Exception as e:
+                s.append(f"style error: {e}")
+
+            dbg = base_path / 'theme_debug.log'
+            with open(dbg, 'a', encoding='utf-8') as df:
+                df.write('\n'.join(s) + '\n---\n')
+            from tkinter import messagebox
+            messagebox.showinfo('Theme Debug', '\n'.join(s))
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+                messagebox.showerror('Theme Debug Error', str(e))
+            except Exception:
+                pass
+
+    view_menu.add_command(label='Debug Panes', command=_debug_panes)
     
-    help_menu = tk.Menu(
-        menu_bar,
-        tearoff=0,
-        bg="#ffffff",                # white dropdown
-        fg="black",
-        activebackground="#d0d0d0",  # light gray hover
-        activeforeground="black"
-    )
-    
-    help_menu.add_command(label="About", command=show_about_popup)
-    help_menu.add_command(
-        label="Check for Updates",
-        command=lambda: webbrowser.open("https://github.com/hoonywise/HoonyTools/releases")
-    )
-    menu_bar.add_cascade(label="Help", menu=help_menu, underline=0)
-    root.config(menu=menu_bar)    
-    tk.Frame(root, height=1, bg="#b0b0b0").pack(fill="x")
+    # Replace native menu bar with a custom in-window menu bar composed of
+    # Menubuttons inside a Frame so it can be reliably styled per-pane.
+    # This is safer than relying on platform-drawn native menu bars which
+    # frequently ignore Tk color configuration on Windows.
+    def _create_custom_menu_bar(parent):
+        # Container frame sits at the top of the window (below the verse row)
+        f = tk.Frame(parent)
+
+        # Helper to create a Menubutton + Menu pair
+        def _show_menu(btn, menu):
+            try:
+                x = btn.winfo_rootx()
+                y = btn.winfo_rooty() + btn.winfo_height()
+                # For Tk >= 8.6 use tk_popup
+                try:
+                    menu.tk_popup(x, y)
+                except Exception:
+                    menu.post(x, y)
+            except Exception:
+                pass
+
+        def _mb(label_text, menu_items):
+            # Use a Button instead of Menubutton for more reliable styling
+            mb = tk.Button(f, text=label_text, relief='flat', padx=6, pady=2)
+            m = tk.Menu(f, tearoff=0)
+            for item in menu_items:
+                # item is a tuple: (type, label, command)
+                itype, ilabel, icmd = item
+                if itype == 'command':
+                    m.add_command(label=ilabel, command=icmd)
+                elif itype == 'check':
+                    # icon: pass variable as part of icmd tuple if provided
+                    var = None
+                    if isinstance(icmd, tuple) and len(icmd) > 1:
+                        var = icmd[1]
+                    m.add_checkbutton(label=ilabel, command=(icmd if callable(icmd) else None), variable=var)
+                elif itype == 'cascade':
+                    m.add_cascade(label=ilabel, menu=icmd)
+            # show popup on click
+            mb.config(command=lambda b=mb, mm=m: _show_menu(b, mm))
+            mb.pack(side='left', padx=(6, 2))
+            return mb, m
+
+        # Build View and Help menus using existing menu definitions
+        # View: copy items from view_menu
+        view_items = [
+            ('command', 'Dark Mode', lambda: view_menu.invoke(0)),
+            ('command', 'Debug Panes', _debug_panes)
+        ]
+        # Help: use existing functions
+        help_items = [
+            ('command', 'About', show_about_popup),
+            ('command', 'Check for Updates', lambda: webbrowser.open("https://github.com/hoonywise/HoonyTools/releases"))
+        ]
+
+        # Create menubuttons
+        mb_view, m_view = _mb('View', view_items)
+        mb_help, m_help = _mb('Help', help_items)
+
+        return f, (mb_view, m_view), (mb_help, m_help)
+
+    # Create the custom in-window menu bar and hide the native one
+    try:
+        # Create custom bar and then unset native menubar so it doesn't show
+        custom_menu_frame, custom_view, custom_help = _create_custom_menu_bar(root)
+        # Expose references globally so nested theme functions can style them
+        try:
+            globals()['custom_menu_frame'] = custom_menu_frame
+            globals()['custom_view'] = custom_view
+            globals()['custom_help'] = custom_help
+        except Exception:
+            pass
+        # Pack the custom menu before the verse row so it appears at the top
+        try:
+            custom_menu_frame.pack(fill='x', side='top', before=verse_frame)
+        except Exception:
+            try:
+                custom_menu_frame.pack(fill='x', side='top')
+            except Exception:
+                pass
+        try:
+            root.config(menu=None)
+        except Exception:
+            pass
+    except Exception:
+        # Fallback: keep the native menu if anything fails
+        try:
+            root.config(menu=menu_bar)
+        except Exception:
+            pass
+
+    # Best-effort: style the combobox popup Listbox used by some backends
+    def _style_combobox_popup(tv, dark):
+        """Try to find the popup Listbox/Toplevel for a ttk.Combobox and
+        configure its background/foreground. This is backend-dependent and
+        best-effort — it attempts common window naming/conventions.
+        """
+        try:
+            # The popup is often a Toplevel child of the root with a widget
+            # name like 'tk_popup' or a Listbox child. We search recently
+            # created toplevels and look for Listbox children.
+            for w in root.winfo_children():
+                try:
+                    # Skip regular frames
+                    if isinstance(w, tk.Toplevel):
+                        for ch in w.winfo_children():
+                            try:
+                                # If there's a Listbox inside, style it
+                                if isinstance(ch, tk.Listbox):
+                                    if dark:
+                                        ch.config(bg='#000000', fg='#ffffff', selectbackground='#444444')
+                                    else:
+                                        ch.config(bg='white', fg='black', selectbackground='#2a6bd6')
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # We replaced the native menu with a custom in-window menu. Keep the
+    # menu_bar structure around for compatibility but do not reattach it as
+    # the root menubar (native menubars ignore styling on some platforms).
+    tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#b0b0b0")).pack(fill="x")
         
     root.mainloop()
 

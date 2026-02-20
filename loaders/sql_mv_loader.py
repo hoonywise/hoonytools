@@ -10,6 +10,9 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# reference to Tk's default root if present (use getattr to avoid static-analysis issues)
+_tk_default_root = getattr(tk, '_default_root', None)
+
 _MV_HELPERS = {}
 try:
     from libs.mv_log_utils import detect_tables_from_sql as _ht, get_dependent_mviews as _gd, detect_existing_mlog as _dm
@@ -21,7 +24,13 @@ except Exception:
     pass
 
 
-def run_sql_mv_loader(on_finish=None):
+def run_sql_mv_loader(parent=None, on_finish=None):
+    # Backwards-compatible parameter handling: the launcher may pass a parent
+    # window (root) as the first argument. If a non-callable is passed, treat
+    # it as parent and clear on_finish.
+    if on_finish is not None and not callable(on_finish):
+        parent = on_finish
+        on_finish = None
     def detect_tables_from_sql(sql_text):
         """A conservative table detector: finds tokens after FROM and JOIN. Returns list of unique table identifiers."""
         # prefer shared helper when available
@@ -43,12 +52,47 @@ def run_sql_mv_loader(on_finish=None):
                 seen.add(t); out.append(t)
         return out
 
+    # Centralized messagebox helper: prefer dlg (when provided), then builder_window,
+    # then parent, then unparented. Returns the messagebox result or sensible default.
+    # Prefer shared safe_messagebox from loaders package so other loaders can reuse it
+    try:
+        from loaders import safe_messagebox as _safe_messagebox
+    except Exception:
+        # Fallback to local shim if import fails
+        def _safe_messagebox(fn_name: str, *args, dlg=None):
+            try:
+                parent_to_use = None
+                if dlg is not None:
+                    parent_to_use = dlg
+                else:
+                    try:
+                        parent_to_use = builder_window  # may raise NameError if not yet created
+                    except Exception:
+                        parent_to_use = parent if parent is not None else None
+                if parent_to_use is not None:
+                    return getattr(messagebox, fn_name)(*args, parent=parent_to_use)
+                return getattr(messagebox, fn_name)(*args)
+            except Exception:
+                try:
+                    return getattr(messagebox, fn_name)(*args)
+                except Exception:
+                    if fn_name.startswith('ask'):
+                        return False
+                    return None
+
     def show_create_logs_dialog(tables):
         """Show a modal dialog asking which tables to create logs on.
         Returns (create_flag, selected_tables, log_type, include_new_values) or None if cancelled."""
         try:
-            dlg = tk.Toplevel()
+            try:
+                dlg = tk.Toplevel(builder_window)
+            except NameError:
+                dlg = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
             dlg.title("Create Materialized View Logs")
+            try:
+                dlg.transient(builder_window)
+            except Exception:
+                pass
             dlg.grab_set()
         except Exception as e:
             # If creating the Toplevel fails (threading/root issues), fallback to a simple confirmation
@@ -60,7 +104,14 @@ def run_sql_mv_loader(on_finish=None):
             except Exception:
                 pass
             try:
-                create_choice = messagebox.askyesno("Create MV Logs?", f"Detected tables: {', '.join(tables)}\nCreate materialized view logs with WITH ROWID and INCLUDING NEW VALUES?")
+                try:
+                    pb = builder_window
+                except NameError:
+                    pb = parent
+                if pb is not None:
+                    create_choice = _safe_messagebox('askyesno', "Create MV Logs?", f"Detected tables: {', '.join(tables)}\nCreate materialized view logs with WITH ROWID and INCLUDING NEW VALUES?", dlg=pb)
+                else:
+                    create_choice = _safe_messagebox('askyesno', "Create MV Logs?", f"Detected tables: {', '.join(tables)}\nCreate materialized view logs with WITH ROWID and INCLUDING NEW VALUES?", dlg=None)
             except Exception:
                 create_choice = False
             if not create_choice:
@@ -204,8 +255,15 @@ def run_sql_mv_loader(on_finish=None):
         Returns one of: 'reuse', 'drop', or None (cancel)."""
         meta = None
         try:
-            dlg = tk.Toplevel()
+            try:
+                dlg = tk.Toplevel(builder_window)
+            except NameError:
+                dlg = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
             dlg.title(f"Existing MV Log on {table}")
+            try:
+                dlg.transient(builder_window)
+            except Exception:
+                pass
             dlg.grab_set()
         except Exception as e:
             logger.exception("Failed to open Existing Log dialog: %s", e)
@@ -218,7 +276,14 @@ def run_sql_mv_loader(on_finish=None):
                    "Do you want to drop and recreate the log with the selected options?\n"
                    "This will affect any dependent materialized views.")
             try:
-                ans = messagebox.askyesno("Drop & Recreate MV Log?", msg)
+                try:
+                    pb = builder_window
+                except NameError:
+                    pb = parent
+                if pb is not None:
+                    ans = _safe_messagebox('askyesno', "Drop & Recreate MV Log?", msg, dlg=pb)
+                else:
+                    ans = _safe_messagebox('askyesno', "Drop & Recreate MV Log?", msg, dlg=None)
             except Exception:
                 ans = False
             return 'drop' if ans else None
@@ -335,12 +400,9 @@ def run_sql_mv_loader(on_finish=None):
             try:
                 builder_window.clipboard_clear()
                 builder_window.clipboard_append('\n'.join(deps))
-                messagebox.showinfo('Copied', 'Dependent MV list copied to clipboard.')
+                _safe_messagebox('showinfo', 'Copied', 'Dependent MV list copied to clipboard.', dlg=dlg)
             except Exception:
-                try:
-                    messagebox.showwarning('Copy Failed', 'Could not copy to clipboard.')
-                except Exception:
-                    pass
+                _safe_messagebox('showwarning', 'Copy Failed', 'Could not copy to clipboard.', dlg=dlg)
 
         def save_deps():
             try:
@@ -348,12 +410,9 @@ def run_sql_mv_loader(on_finish=None):
                 if path:
                     with open(path, 'w', encoding='utf-8') as f:
                         f.write('\n'.join(deps))
-                    messagebox.showinfo('Saved', f'List saved to {path}')
+                    _safe_messagebox('showinfo', 'Saved', f'List saved to {path}', dlg=dlg)
             except Exception as e:
-                try:
-                    messagebox.showwarning('Save Failed', f'Could not save list: {e}')
-                except Exception:
-                    pass
+                _safe_messagebox('showwarning', 'Save Failed', f'Could not save list: {e}', dlg=dlg)
 
         btns_deps = tk.Frame(dlg)
         btns_deps.pack(padx=12, anchor='w')
@@ -400,13 +459,16 @@ def run_sql_mv_loader(on_finish=None):
                 lines = [f"detect_existing_mlog meta: {meta_text}"]
                 for k in ('user_mview_logs_count','all_mview_logs_count','user_tables_mlog_count','all_tables_mlog_count'):
                     lines.append(f"{k}: {diag.get(k)!r}")
-                messagebox.showinfo('Debug Info', '\n'.join(lines))
-            except Exception as e:
                 try:
-                    messagebox.showwarning('Debug Failed', f'Could not show debug info: {e}')
+                    _safe_messagebox('showinfo', 'Debug Info', '\n'.join(lines), dlg=dlg)
+                except Exception:
+                    _safe_messagebox('showwarning', 'Debug Failed', f'Could not show debug info: (failed to display debug info)', dlg=dlg)
+            except Exception:
+                # swallow any unexpected errors while preparing debug text
+                try:
+                    _safe_messagebox('showwarning', 'Debug Failed', 'Could not produce debug info.', dlg=dlg)
                 except Exception:
                     pass
-
         tk.Button(btns_deps, text='Show debug info', command=show_diag, width=14).pack(side='left', padx=(6,0))
 
         # acknowledgement checkbox variable (checkbox will be placed next to the confirmation entry)
@@ -564,7 +626,17 @@ def run_sql_mv_loader(on_finish=None):
                         prompt = (f"Could not create materialized view log on {t}:\n{err}\n\n"
                                   "Do you want to DROP any existing materialized view log on this table and recreate it with the selected options?\n"
                                   "This may affect other materialized views that depend on the existing log.")
-                        drop_confirm = messagebox.askyesno("Existing MV Log Detected", prompt)
+                        try:
+                            try:
+                                pb = builder_window
+                            except NameError:
+                                pb = parent
+                            if pb is not None:
+                                drop_confirm = _safe_messagebox('askyesno', "Existing MV Log Detected", prompt, dlg=pb)
+                            else:
+                                drop_confirm = _safe_messagebox('askyesno', "Existing MV Log Detected", prompt, dlg=None)
+                        except Exception:
+                            drop_confirm = False
                     except Exception:
                         drop_confirm = False
 
@@ -598,11 +670,23 @@ def run_sql_mv_loader(on_finish=None):
         use_dwh = dwh_var.get()
 
         if not mv_name:
-            messagebox.showerror("Missing MV Name", "❌ Please enter a materialized view name.")
+            try:
+                _safe_messagebox('showerror', "Missing MV Name", "\u274c Please enter a materialized view name.", dlg=builder_window)
+            except Exception:
+                try:
+                    _safe_messagebox('showerror', "Missing MV Name", "\u274c Please enter a materialized view name.", dlg=builder_window)
+                except Exception:
+                    pass
             return
 
         if not sql_query:
-            messagebox.showerror("Missing SQL", "❌ Please paste a SQL query.")
+            try:
+                _safe_messagebox('showerror', "Missing SQL", "\u274c Please paste a SQL query.", dlg=builder_window)
+            except Exception:
+                try:
+                    _safe_messagebox('showerror', "Missing SQL", "\u274c Please paste a SQL query.", dlg=builder_window)
+                except Exception:
+                    pass
             return
 
         # Remove trailing semicolon if present
@@ -616,9 +700,12 @@ def run_sql_mv_loader(on_finish=None):
         try:
             if use_dwh:
                 # Register with central DWH session manager for cleanup
-                from tkinter import _default_root as _tk_default_root
                 from libs import dwh_session
-                dwh_session.register_connection(_tk_default_root, conn)
+                try:
+                    dwh_session.register_connection(_tk_default_root, conn)
+                except Exception:
+                    # best-effort; do not block on registration failure
+                    logger.debug('Failed to register dwh connection', exc_info=True)
         except Exception:
             logger.debug('Failed to register dwh connection', exc_info=True)
         cursor = None
@@ -791,7 +878,7 @@ def run_sql_mv_loader(on_finish=None):
                                 msgs.append(f"Reused existing logs: {', '.join(reused)}")
                             if msgs:
                                 try:
-                                    messagebox.showinfo("MV Logs Created", "\n".join(msgs), parent=builder_window)
+                                    _safe_messagebox('showinfo', "MV Logs Created", "\n".join(msgs), dlg=builder_window)
                                     ensure_builder_on_top()
                                 except Exception:
                                     pass
@@ -799,7 +886,7 @@ def run_sql_mv_loader(on_finish=None):
                                 msg_lines = [f"{t}: {err}" for (t, err) in failed]
                                 msg = "Some MV logs could not be created:\n\n" + "\n".join(msg_lines) + "\n\nDo you want to continue creating the materialized view anyway?"
                                 try:
-                                    cont = messagebox.askyesno("MV Log Creation Failed", msg, parent=builder_window)
+                                    cont = _safe_messagebox('askyesno', "MV Log Creation Failed", msg, dlg=builder_window)
                                     ensure_builder_on_top()
                                 except Exception:
                                     cont = False
@@ -841,10 +928,13 @@ def run_sql_mv_loader(on_finish=None):
                 logger.info(f"✅ Materialized View '{mv_name}' created and granted SELECT to PUBLIC.")
 
                 try:
-                    messagebox.showinfo("Success", f"✅ Materialized View '{mv_name}' created successfully.", parent=builder_window)
+                    _safe_messagebox('showinfo', "Success", f"\u2705 Materialized View '{mv_name}' created successfully.", dlg=builder_window)
                     ensure_builder_on_top()
                 except Exception:
-                    messagebox.showinfo("Success", f"✅ Materialized View '{mv_name}' created successfully.")
+                    try:
+                        _safe_messagebox('showinfo', "Success", f"\u2705 Materialized View '{mv_name}' created successfully.", dlg=builder_window)
+                    except Exception:
+                        pass
                 builder_window.destroy()
                 if on_finish:
                     on_finish()
@@ -865,10 +955,17 @@ def run_sql_mv_loader(on_finish=None):
                 hint = "\n\nTip: REFRESH FAST/ON COMMIT may require materialized view logs or PKs on source tables."
                 # Show dialog with concise message but include trace in log file
                 try:
-                    messagebox.showerror("Error", f"❌ Failed to create materialized view:\n{e}{hint}", parent=builder_window)
+                    _safe_messagebox('showerror', "Error", f"\u274c Failed to create materialized view:\n{e}{hint}", dlg=builder_window)
                     ensure_builder_on_top()
                 except Exception:
-                    messagebox.showerror("Error", f"❌ Failed to create materialized view:\n{e}{hint}")
+                    try:
+                        _safe_messagebox('showerror', "Error", f"\u274c Failed to create materialized view:\n{e}{hint}", dlg=builder_window)
+                        ensure_builder_on_top()
+                    except Exception:
+                        try:
+                            _safe_messagebox('showerror', "Error", f"\u274c Failed to create materialized view:\n{e}{hint}", dlg=None)
+                        except Exception:
+                            pass
         finally:
             try:
                 if cursor:
@@ -887,11 +984,148 @@ def run_sql_mv_loader(on_finish=None):
         if on_finish:
             on_finish()
 
-    builder_window = tk.Toplevel()
+    # Create Toplevel with optional parent so the window can be modal
+    builder_window = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
     builder_window.title("SQL Materialized View Loader")
     # widen builder window so bottom option row isn't squished on smaller displays
     builder_window.geometry("1300x740")
-    builder_window.grab_set()
+
+    # If launched from the main launcher, make the window transient and modal
+    grabbed = False
+    try:
+        if parent is not None:
+            try:
+                builder_window.transient(parent)
+                builder_window.update_idletasks()
+                builder_window.deiconify()
+                builder_window.lift()
+            except Exception:
+                pass
+            try:
+                builder_window.grab_set()
+                grabbed = True
+            except Exception:
+                grabbed = False
+    except Exception:
+        pass
+
+    # Pane-only dark mode support (polling fallback)
+    try:
+        import tkinter.ttk as _ttk
+    except Exception:
+        _ttk = None
+    _last_dark = None
+    _poll_id = None
+
+    def _detect_dark_from_style():
+        try:
+            if _ttk:
+                st = _ttk.Style()
+                bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+                if isinstance(bg, str) and bg.strip():
+                    b = bg.strip().lower()
+                    if b in ('#000000', '#000') or 'black' in b:
+                        return True
+        except Exception:
+            pass
+        return False
+
+    def _apply_theme(dark: bool):
+        # Only apply dark colors to the SQL text pane and the MV name entry.
+        # Do not darken frames, labelframes, or control panels — keep chrome
+        # light so only the content panes change.
+        try:
+            if dark:
+                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+                try:
+                    mv_name_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+                except Exception:
+                    pass
+            else:
+                sql_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
+                try:
+                    mv_name_entry.config(bg='white', fg='black', insertbackground='black')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _poll_theme():
+        nonlocal _last_dark, _poll_id
+        try:
+            dark = _detect_dark_from_style()
+            if dark is not _last_dark:
+                _last_dark = dark
+                _apply_theme(dark)
+        except Exception:
+            pass
+        try:
+            _poll_id = builder_window.after(600, _poll_theme)
+        except Exception:
+            _poll_id = None
+
+    def _stop_polling(event=None):
+        nonlocal _poll_id
+        try:
+            if _poll_id:
+                builder_window.after_cancel(_poll_id)
+                _poll_id = None
+        except Exception:
+            pass
+
+    # Determine initial dark state before creating content widgets to avoid
+    # visible white -> black flip when dark mode is already enabled.
+    try:
+        _initial_dark = _detect_dark_from_style()
+    except Exception:
+        _initial_dark = False
+
+    try:
+        # apply current style immediately to ensure internal state is consistent
+        _apply_theme(_initial_dark)
+    except Exception:
+        pass
+
+    # Register theme callback with parent when available; otherwise start polling
+    def _theme_cb(enable_dark: bool):
+        try:
+            _apply_theme(bool(enable_dark))
+        except Exception:
+            pass
+
+    try:
+        if parent is not None and hasattr(parent, 'register_theme_callback'):
+            try:
+                parent.register_theme_callback(_theme_cb)
+                # ensure we unregister when this window is destroyed
+                def _on_destroy(event=None):
+                    try:
+                        if parent and hasattr(parent, 'unregister_theme_callback'):
+                            parent.unregister_theme_callback(_theme_cb)
+                    except Exception:
+                        pass
+                try:
+                    builder_window.bind('<Destroy>', _on_destroy)
+                except Exception:
+                    pass
+                # apply current style immediately via callback
+                try:
+                    _theme_cb(_detect_dark_from_style())
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        else:
+            try:
+                builder_window.after(600, _poll_theme)
+            except Exception:
+                pass
+            try:
+                builder_window.bind('<Destroy>', _stop_polling)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     # Helper to briefly bring the builder window to the front after modal messageboxes
     def ensure_builder_on_top(delay=50):
@@ -912,7 +1146,14 @@ def run_sql_mv_loader(on_finish=None):
 
     tk.Label(builder_window, text="Enter SQL to turn into a MATERIALIZED VIEW:", font=("Arial", 11, "bold")).pack(pady=(10, 5))
 
-    sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10))
+    # Create SQL text with initial theme to avoid visible white -> black flip
+    try:
+        if _initial_dark:
+            sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+        else:
+            sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
+    except Exception:
+        sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10))
     sql_text.pack(padx=10, pady=(0, 10), fill="both", expand=False)
 
     # Use a grid-based control area so widgets can expand proportionally
@@ -921,7 +1162,14 @@ def run_sql_mv_loader(on_finish=None):
 
     # Row 0: MV name + DWH checkbox
     tk.Label(control_frame, text="Materialized View Name:").grid(row=0, column=0, sticky="w")
-    mv_name_entry = tk.Entry(control_frame)
+    # Create MV name entry with initial theme to avoid flash
+    try:
+        if _initial_dark:
+            mv_name_entry = tk.Entry(control_frame, bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+        else:
+            mv_name_entry = tk.Entry(control_frame)
+    except Exception:
+        mv_name_entry = tk.Entry(control_frame)
     mv_name_entry.grid(row=0, column=1, sticky="we", padx=(6, 12))
     dwh_var = tk.BooleanVar()
     dwh_checkbox = tk.Checkbutton(control_frame, text="Load to DWH schema (shared login)", variable=dwh_var)
@@ -979,4 +1227,34 @@ def run_sql_mv_loader(on_finish=None):
     x = (builder_window.winfo_screenwidth() // 2) - (width // 2)
     y = (builder_window.winfo_screenheight() // 2) - (height // 2)
     builder_window.geometry(f"{width}x{height}+{x}+{y}")
-    builder_window.mainloop()
+
+    # Run modal or standalone mainloop depending on whether a parent was provided
+    try:
+        if parent is not None:
+            try:
+                builder_window.wait_window()
+            except Exception:
+                pass
+        else:
+            try:
+                builder_window.mainloop()
+            except KeyboardInterrupt:
+                try:
+                    if grabbed:
+                        try:
+                            builder_window.grab_release()
+                        except Exception:
+                            pass
+                    builder_window.destroy()
+                except Exception:
+                    pass
+    finally:
+        # Ensure we release modal grab if we set it
+        try:
+            if grabbed:
+                try:
+                    builder_window.grab_release()
+                except Exception:
+                    pass
+        except Exception:
+            pass

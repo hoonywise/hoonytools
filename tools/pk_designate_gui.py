@@ -2,8 +2,12 @@ import re
 import logging
 import json
 import tkinter as tk
+try:
+    import tkinter.ttk as ttk
+except Exception:
+    ttk = None
 from pathlib import Path
-from tkinter import Toplevel, Listbox, Scrollbar, Button, Label, Entry, StringVar, Checkbutton, IntVar, messagebox
+from tkinter import Toplevel, Listbox, Scrollbar, Button, Label, Entry, StringVar, Checkbutton, IntVar
 from tkinter.constants import MULTIPLE, END, LEFT, RIGHT, Y, BOTH
 from libs.paths import PROJECT_PATH as base_path
 
@@ -11,6 +15,29 @@ from libs.oracle_db_connector import get_db_connection
 from libs import dwh_session
 
 logger = logging.getLogger(__name__)
+
+# Use shared safe messagebox helper when available for consistent parenting
+try:
+    from loaders import safe_messagebox as _safe_messagebox
+except Exception:
+    def _safe_messagebox(fn_name: str, *args, dlg=None):
+        try:
+            from tkinter import messagebox as _messagebox
+        except Exception:
+            _messagebox = None
+        try:
+            if _messagebox is None:
+                return None
+            if dlg is not None:
+                return getattr(_messagebox, fn_name)(*args, parent=dlg)
+            return getattr(_messagebox, fn_name)(*args)
+        except Exception:
+            try:
+                return getattr(_messagebox, fn_name)(*args)
+            except Exception:
+                if fn_name.startswith('ask'):
+                    return False
+                return None
 
 
 def center_window(window, width, height):
@@ -253,6 +280,128 @@ def main(parent=None):
     Label(ctrl, text='Constraint name:').pack(pady=(0,4))
     cname_entry = Entry(ctrl, textvariable=constraint_name_var, width=28)
     cname_entry.pack()
+    # Apply pane-aware colors: if the parent/dialog background is dark,
+    # make the entry dark background with light text so it matches launcher
+    # pane-only dark mode. This detects the window background brightness
+    # at creation time and adjusts the entry accordingly.
+    def _apply_entry_theme():
+        try:
+            dark = False
+            # Prefer checking the ttk style lookup (launcher toggles this).
+            try:
+                if ttk:
+                    st = ttk.Style()
+                    sbg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+                    if isinstance(sbg, str) and sbg.strip():
+                        sb = sbg.strip().lower()
+                        if sb in ('#000000', '#000') or 'black' in sb:
+                            dark = True
+            except Exception:
+                dark = False
+
+            # Fallback: inspect window bg only if style lookup wasn't decisive
+            if not dark:
+                try:
+                    bg = win.cget('bg')
+                    if isinstance(bg, str):
+                        b = bg.strip()
+                        if b.startswith('#') and len(b) >= 7:
+                            try:
+                                r = int(b[1:3], 16)
+                                g = int(b[3:5], 16)
+                                bl = int(b[5:7], 16)
+                                lum = 0.2126 * r + 0.7152 * g + 0.0722 * bl
+                                dark = lum < 128
+                            except Exception:
+                                dark = b.lower() in ('#000000', 'black')
+                        else:
+                            dark = b.lower() in ('black',)
+                except Exception:
+                    pass
+
+            if dark:
+                try:
+                    cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+                except Exception:
+                    pass
+            else:
+                try:
+                    cname_entry.config(bg='white', fg='black', insertbackground='black')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    _apply_entry_theme()
+
+    # Theme detection helper
+    last_dark = None
+    def _detect_dark_from_style():
+        try:
+            if ttk:
+                st = ttk.Style()
+                bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+                if isinstance(bg, str) and bg.strip():
+                    sb = bg.strip().lower()
+                    if sb in ('#000000', '#000') or 'black' in sb:
+                        return True
+        except Exception:
+            pass
+        return False
+
+    def _theme_cb(enable_dark: bool):
+        try:
+            if enable_dark:
+                cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+            else:
+                cname_entry.config(bg='white', fg='black', insertbackground='black')
+        except Exception:
+            pass
+
+    # If parent provides registration API, use it for instant callbacks.
+    # Otherwise, fall back to polling.
+    try:
+        if parent and hasattr(parent, 'register_theme_callback'):
+            try:
+                parent.register_theme_callback(_theme_cb)
+            except Exception:
+                pass
+
+            # ensure we unregister when this dialog is destroyed
+            def _on_destroy(event=None):
+                try:
+                    if parent and hasattr(parent, 'unregister_theme_callback'):
+                        parent.unregister_theme_callback(_theme_cb)
+                except Exception:
+                    pass
+            try:
+                win.bind('<Destroy>', _on_destroy)
+            except Exception:
+                pass
+        else:
+            # fallback polling implementation
+            def _poll_theme():
+                nonlocal last_dark
+                try:
+                    dark = _detect_dark_from_style()
+                    if dark is not last_dark:
+                        last_dark = dark
+                        if dark:
+                            cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+                        else:
+                            cname_entry.config(bg='white', fg='black', insertbackground='black')
+                except Exception:
+                    pass
+                try:
+                    win.after(600, _poll_theme)
+                except Exception:
+                    pass
+            try:
+                win.after(600, _poll_theme)
+            except Exception:
+                pass
+    except Exception:
+        pass
     # Button to restore full column list after detect filtered it
     def show_all_columns():
         try:
@@ -322,7 +471,7 @@ def main(parent=None):
                 pass
         except Exception as e:
             logger.exception('Failed to list tables: %s', e)
-            messagebox.showerror('Error', f'Failed to list tables: {e}')
+            _safe_messagebox('showerror', 'Error', f'Failed to list tables: {e}', dlg=win)
         finally:
             cur.close()
 
@@ -377,7 +526,7 @@ def main(parent=None):
                 pass
         except Exception as e:
             logger.exception('Failed to list columns: %s', e)
-            messagebox.showerror('Error', f'Failed to list columns: {e}')
+            _safe_messagebox('showerror', 'Error', f'Failed to list columns: {e}', dlg=win)
         finally:
             cur.close()
 
@@ -501,7 +650,7 @@ def main(parent=None):
     def detect_candidates():
         sel = tbl_list.curselection()
         if not sel:
-            messagebox.showwarning('Select table', 'Please select a table first')
+            _safe_messagebox('showwarning', 'Select table', 'Please select a table first', dlg=win)
             return
         idx = sel[0]
         try:
@@ -589,17 +738,17 @@ def main(parent=None):
                     pass
             else:
                 logger.info('No PK candidates found for %s.%s; candidates list empty', owner, tbl)
-                messagebox.showinfo('No candidates', 'No single-column PK candidates detected. You can still select columns for a composite PK.')
+                _safe_messagebox('showinfo', 'No candidates', 'No single-column PK candidates detected. You can still select columns for a composite PK.', dlg=win)
         except Exception as e:
             logger.exception('Candidate detection failed: %s', e)
-            messagebox.showerror('Error', f'Candidate detection failed: {e}')
+            _safe_messagebox('showerror', 'Error', f'Candidate detection failed: {e}', dlg=win)
         finally:
             cur.close()
 
     def add_primary_key():
         sel = tbl_list.curselection()
         if not sel:
-            messagebox.showwarning('Select table', 'Please select a table first')
+            _safe_messagebox('showwarning', 'Select table', 'Please select a table first', dlg=win)
             return
         idx = sel[0]
         try:
@@ -609,7 +758,7 @@ def main(parent=None):
             tbl = tbl_list.get(idx).split('  (rows:')[0].strip()
         cols_idx = col_list.curselection()
         if not cols_idx:
-            messagebox.showwarning('Select columns', 'Select one or more columns for the primary key')
+            _safe_messagebox('showwarning', 'Select columns', 'Select one or more columns for the primary key', dlg=win)
             return
         cols = [col_list.get(i) for i in cols_idx]
 
@@ -622,7 +771,7 @@ def main(parent=None):
             cur.execute(null_sql)
             nulls = cur.fetchone()[0]
             if nulls > 0:
-                if not messagebox.askyesno('Nulls found', f'{nulls} row(s) have NULL in selected column(s). Proceed?'):
+                if not _safe_messagebox('askyesno', 'Nulls found', f'{nulls} row(s) have NULL in selected column(s). Proceed?', dlg=win):
                     return
 
             # duplicate check
@@ -632,7 +781,7 @@ def main(parent=None):
             cur.execute(dup_sql)
             dups = cur.fetchone()[0]
             if dups > 0:
-                messagebox.showerror('Duplicates found', f'{dups} duplicate key value(s) found. Cannot create PK.')
+                _safe_messagebox('showerror', 'Duplicates found', f'{dups} duplicate key value(s) found. Cannot create PK.', dlg=win)
                 return
 
             # constraint name
@@ -640,18 +789,18 @@ def main(parent=None):
             cname = _sanitize_constraint_name(cname)
 
             sql = f'ALTER TABLE {_quote_ident(owner)}.{_quote_ident(tbl)} ADD CONSTRAINT {_quote_ident(cname)} PRIMARY KEY ({group_cols})'
-            if not messagebox.askyesno('Confirm', f'Execute:\n{sql}'):
+            if not _safe_messagebox('askyesno', 'Confirm', f'Execute:\n{sql}', dlg=win):
                 return
 
             try:
                 cur.execute(sql)
                 conn.commit()
-                messagebox.showinfo('Success', f'Primary key {cname} created on {tbl}.')
+                _safe_messagebox('showinfo', 'Success', f'Primary key {cname} created on {tbl}.', dlg=win)
                 logger.info('Created PK %s on %s.%s', cname, owner, tbl)
             except Exception as e:
                 conn.rollback()
                 logger.exception('Failed to create PK: %s', e)
-                messagebox.showerror('Error', f'Failed to create PK: {e}')
+                _safe_messagebox('showerror', 'Error', f'Failed to create PK: {e}', dlg=win)
         finally:
             cur.close()
 
