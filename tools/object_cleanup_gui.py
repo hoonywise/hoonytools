@@ -626,7 +626,7 @@ def _get_table_for_object(obj):
     return None
 
 
-def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_complete=None):
+def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_complete=None, on_status_change=None):
     """
     Drop specified database objects. Called from main GUI Drop buttons.
     
@@ -636,11 +636,20 @@ def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_com
         objects: List of dicts with keys: 'name', 'type', 'info' (optional)
         parent_window: Parent Tk window for dialogs
         on_complete: Callback function to run after completion (e.g., refresh)
+        on_status_change: Callback function(status) where status is 'busy' or 'idle'
     
     Returns:
         True if any objects were dropped, False otherwise
     """
     from tkinter import messagebox
+    
+    # Helper to safely call status callback
+    def set_status(status):
+        if on_status_change:
+            try:
+                on_status_change(status)
+            except Exception:
+                pass
     
     if not objects:
         return False
@@ -685,6 +694,9 @@ def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_com
     
     schema = schema_name
     cursor = conn.cursor()
+    
+    # Set status to busy (red indicator)
+    set_status('busy')
     
     dropped_count = 0
     skipped_count = 0
@@ -806,6 +818,9 @@ def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_com
             dwh_session.cleanup(parent_window)
     except Exception:
         logger.debug('DWH cleanup failed', exc_info=True)
+    
+    # Set status back to idle (green indicator)
+    set_status('idle')
     
     # Show summary
     if dropped_count > 0 or skipped_count > 0 or auto_skipped_count > 0:

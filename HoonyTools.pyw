@@ -1533,6 +1533,21 @@ def launch_tool_gui():
                 result.append({'name': name, 'type': obj_type, 'info': info})
         return result
 
+    # Status callback function - will be set later when status_light is created
+    def _get_status_callback():
+        """Return the status change callback if status_light exists."""
+        def status_callback(status):
+            try:
+                if hasattr(root, '_status_light'):
+                    if status == 'busy':
+                        root._status_light.config(text="🔴")
+                    else:  # idle
+                        root._status_light.config(text="🟢")
+                    root.update_idletasks()
+            except Exception:
+                pass
+        return status_callback
+
     def launch_drop_user():
         """Handle Drop button click for User schema."""
         objects = _get_selected_objects(user_tree)
@@ -1563,14 +1578,15 @@ def launch_tool_gui():
             messagebox.showerror('Error', 'Could not determine user schema.', parent=root)
             return
         
-        # Call the drop function
+        # Call the drop function with status callback
         from tools.object_cleanup_gui import drop_objects
         drop_objects(
             schema_choice='user',
             schema_name=owner,
             objects=objects,
             parent_window=root,
-            on_complete=lambda: refresh_user_objects()
+            on_complete=lambda: refresh_user_objects(),
+            on_status_change=_get_status_callback()
         )
 
     def launch_drop_dwh():
@@ -1581,14 +1597,15 @@ def launch_tool_gui():
             messagebox.showwarning('No Selection', 'Please select one or more objects to drop.', parent=root)
             return
         
-        # Call the drop function
+        # Call the drop function with status callback
         from tools.object_cleanup_gui import drop_objects
         drop_objects(
             schema_choice='dwh',
             schema_name='DWH',
             objects=objects,
             parent_window=root,
-            on_complete=lambda: refresh_dwh_objects()
+            on_complete=lambda: refresh_dwh_objects(),
+            on_status_change=_get_status_callback()
         )
 
     user_drop_btn.config(command=launch_drop_user)
@@ -2030,6 +2047,9 @@ def launch_tool_gui():
         font=("Arial", 12)
     )
     status_light.pack(side="right", padx=10)
+    
+    # Store reference on root so status callbacks can access it
+    root._status_light = status_light
 
     def on_scroll(*args):
         global auto_scroll_enabled
