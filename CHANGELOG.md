@@ -3,6 +3,32 @@
 All notable changes to **HoonyTools** will be documented in this file.
 
 ---
+
+
+## 🚀 v1.3.6 — Fix: Ensure DWH connection always closed on early exits (2026-02-19)
+
+This patch fixes a connection leak in the SQL Materialized View Loader when the "Load to DWH" (shared login) option is used but the user cancels or errors out during the materialized-view-log creation flow.
+
+### Fixed
+
+- Wrap the SQL MV Loader `on_submit` flow with a `try/finally` so any `conn` opened by `get_db_connection(force_shared=True)` is always closed, including on early `return` paths and dialog cancellations.
+- Close cursors and connections reliably even when DWH credentials are only stored in-memory (`session.dwh_credentials`) and not written to `libs/config.ini`.
+
+### Notes
+
+- This resolves the case where a failed DWH attempt could leave a live connection and later cause unexpected behavior even when the user unchecks the DWH option on a subsequent run.
+- No user-visible changes beyond more predictable connection behavior; logging added to help future diagnostics.
+
+### Hotfix
+
+- Fix: Ensure the main window close button (title-bar X) performs the same full cleanup as the `Exit` button. Previously the X binding used `root.quit`, which only stopped the Tk mainloop and could leave the process in an inconsistent state after certain tool failures. The X now calls the launcher's `safe_exit()` routine so the GUI and any hidden root are destroyed and the process exits reliably.
+
+### Notes (runtime)
+
+- This change harmonizes WM_DELETE_WINDOW behavior with the explicit Exit button, preventing situations where closing a tool then hitting the X on the launcher appeared to do nothing. If you prefer the X to only hide the window (not exit the process), we can adjust to a gentler behavior.
+
+---
+
 ## 🚀 v1.3.5 — UI & DWH Refresh Improvements (2026-02-19)
 
 This patch contains several UI improvements and fixes to the DWH refresh/login flow implemented during the current development session.
