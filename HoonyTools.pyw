@@ -543,9 +543,24 @@ def run_selected():
                         # Last resort: call without args
                         TOOLS[tool_name]()
                 status_light.config(text="🟢")
+        except KeyboardInterrupt:
+            # User or system interrupted the tool; attempt graceful cleanup and avoid
+            # letting KeyboardInterrupt propagate into Tk's callback machinery.
+            try:
+                logger.info(f"Tool run interrupted by KeyboardInterrupt: {tool_name}")
+            except Exception:
+                pass
+            try:
+                status_light.config(text="🟢")
+            except Exception:
+                pass
+            return
         except Exception as e:
             logger.exception(f"❌ Error running {tool_name}: {e}")
-            status_light.config(text="🟢")
+            try:
+                status_light.config(text="🟢")
+            except Exception:
+                pass
 
     run_and_update()
 
