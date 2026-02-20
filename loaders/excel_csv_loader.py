@@ -4,10 +4,13 @@ import oracledb
 import logging
 import re
 import time
-from tkinter import Tk, filedialog, simpledialog, Toplevel, Label, Checkbutton, IntVar, Button, Entry
+import threading
+import queue as _queue
+from tkinter import Tk, filedialog, simpledialog, Toplevel, Label, Checkbutton, IntVar, Button, Entry, messagebox
 import sys
 from pathlib import Path
 from libs.table_utils import create_index_if_columns_exist
+from typing import Any, Dict
 
 # Add path to shared connector
 from libs.paths import PROJECT_PATH as base_path
@@ -27,8 +30,85 @@ def center_window(window, width, height):
     y = int((screen_height / 2) - (height / 2))
     window.geometry(f"{width}x{height}+{x}+{y}")
 
-def prompt_schema_choice():
-    result = {"choice": None}
+
+def call_ui(ui_root, func, *args, **kwargs):
+    """Run a UI callable on the Tk main thread and return its result.
+
+    If already on the main thread the function is invoked directly. When called
+    from a background thread this schedules the callable via parent.after(0, ...)
+    and waits for the result using a Queue. The parent argument should be the
+    launcher's root (or a valid Tk widget).
+    """
+    # Fast path when already on main thread
+    try:
+        if threading.current_thread() == threading.main_thread():
+            return func(*args, **kwargs)
+    except Exception:
+        # If anything odd happens, fall back to scheduling
+        pass
+
+    q = _queue.Queue()
+    # If called from a background thread, register a prompt Event so the
+    # launcher abort handler can wake this worker if the user clicks Abort
+    # while a main-thread prompt is being shown.
+    ev = None
+
+    def _run():
+        try:
+            res = func(*args, **kwargs)
+            q.put((True, res))
+        except Exception as e:
+            q.put((False, e))
+
+    try:
+        # ui_root may be None if caller didn't provide a root; try to schedule
+        # on the provided ui_root if possible, otherwise run directly.
+        if ui_root is not None and hasattr(ui_root, 'after'):
+            # register a prompt event so abort can cancel this wait
+            try:
+                ev = threading.Event()
+                abort_manager.register_prompt_event(ev)
+            except Exception:
+                ev = None
+            try:
+                ui_root.after(0, _run)
+            except Exception:
+                # scheduling failed, run the function directly
+                _run()
+        else:
+            # no valid ui_root to schedule on; run directly (best-effort)
+            _run()
+    except Exception:
+        # scheduling failed, run the function directly
+        _run()
+
+    # Wait for result but poll so we can respond to abort requests.
+    try:
+        from queue import Empty
+        while True:
+            try:
+                ok, payload = q.get(timeout=0.2)
+                break
+            except Empty:
+                # If abort was requested, stop waiting and raise to caller
+                try:
+                    if getattr(abort_manager, 'should_abort', False):
+                        raise RuntimeError("UI prompt cancelled due to abort")
+                except Exception:
+                    pass
+                continue
+        if ok:
+            return payload
+        raise payload
+    finally:
+        # Clear any registered prompt event
+        try:
+            abort_manager.register_prompt_event(None)
+        except Exception:
+            pass
+
+def prompt_schema_choice(parent=None):
+    result: Dict[str, Any] = {"choice": None}
 
     def select_user():
         result["choice"] = "user"
@@ -42,7 +122,11 @@ def prompt_schema_choice():
         result["choice"] = None
         win.destroy()
 
-    win = Toplevel()
+    # Parent the dialog when possible so it appears above the launcher
+    try:
+        win = Toplevel(parent) if parent is not None else Toplevel()
+    except Exception:
+        win = Toplevel()
     win.title("Select Schema Scope")
     center_window(win, 300, 140)
     win.resizable(False, False)
@@ -105,7 +189,13 @@ def create_table(cursor, schema, table_name, df):
     ])
     cursor.execute(f'CREATE TABLE {schema}.{table_name.upper()} ({cols_sql})')
     cursor.execute(f'GRANT SELECT ON {schema}.{table_name.upper()} TO PUBLIC')
-    abort_manager.register_created_table(table_name)
+    # Register the fully-qualified table name so abort cleanup can drop it
+    # even if the connection/cursor are gone.
+    try:
+        abort_manager.register_created_table(table_name, schema=schema)
+    except Exception:
+        # Best-effort registration; do not fail table creation if this errors.
+        logger.debug("Failed to register created table with abort_manager")
     logger.info(f"✅ Created table and granted SELECT to PUBLIC: {schema}.{table_name}")
     
     # ==== CREATE INDEX IF COLUMNS EXIST ====
@@ -124,7 +214,12 @@ def insert_data(cursor, schema, table_name, df, conn):
 
     for i, row in df.iterrows():
         if abort_manager.should_abort:
-            abort_manager.cleanup_on_abort(conn, cursor)
+            # Let the abort manager perform cleanup once. Do not attempt
+            # to call cleanup_on_abort again from outer exception handlers.
+            try:
+                abort_manager.cleanup_on_abort(conn, cursor)
+            except Exception:
+                logger.exception("Error during cleanup_on_abort in insert_data")
             return False
         try:
             cursor.execute(insert_sql, tuple(row))
@@ -499,6 +594,11 @@ def show_upsert_selector(parent, cols):
 def create_staging_table_from_df(cursor, schema, staging_table, df):
     cols_sql = ', '.join([f'"{col}" VARCHAR2(4000)' for col in df.columns])
     cursor.execute(f'CREATE TABLE {schema}.{staging_table} ({cols_sql})')
+    # Register staging table with abort_manager so abort cleanup can drop it
+    try:
+        abort_manager.register_created_table(staging_table, schema=schema)
+    except Exception:
+        logger.debug("Failed to register staging table with abort_manager")
 
 
 def bulk_insert_chunked(conn, cursor, schema, table_name, df, chunk_size=500, insert_columns=None):
@@ -529,17 +629,40 @@ def bulk_insert_chunked(conn, cursor, schema, table_name, df, chunk_size=500, in
             data.append(tuple(row[col] for col in cols_list))
 
     for i in range(0, total, chunk_size):
+        # Check for abort request between chunks so we can stop cooperatively
+        if getattr(abort_manager, 'should_abort', False):
+            logger.info("⛔ Abort detected during bulk insert. Running cleanup_on_abort and returning.")
+            try:
+                abort_manager.cleanup_on_abort(conn, cursor)
+            except Exception:
+                logger.exception("Error during cleanup_on_abort")
+            return inserted
+
         chunk = data[i:i+chunk_size]
         try:
             cursor.executemany(insert_sql, chunk)
-            conn.commit()
+            try:
+                conn.commit()
+            except Exception:
+                # Some drivers may not like commit in tight loop; ignore commit failures here and continue
+                pass
             inserted += len(chunk)
         except Exception as e:
             logger.warning(f"Bulk insert failed at chunk starting {i}: {e}")
             for row in chunk:
+                # Check abort between fallback row inserts so abort is responsive
+                if getattr(abort_manager, 'should_abort', False):
+                    try:
+                        abort_manager.cleanup_on_abort(conn, cursor)
+                    except Exception:
+                        logger.exception("Error during cleanup_on_abort in fallback row loop")
+                    return inserted
                 try:
                     cursor.execute(insert_sql, row)
-                    conn.commit()
+                    try:
+                        conn.commit()
+                    except Exception:
+                        pass
                     inserted += 1
                 except Exception as e2:
                     logger.warning(f"Row insert failed during fallback: {e2}")
@@ -918,7 +1041,7 @@ def replace_table_with_df(conn, cursor, root, schema, table_name, df):
     incoming_set = set(incoming_cols)
 
     # final confirm before destructive replace
-    proceed_confirm = messagebox.askyesno("Confirm Replace", f"This will REMOVE ALL ROWS from {schema}.{table_name} and replace with the uploaded file.\n\nProceed?", parent=root)
+    proceed_confirm = call_ui(root, lambda: messagebox.askyesno("Confirm Replace", f"This will REMOVE ALL ROWS from {schema}.{table_name} and replace with the uploaded file.\n\nProceed?", parent=root))
     if not proceed_confirm:
         logger.info("User cancelled destructive Replace.")
         return
@@ -927,16 +1050,16 @@ def replace_table_with_df(conn, cursor, root, schema, table_name, df):
     if existing_set == incoming_set:
         insert_df = df
     elif incoming_set.issubset(existing_set):
-        ok = messagebox.askyesno("Subset Replace", f"Incoming columns are a subset of target table columns.\nInsert only the incoming columns into {schema}.{table_name}?\n(Other target columns will be set to NULL)", parent=root)
+        ok = call_ui(root, lambda: messagebox.askyesno("Subset Replace", f"Incoming columns are a subset of target table columns.\nInsert only the incoming columns into {schema}.{table_name}?\n(Other target columns will be set to NULL)", parent=root))
         if not ok:
             logger.info("Replace cancelled by user (subset confirmation).")
             return
         insert_df = df[[c for c in df.columns if c.upper() in existing_set]]
     else:
         extras = list(incoming_set - existing_set)
-        ok = messagebox.askyesno("Extra Columns", f"Incoming data contains columns not present in target table: {extras}\n\nIgnore extra columns and insert matching columns?", parent=root)
+        ok = call_ui(root, lambda: messagebox.askyesno("Extra Columns", f"Incoming data contains columns not present in target table: {extras}\n\nIgnore extra columns and insert matching columns?", parent=root))
         if not ok:
-            messagebox.showerror("Schema Mismatch", f"Replace cancelled.\n\nTarget columns: {existing_cols}\nIncoming columns: {incoming_cols}", parent=root)
+            call_ui(root, lambda: messagebox.showerror("Schema Mismatch", f"Replace cancelled.\n\nTarget columns: {existing_cols}\nIncoming columns: {incoming_cols}", parent=root))
             logger.warning(f"Replace aborted due to column mismatch for {schema}.{table_name}")
             return
         insert_df = df[[c for c in df.columns if c.upper() in existing_set]]
@@ -1047,385 +1170,413 @@ def select_sheets_gui(file, sheets):
     return result if result else None
 
 # ==== MAIN FUNCTION ====
-def load_multiple_files():
-    root = Tk()
-    root.withdraw()
+def load_multiple_files(launcher_root=None):
+    """Load multiple Excel/CSV files.
 
-    schema_choice = prompt_schema_choice()
-    if schema_choice is None:
-        return
+    UI interactions run on the provided launcher_root when available; heavy DB work
+    runs in a background thread so the main GUI remains responsive and the
+    Abort button can take effect.
+    """
+    parent = launcher_root
+    created_temp_root = False
+    if parent is None:
+        parent = Tk()
+        parent.withdraw()
+        created_temp_root = True
 
-    conn = get_db_connection(force_shared=(schema_choice == "dwh"))
-    if not conn:
-        logger.error("❌ Failed to connect to Oracle.")
-        return
     try:
-        if schema_choice == 'dwh':
-            # register connection so central cleanup can clear in-memory creds when finished
-            dwh_session.register_connection(root, conn)
+        logger.info(f"load_multiple_files invoked (thread={threading.current_thread().name} id={threading.get_ident()})")
     except Exception:
-        logger.debug('Failed to register dwh connection', exc_info=True)
+        logger.info("load_multiple_files invoked")
 
-    file_paths = filedialog.askopenfilenames(filetypes=[("Excel or CSV", ["*.xlsx", "*.xls", "*.csv"])])
+    # Ensure schema choice prompt runs on the main thread / parent
+    try:
+        schema_choice = call_ui(parent, prompt_schema_choice, parent)
+    except Exception as e:
+        logger.exception(f"Exception while showing schema choice dialog: {e}")
+        if created_temp_root:
+            try:
+                parent.destroy()
+            except Exception:
+                pass
+        return
+    if schema_choice is None:
+        if created_temp_root:
+            try:
+                parent.destroy()
+            except Exception:
+                pass
+        return
+
+    try:
+        # askopenfilenames does not accept a positional 'parent' reliably across
+        # Tk versions. Call it with a keyword via a lambda so call_ui schedules
+        # the dialog correctly on the main thread.
+        file_paths = call_ui(parent, lambda: filedialog.askopenfilenames(parent=parent))
+    except Exception as e:
+        logger.exception(f"Exception while showing file-open dialog: {e}")
+        if created_temp_root:
+            try:
+                parent.destroy()
+            except Exception:
+                pass
+        return
+    # filedialog.askopenfilenames expects parent as first positional arg in some
+    # environments; call_ui will schedule the dialog on the main thread.
     if not file_paths:
         logger.warning("❌ No files selected. Aborting.")
+        if created_temp_root:
+            try:
+                parent.destroy()
+            except Exception:
+                pass
         return
 
-    schema = "DWH" if schema_choice == "dwh" else conn.username.upper()
-    logger.info(f"🔐 Connected to schema: {schema}")
-    
-    cursor = conn.cursor()
-    abort_manager.reset()
-
+    # Log scheduling details before starting background work
     try:
-        for file_path in file_paths:
-            file_name = os.path.splitext(os.path.basename(file_path))[0].replace('-', '_').replace(' ', '_').upper()
+        logger.info(f"Scheduling loader background worker: files={len(file_paths)} schema_choice={schema_choice}")
+    except Exception:
+        logger.info("Scheduling loader background worker (could not determine file count)")
 
-            if file_path.endswith('.csv'):
+    def _background_work(file_paths, schema_choice, parent, created_temp_root):
+        logger.info(f"Background worker starting (thread={threading.current_thread().name} id={threading.get_ident()})")
+
+        # Establish connection (downgrade DPY-1001/abort errors)
+        try:
+            conn = get_db_connection(force_shared=(schema_choice == "dwh"), root=parent)
+        except Exception as e:
+            # Treat driver 'not connected' errors as expected when an abort
+            # is in progress or when raised on a background thread.
+            try:
+                if abort_manager.is_expected_disconnect(e):
+                    logger.warning(f"⏹️ Aborted during connection/setup: {e}")
+                    return
+            except Exception:
+                pass
+            logger.exception(f"❌ Failed to obtain DB connection: {e}")
+            return
+
+        # register this connection so external abort handlers can close it
+        try:
+            abort_manager.register_connection(conn)
+        except Exception:
+            pass
+
+        if not conn:
+            logger.error("❌ Failed to connect to Oracle. get_db_connection returned None or False")
+            if created_temp_root:
                 try:
-                    df = pd.read_csv(file_path)
-                    df = clean_column_names(df)
-                    # Strip file prefix from column names if accidentally included
-                    file_prefix = file_name
-                    df.columns = [col.replace(f"{file_prefix}_", "") for col in df.columns]
-                    df = df.astype(str).fillna('')
-                    table_name = file_name
-                    from tkinter.simpledialog import askstring
-                    override = askstring("Rename Table", f"Default table name is '{table_name}'. Enter a new name or leave blank:")
-                    if override and override.strip():
-                        table_name = override.strip().replace('-', '_').replace(' ', '_').upper()
+                    parent.destroy()
+                except Exception:
+                    pass
+            return
 
-                    # If table exists, ask user how to proceed; otherwise create and load
-                    cols_exist = get_table_columns(cursor, schema, table_name)
-                    logger.info(f"Checking existing table for {schema}.{table_name}: found {len(cols_exist)} columns")
-                    if cols_exist:
-                        try:
-                            opts = show_load_mode_dialog(root, schema, table_name, df.columns)
-                        except Exception as e:
-                            logger.exception(f"❌ Exception while showing load mode dialog for {schema}.{table_name}: {e}")
-                            opts = None
-                        if not opts:
-                            logger.info("❌ User cancelled load or dialog did not appear.")
-                            return
-                        mode = opts.get("mode")
-                        if mode == "preview":
-                            logger.info(f"🔎 Preview requested for {schema}.{table_name}. No changes made.")
-                            # could expand with schema diffs later
-                        elif mode == "append":
-                            logger.info(f"⏩ Appending data to {schema}.{table_name}")
-                            preview = opts.get("preview_sql", True)
-                            # Verify columns match (case-insensitive)
-                            existing_cols = [c.upper() for c in get_table_columns(cursor, schema, table_name)]
-                            incoming_cols = [c.upper() for c in df.columns]
-                            existing_set = set(existing_cols)
-                            incoming_set = set(incoming_cols)
-                            from tkinter import messagebox
-                            if existing_set == incoming_set:
-                                if preview:
-                                    # build simple INSERT preview using first row as sample
-                                    sample = df.iloc[0].to_dict() if len(df) > 0 else None
-                                    ins_sql = build_insert_preview_sql(schema, table_name, list(df.columns), sample)
-                                    summary = f"Rows in file: {len(df)}\nInsert columns: {list(df.columns)}"
-                                    logger.debug(f"Opening INSERT preview for {schema}.{table_name} (len={len(ins_sql)})")
-                                    do_exec = show_sql_preview(None, f"INSERT Preview: {schema}.{table_name}", summary, ins_sql)
-                                    if do_exec:
-                                        inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df)
-                                        logger.info(f"✅ Appended {inserted} rows to {schema}.{table_name}")
-                                else:
-                                    inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df)
-                                    logger.info(f"✅ Appended {inserted} rows to {schema}.{table_name}")
-                            elif incoming_set.issubset(existing_set):
-                                # incoming is subset of target -> offer subset-append
-                                ok = messagebox.askyesno("Subset Append", f"Incoming columns are a subset of target table columns.\n\nInsert only the incoming columns into {schema}.{table_name}?\n(This will insert values only for these columns and leave other target columns NULL)", parent=root)
-                                if ok:
-                                    # ensure df contains only the incoming columns in its current order
-                                    insert_cols = list(df.columns)
-                                    if preview:
-                                        sample = df.iloc[0].to_dict() if len(df) > 0 else None
-                                        ins_sql = build_insert_preview_sql(schema, table_name, insert_cols, sample)
-                                        summary = f"Rows in file: {len(df)}\nInsert columns: {insert_cols}\n(Other target columns will be NULL)"
-                                        logger.debug(f"Opening INSERT (subset) preview for {schema}.{table_name} (len={len(ins_sql)})")
-                                        do_exec = show_sql_preview(None, f"INSERT Preview (subset): {schema}.{table_name}", summary, ins_sql)
-                                        if do_exec:
-                                            inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df, insert_columns=insert_cols)
-                                            logger.info(f"✅ Appended {inserted} rows (subset) to {schema}.{table_name}")
-                                    else:
-                                        inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df, insert_columns=insert_cols)
-                                        logger.info(f"✅ Appended {inserted} rows (subset) to {schema}.{table_name}")
-                                else:
-                                    logger.info(f"Append aborted by user for {schema}.{table_name}")
-                            else:
-                                # incoming has extras not in target
-                                extras = list(incoming_set - existing_set)
-                                ok = messagebox.askyesno("Extra Columns", f"Incoming data contains columns not present in target table: {extras}\n\nIgnore extra columns and insert matching columns?", parent=root)
-                                if ok:
-                                    # drop extra cols from df
-                                    df = df[[c for c in df.columns if c.upper() in existing_set]]
-                                    insert_cols = list(df.columns)
-                                    if preview:
-                                        sample = df.iloc[0].to_dict() if len(df) > 0 else None
-                                        ins_sql = build_insert_preview_sql(schema, table_name, insert_cols, sample)
-                                        summary = f"Rows in file: {len(df)}\nInsert columns: {insert_cols}\nDropped extras: {extras}"
-                                        logger.debug(f"Opening INSERT (extras dropped) preview for {schema}.{table_name} (len={len(ins_sql)})")
-                                        do_exec = show_sql_preview(None, f"INSERT Preview (extras dropped): {schema}.{table_name}", summary, ins_sql)
-                                        if do_exec:
-                                            inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df, insert_columns=insert_cols)
-                                            logger.info(f"✅ Appended {inserted} rows (with extras dropped) to {schema}.{table_name}")
-                                    else:
-                                        inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df, insert_columns=insert_cols)
-                                        logger.info(f"✅ Appended {inserted} rows (with extras dropped) to {schema}.{table_name}")
-                                else:
-                                    messagebox.showerror("Schema Mismatch", f"Append cancelled.\n\nTarget columns: {existing_cols}\nIncoming columns: {incoming_cols}")
-                                    logger.warning(f"Append aborted due to column mismatch for {schema}.{table_name}")
-                        elif mode == "replace":
-                            logger.info(f"♻️ Replacing {schema}.{table_name} with file contents (destructive)")
-                            preview = opts.get("preview_sql", True)
-                            # determine insert columns similar to replace_table_with_df
-                            existing_cols = [c.upper() for c in get_table_columns(cursor, schema, table_name)]
-                            incoming_cols = [c.upper() for c in df.columns]
-                            existing_set = set(existing_cols)
-                            incoming_set = set(incoming_cols)
-
-                            # Determine insert_df and preview SQL
-                            if existing_set == incoming_set:
-                                insert_df = df
-                            elif incoming_set.issubset(existing_set):
-                                insert_df = df[[c for c in df.columns if c.upper() in existing_set]]
-                            else:
-                                insert_df = df[[c for c in df.columns if c.upper() in existing_set]]
-
-                            insert_cols = list(insert_df.columns)
-                            sample = insert_df.iloc[0].to_dict() if len(insert_df) > 0 else None
-                            truncate_sql = f"TRUNCATE TABLE {schema}.{table_name}"
-                            ins_sql = build_insert_preview_sql(schema, table_name, insert_cols, sample)
-
-                            if preview:
-                                summary = f"Rows in file: {len(insert_df)}\nThis operation will TRUNCATE the target table before inserting.\nInsert columns: {insert_cols}"
-                                combined_sql = truncate_sql + "\n" + ins_sql
-                                logger.debug(f"Opening REPLACE preview for {schema}.{table_name} (len={len(combined_sql)})")
-                                do_exec = show_sql_preview(None, f"REPLACE Preview: {schema}.{table_name}", summary, combined_sql)
-                                if do_exec:
-                                    try:
-                                        replace_table_with_df(conn, cursor, root, schema, table_name, df)
-                                    except Exception as e:
-                                        logger.error(f"❌ Replace failed for {schema}.{table_name}: {e}")
-                                    else:
-                                        logger.info(f"✅ Replace complete for {schema}.{table_name}")
-                            else:
-                                try:
-                                    replace_table_with_df(conn, cursor, root, schema, table_name, df)
-                                except Exception as e:
-                                    logger.error(f"❌ Replace failed for {schema}.{table_name}: {e}")
-                                else:
-                                    logger.info(f"✅ Replace complete for {schema}.{table_name}")
-                        elif mode == "upsert":
-                            logger.info(f"🔀 Upsert (MERGE) into {schema}.{table_name}")
-                            preview = opts.get("preview_sql", True)
-                            ts = int(time.time())
-                            stg = f"{table_name}__STG_{ts}"
-                            create_staging_table_from_df(cursor, schema, stg, df)
-                            inserted = bulk_insert_chunked(conn, cursor, schema, stg, df)
-                            logger.info(f"✅ Loaded staging {schema}.{stg} ({inserted} rows)")
-                            # prompt the user for key/update selections
-                            try:
-                                sel = show_upsert_selector(root, list(df.columns))
-                            except Exception as e:
-                                logger.exception(f"Exception while opening upsert selector: {e}")
-                                sel = None
-
-                            if not sel:
-                                logger.info("User cancelled Upsert selection. Dropping staging.")
-                                try:
-                                    cursor.execute(f"DROP TABLE {schema}.{stg} PURGE")
-                                except Exception:
-                                    pass
-                                conn.commit()
-                            else:
-                                key_cols = sel.get("key_columns", [])
-                                update_cols = sel.get("update_columns", list(df.columns))
-                                # perform dry-run via merge_with_checks to get counts and SQL
-                                try:
-                                    res = merge_with_checks(conn, cursor, schema, table_name, stg, key_cols, update_cols, dry_run=True)
-                                except Exception as e:
-                                    logger.exception(f"Exception preparing merge: {e}")
-                                    res = {"ok": False, "message": str(e)}
-
-                                if not res.get("ok"):
-                                    logger.error(f"Pre-merge checks failed: {res.get('message')}")
-                                    try:
-                                        cursor.execute(f"DROP TABLE {schema}.{stg} PURGE")
-                                    except Exception:
-                                        logger.warning(f"Could not drop staging table {schema}.{stg}")
-                                    conn.commit()
-                                else:
-                                    summary = f"Staging rows: {res['total_staging']}\nMatched (will update): {res['matched']}\nWill insert: {res['to_insert']}"
-                                    # show preview or execute immediately depending on preview flag
-                                    if preview:
-                                        logger.debug(f"Opening MERGE preview for {schema}.{table_name} (len={len(res.get('sql',''))})")
-                                        do_exec = show_sql_preview(None, f"MERGE Preview: {schema}.{table_name}", summary, res.get('sql', ''))
-                                        if do_exec:
-                                            exec_res = merge_with_checks(conn, cursor, schema, table_name, stg, key_cols, update_cols, dry_run=False)
-                                            if not exec_res.get("ok"):
-                                                logger.error(f"MERGE failed: {exec_res.get('message')}")
-                                            else:
-                                                logger.info(f"✅ Upsert executed for {schema}.{table_name}")
-                                        else:
-                                            logger.info("User cancelled MERGE.")
-                                    else:
-                                        exec_res = merge_with_checks(conn, cursor, schema, table_name, stg, key_cols, update_cols, dry_run=False)
-                                        if not exec_res.get("ok"):
-                                            logger.error(f"MERGE failed: {exec_res.get('message')}")
-                                        else:
-                                            logger.info(f"✅ Upsert executed for {schema}.{table_name}")
-                                    try:
-                                        cursor.execute(f"DROP TABLE {schema}.{stg} PURGE")
-                                    except Exception:
-                                        logger.warning(f"Could not drop staging table {schema}.{stg}")
-                                    conn.commit()
-                                    logger.info(f"✅ Upsert complete for {schema}.{table_name}")
-                        else:
-                            logger.warning(f"Unknown mode: {mode}")
-                    else:
-                        drop_table_if_exists(cursor, schema, table_name)
-                        create_table(cursor, schema, table_name, df)
-                        success = insert_data(cursor, schema, table_name, df, conn)
-                        if not success:
-                            return
-                        logger.info(f"🚀 Loaded CSV: {schema}.{table_name}")
-                except Exception as e:
-                    logger.error(f"❌ Failed to load CSV {file_path}: {e}")
-            else:
+        cursor = None
+        try:
+            if schema_choice == 'dwh':
                 try:
-                    all_sheets = pd.ExcelFile(file_path).sheet_names
+                    dwh_session.register_connection(parent, conn)
+                except Exception:
+                    logger.debug('Failed to register dwh connection', exc_info=True)
 
-                    if len(all_sheets) > 1:
-                        sheet_map = select_sheets_gui(file_path, all_sheets)
-                        if not sheet_map:
-                            logger.warning("❌ User cancelled sheet selection.")
-                            return
-                    else:
-                        sheet_name = all_sheets[0]
-                        sheet_map = select_sheets_gui(file_path, [sheet_name])
-                        if not sheet_map:
-                            logger.warning("❌ User cancelled sheet selection.")
-                            return
+            schema = "DWH" if schema_choice == "dwh" else conn.username.upper()
+            logger.info(f"🔐 Connected to schema: {schema}")
+            try:
+                logger.info(f"Acquiring cursor from connection (username={getattr(conn, 'username', None)})")
+            except Exception:
+                logger.info("Acquiring cursor from connection")
+            cursor = conn.cursor()
+            abort_manager.reset()
 
-                    for sheet, table_name in sheet_map.items():
-                        df = pd.read_excel(file_path, sheet_name=sheet, dtype=str, na_filter=False)
-                        df = df.loc[df.apply(lambda row: any(str(cell).strip() for cell in row), axis=1)]
+            for file_path in file_paths:
+                logger.info(f"Processing file: {file_path}")
+                try:
+                    file_name = os.path.splitext(os.path.basename(file_path))[0].replace('-', '_').replace(' ', '_').upper()
+
+                    if file_path.lower().endswith('.csv'):
+                        df = pd.read_csv(file_path)
                         df = clean_column_names(df)
+                        file_prefix = file_name
+                        df.columns = [col.replace(f"{file_prefix}_", "") for col in df.columns]
+                        df = df.astype(str).fillna('')
+                        table_name = file_name
+                        from tkinter.simpledialog import askstring
+                        # askstring may not accept a positional parent across Tk versions;
+                        # schedule it with a lambda to pass parent as keyword.
+                        override = call_ui(parent, lambda: askstring("Rename Table", f"Default table name is '{table_name}'. Enter a new name or leave blank:", parent=parent))
+                        if override and override.strip():
+                            table_name = override.strip().replace('-', '_').replace(' ', '_').upper()
 
-                        # If table exists, ask user how to proceed, otherwise create and load
                         cols_exist = get_table_columns(cursor, schema, table_name)
                         logger.info(f"Checking existing table for {schema}.{table_name}: found {len(cols_exist)} columns")
                         if cols_exist:
                             try:
-                                opts = show_load_mode_dialog(root, schema, table_name, df.columns)
+                                opts = call_ui(parent, show_load_mode_dialog, parent, schema, table_name, df.columns)
                             except Exception as e:
                                 logger.exception(f"❌ Exception while showing load mode dialog for {schema}.{table_name}: {e}")
                                 opts = None
                             if not opts:
                                 logger.info("❌ User cancelled load or dialog did not appear.")
-                                return
+                                continue
                             mode = opts.get("mode")
                             if mode == "preview":
                                 logger.info(f"🔎 Preview requested for {schema}.{table_name}. No changes made.")
                             elif mode == "append":
                                 logger.info(f"⏩ Appending data to {schema}.{table_name}")
+                                preview = opts.get("preview_sql", True)
                                 existing_cols = [c.upper() for c in get_table_columns(cursor, schema, table_name)]
                                 incoming_cols = [c.upper() for c in df.columns]
                                 existing_set = set(existing_cols)
                                 incoming_set = set(incoming_cols)
                                 from tkinter import messagebox
                                 if existing_set == incoming_set:
-                                    inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df)
-                                    logger.info(f"✅ Appended {inserted} rows to {schema}.{table_name}")
+                                    if preview:
+                                        sample = df.iloc[0].to_dict() if len(df) > 0 else None
+                                        ins_sql = build_insert_preview_sql(schema, table_name, list(df.columns), sample)
+                                        summary = f"Rows in file: {len(df)}\nInsert columns: {list(df.columns)}"
+                                        logger.debug(f"Opening INSERT preview for {schema}.{table_name} (len={len(ins_sql)})")
+                                        do_exec = call_ui(parent, show_sql_preview, parent, f"INSERT Preview: {schema}.{table_name}", summary, ins_sql)
+                                        if do_exec:
+                                            inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df)
+                                            logger.info(f"✅ Appended {inserted} rows to {schema}.{table_name}")
+                                    else:
+                                        inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df)
+                                        logger.info(f"✅ Appended {inserted} rows to {schema}.{table_name}")
                                 elif incoming_set.issubset(existing_set):
-                                    ok = messagebox.askyesno("Subset Append", f"Incoming columns are a subset of target table columns.\n\nInsert only the incoming columns into {schema}.{table_name}?\n(This will insert values only for these columns and leave other target columns NULL)", parent=root)
+                                    ok = call_ui(parent, lambda: messagebox.askyesno("Subset Append", f"Incoming columns are a subset of target table columns.\n\nInsert only the incoming columns into {schema}.{table_name}?\n(This will insert values only for these columns and leave other target columns NULL)", parent=parent))
                                     if ok:
                                         insert_cols = list(df.columns)
-                                        inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df, insert_columns=insert_cols)
-                                        logger.info(f"✅ Appended {inserted} rows (subset) to {schema}.{table_name}")
-                                    else:
-                                        logger.info(f"Append aborted by user for {schema}.{table_name}")
+                                        if preview:
+                                            sample = df.iloc[0].to_dict() if len(df) > 0 else None
+                                            ins_sql = build_insert_preview_sql(schema, table_name, insert_cols, sample)
+                                            summary = f"Rows in file: {len(df)}\nInsert columns: {insert_cols}\n(Other target columns will be NULL)"
+                                            logger.debug(f"Opening INSERT (subset) preview for {schema}.{table_name} (len={len(ins_sql)})")
+                                            do_exec = call_ui(parent, show_sql_preview, parent, f"INSERT Preview (subset): {schema}.{table_name}", summary, ins_sql)
+                                            if do_exec:
+                                                inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df, insert_columns=insert_cols)
+                                                logger.info(f"✅ Appended {inserted} rows (subset) to {schema}.{table_name}")
+                                        else:
+                                            inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df, insert_columns=insert_cols)
+                                            logger.info(f"✅ Appended {inserted} rows (subset) to {schema}.{table_name}")
                                 else:
                                     extras = list(incoming_set - existing_set)
-                                    ok = messagebox.askyesno("Extra Columns", f"Incoming data contains columns not present in target table: {extras}\n\nIgnore extra columns and insert matching columns?", parent=root)
+                                    ok = call_ui(parent, lambda: messagebox.askyesno("Extra Columns", f"Incoming data contains columns not present in target table: {extras}\n\nIgnore extra columns and insert matching columns?", parent=parent))
                                     if ok:
                                         df = df[[c for c in df.columns if c.upper() in existing_set]]
                                         insert_cols = list(df.columns)
-                                        inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df, insert_columns=insert_cols)
-                                        logger.info(f"✅ Appended {inserted} rows (with extras dropped) to {schema}.{table_name}")
+                                        if preview:
+                                            sample = df.iloc[0].to_dict() if len(df) > 0 else None
+                                            ins_sql = build_insert_preview_sql(schema, table_name, insert_cols, sample)
+                                            summary = f"Rows in file: {len(df)}\nInsert columns: {insert_cols}\nDropped extras: {extras}"
+                                            logger.debug(f"Opening INSERT (extras dropped) preview for {schema}.{table_name} (len={len(ins_sql)})")
+                                            do_exec = call_ui(parent, show_sql_preview, parent, f"INSERT Preview (extras dropped): {schema}.{table_name}", summary, ins_sql)
+                                            if do_exec:
+                                                inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df, insert_columns=insert_cols)
+                                                logger.info(f"✅ Appended {inserted} rows (with extras dropped) to {schema}.{table_name}")
+                                        else:
+                                            inserted = bulk_insert_chunked(conn, cursor, schema, table_name, df, insert_columns=insert_cols)
+                                            logger.info(f"✅ Appended {inserted} rows (with extras dropped) to {schema}.{table_name}")
                                     else:
-                                        messagebox.showerror("Schema Mismatch", f"Append cancelled.\n\nTarget columns: {existing_cols}\nIncoming columns: {incoming_cols}")
+                                        call_ui(parent, lambda: messagebox.showerror("Schema Mismatch", f"Append cancelled.\n\nTarget columns: {existing_cols}\nIncoming columns: {incoming_cols}", parent=parent))
                                         logger.warning(f"Append aborted due to column mismatch for {schema}.{table_name}")
                             elif mode == "replace":
-                                logger.info(f"♻️ Replacing selected columns in {schema}.{table_name}")
-                                ts = int(time.time())
-                                stg = f"{table_name}__STG_{ts}"
-                                create_staging_table_from_df(cursor, schema, stg, df)
-                                inserted = bulk_insert_chunked(conn, cursor, schema, stg, df)
-                                logger.info(f"✅ Loaded staging {schema}.{stg} ({inserted} rows)")
-                                update_cols = opts.get("update_columns", [])
-                                key_cols = opts.get("key_columns", [])
-                                merge_from_staging(cursor, schema, table_name, stg, key_cols, update_cols)
-                                cursor.execute(f"DROP TABLE {schema}.{stg} PURGE")
-                                conn.commit()
-                                logger.info(f"✅ Replace complete for {schema}.{table_name}")
+                                logger.info(f"♻️ Replacing {schema}.{table_name} with file contents (destructive)")
+                                preview = opts.get("preview_sql", True)
+                                existing_cols = [c.upper() for c in get_table_columns(cursor, schema, table_name)]
+                                incoming_cols = [c.upper() for c in df.columns]
+                                existing_set = set(existing_cols)
+                                incoming_set = set(incoming_cols)
+                                if existing_set == incoming_set:
+                                    insert_df = df
+                                else:
+                                    insert_df = df[[c for c in df.columns if c.upper() in existing_set]]
+                                insert_cols = list(insert_df.columns)
+                                sample = insert_df.iloc[0].to_dict() if len(insert_df) > 0 else None
+                                truncate_sql = f"TRUNCATE TABLE {schema}.{table_name}"
+                                ins_sql = build_insert_preview_sql(schema, table_name, insert_cols, sample)
+                                if preview:
+                                    summary = f"Rows in file: {len(insert_df)}\nThis operation will TRUNCATE the target table before inserting.\nInsert columns: {insert_cols}"
+                                    combined_sql = truncate_sql + "\n" + ins_sql
+                                    logger.debug(f"Opening REPLACE preview for {schema}.{table_name} (len={len(combined_sql)})")
+                                    do_exec = call_ui(parent, show_sql_preview, parent, f"REPLACE Preview: {schema}.{table_name}", summary, combined_sql)
+                                    if do_exec:
+                                        try:
+                                            replace_table_with_df(conn, cursor, parent, schema, table_name, df)
+                                        except Exception as e:
+                                            logger.error(f"❌ Replace failed for {schema}.{table_name}: {e}")
+                                        else:
+                                            logger.info(f"✅ Replace complete for {schema}.{table_name}")
+                                else:
+                                    try:
+                                        replace_table_with_df(conn, cursor, parent, schema, table_name, df)
+                                    except Exception as e:
+                                        logger.error(f"❌ Replace failed for {schema}.{table_name}: {e}")
+                                    else:
+                                        logger.info(f"✅ Replace complete for {schema}.{table_name}")
                             elif mode == "upsert":
                                 logger.info(f"🔀 Upsert (MERGE) into {schema}.{table_name}")
+                                preview = opts.get("preview_sql", True)
                                 ts = int(time.time())
                                 stg = f"{table_name}__STG_{ts}"
                                 create_staging_table_from_df(cursor, schema, stg, df)
                                 inserted = bulk_insert_chunked(conn, cursor, schema, stg, df)
                                 logger.info(f"✅ Loaded staging {schema}.{stg} ({inserted} rows)")
-                                key_cols = opts.get("key_columns", [])
-                                update_cols = list(df.columns)
-                                merge_from_staging(cursor, schema, table_name, stg, key_cols, update_cols)
-                                cursor.execute(f"DROP TABLE {schema}.{stg} PURGE")
-                                conn.commit()
-                                logger.info(f"✅ Upsert complete for {schema}.{table_name}")
-                            else:
-                                logger.warning(f"Unknown mode: {mode}")
+                                try:
+                                    sel = call_ui(parent, show_upsert_selector, parent, list(df.columns))
+                                except Exception as e:
+                                    logger.exception(f"Exception while opening upsert selector: {e}")
+                                    sel = None
+                                if not sel:
+                                    logger.info("User cancelled Upsert selection. Dropping staging.")
+                                    try:
+                                        cursor.execute(f"DROP TABLE {schema}.{stg} PURGE")
+                                    except Exception:
+                                        pass
+                                    conn.commit()
+                                else:
+                                    key_cols = sel.get("key_columns", [])
+                                    update_cols = sel.get("update_columns", list(df.columns))
+                                    try:
+                                        res = merge_with_checks(conn, cursor, schema, table_name, stg, key_cols, update_cols, dry_run=True)
+                                    except Exception as e:
+                                        logger.exception(f"Exception preparing merge: {e}")
+                                        res = {"ok": False, "message": str(e)}
+                                    if not res.get("ok"):
+                                        logger.error(f"Pre-merge checks failed: {res.get('message')}")
+                                        try:
+                                            cursor.execute(f"DROP TABLE {schema}.{stg} PURGE")
+                                        except Exception:
+                                            logger.warning(f"Could not drop staging table {schema}.{stg}")
+                                        conn.commit()
+                                    else:
+                                        summary = f"Staging rows: {res['total_staging']}\nMatched (will update): {res['matched']}\nWill insert: {res['to_insert']}"
+                                        if preview:
+                                            logger.debug(f"Opening MERGE preview for {schema}.{table_name} (len={len(res.get('sql',''))})")
+                                            do_exec = call_ui(parent, show_sql_preview, parent, f"MERGE Preview: {schema}.{table_name}", summary, res.get('sql', ''))
+                                            if do_exec:
+                                                exec_res = merge_with_checks(conn, cursor, schema, table_name, stg, key_cols, update_cols, dry_run=False)
+                                                if not exec_res.get("ok"):
+                                                    logger.error(f"MERGE failed: {exec_res.get('message')}")
+                                                else:
+                                                    logger.info(f"✅ Upsert executed for {schema}.{table_name}")
+                                        else:
+                                            exec_res = merge_with_checks(conn, cursor, schema, table_name, stg, key_cols, update_cols, dry_run=False)
+                                            if not exec_res.get("ok"):
+                                                logger.error(f"MERGE failed: {exec_res.get('message')}")
+                                            else:
+                                                logger.info(f"✅ Upsert executed for {schema}.{table_name}")
+                                        try:
+                                            cursor.execute(f"DROP TABLE {schema}.{stg} PURGE")
+                                        except Exception:
+                                            logger.warning(f"Could not drop staging table {schema}.{stg}")
+                                        conn.commit()
+                                        logger.info(f"✅ Upsert complete for {schema}.{table_name}")
                         else:
+                            # new table: create and insert
                             drop_table_if_exists(cursor, schema, table_name)
                             create_table(cursor, schema, table_name, df)
                             success = insert_data(cursor, schema, table_name, df, conn)
                             if not success:
-                                return
-                            logger.info(f"🚀 Loaded Excel: {schema}.{table_name}")
+                                continue
+                            logger.info(f"🚀 Loaded CSV: {schema}.{table_name}")
                 except Exception as e:
-                    logger.error(f"❌ Failed to load Excel {file_path}: {e}")
+                    logger.error(f"❌ Failed to load file {file_path}: {e}")
 
-        conn.commit()
-        logger.info("✅ All files processed successfully.")
+            conn.commit()
+            logger.info("✅ All files processed successfully.")
 
-    except Exception as e:
-        logger.error(f"❌ Unexpected error during file processing: {e}")
-        abort_manager.cleanup_on_abort(conn, cursor)
-        return
+        except Exception as e:
+            try:
+                if abort_manager.is_expected_disconnect(e) or getattr(abort_manager, 'cleanup_done', False) or getattr(abort_manager, 'should_abort', False):
+                    # This is an expected disconnect during abort/cleanup. Downgrade
+                    # the noisy DPY-1001 stacktrace to DEBUG so normal abort flows
+                    # don't spam ERROR-level logs.
+                    logger.debug(f"⏹️ Aborted during background work (expected): {e}")
+                    # Attempt best-effort cleanup if possible, but swallow errors.
+                    try:
+                        if 'conn' in locals() and conn:
+                            try:
+                                abort_manager.cleanup_on_abort(conn, cursor)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    return
+            except Exception:
+                # If abort_manager.is_expected_disconnect itself fails, fall through to full exception path
+                pass
 
-    try:
-        cursor.close()
-    except Exception as e:
-        if "DPY-1001" not in str(e):
-            logger.warning(f"⚠️ Failed to close cursor: {e}")
+            logger.exception(f"❌ Unhandled exception in background worker: {e}")
+            try:
+                if 'conn' in locals() and conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return
 
-    try:
-        conn.close()
-    except Exception as e:
-        if "DPY-1001" not in str(e):
-            logger.warning(f"⚠️ Failed to close connection: {e}")
+        finally:
+            try:
+                if 'cursor' in locals() and cursor:
+                    try:
+                        cursor.close()
+                    except Exception as e:
+                        try:
+                            if not abort_manager.is_expected_disconnect(e):
+                                logger.warning(f"⚠️ Failed to close cursor: {e}")
+                        except Exception:
+                            logger.warning(f"⚠️ Failed to close cursor: {e}")
+            except Exception:
+                pass
 
-    try:
-        # Ensure DWH session cleanup (close any shared connection(s) and clear in-memory creds if not saved)
+            try:
+                if 'conn' in locals() and conn:
+                    try:
+                        conn.close()
+                    except Exception as e:
+                        try:
+                            if not abort_manager.is_expected_disconnect(e):
+                                logger.warning(f"⚠️ Failed to close connection: {e}")
+                        except Exception:
+                            logger.warning(f"⚠️ Failed to close connection: {e}")
+            except Exception:
+                pass
+
+            try:
+                try:
+                    dwh_session.cleanup(parent)
+                except Exception:
+                    logger.debug('DWH cleanup failed', exc_info=True)
+                if created_temp_root:
+                    try:
+                        parent.destroy()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            # Clear abort state so launcher knows abort/cleanup completed and
+            # can re-enable UI. reset() is idempotent and clears should_abort.
+            try:
+                abort_manager.reset()
+            except Exception:
+                pass
+
+    t = threading.Thread(target=_background_work, args=(file_paths, schema_choice, parent, created_temp_root), daemon=True)
+    t.start()
+    logger.info(f"Background worker thread started: name={t.name} ident={t.ident}")
+    # If we created a temporary hidden root (loader run standalone), the
+    # background worker schedules UI work via `parent.after`. For those
+    # callbacks to run we must run the Tk mainloop here until the worker
+    # finishes and destroys the temporary root. The worker will call
+    # `parent.destroy()` when finished if `created_temp_root` is True.
+    if created_temp_root:
         try:
-            dwh_session.cleanup(root)
+            parent.mainloop()
         except Exception:
-            logger.debug('DWH cleanup failed', exc_info=True)
-        root.destroy()
-    except Exception:
-        pass
+            pass
+
 
 if __name__ == '__main__':
     load_multiple_files()

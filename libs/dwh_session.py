@@ -35,6 +35,7 @@ def close_dwh_connection(root=None):
             except Exception:
                 pass
 
+        logger.debug(f"close_dwh_connection: closing {len(conns)} connections on root={root}")
         for c in conns:
             if not c:
                 continue
@@ -42,6 +43,7 @@ def close_dwh_connection(root=None):
                 c.close()
             except Exception:
                 logger.debug("Failed closing DWH connection", exc_info=True)
+        logger.debug("close_dwh_connection: finished closing connections")
 
         # remove attributes to avoid accidental reuse
         try:

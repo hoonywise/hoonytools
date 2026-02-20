@@ -14,7 +14,7 @@ import json
 import random
 import webbrowser
 
-APP_VERSION = "1.3.7"
+APP_VERSION = "1.4.0"
 
 # Safely climb until we find the project root folder
 project_name = "HoonyTools"
@@ -222,11 +222,163 @@ def center_window(window, width, height):
 def abort_process():
     abort_manager.set_abort(True)
     logger.warning("⛔ Abort requested by user.")
+    # Best-effort UI updates and attempt to interrupt blocking DB calls.
+    try:
+        # Update status light if present
+        if 'status_light' in globals() and getattr(status_light, 'winfo_exists', lambda: False)():
+            try:
+                status_light.config(text="⏹️ Aborting...")
+            except Exception:
+                pass
+
+        # Disable Run control to avoid starting another operation while aborting
+        try:
+            if 'run_btn' in globals() and run_btn:
+                run_btn.config(state='disabled')
+        except Exception:
+            pass
+        try:
+            if 'tool_menu' in globals() and tool_menu:
+                try:
+                    tool_menu.config(state='disabled')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Attempt to close any registered DWH connections on this root to help
+        # unblock DB calls. Close them in a background thread so the main GUI
+        # does not freeze if the close operation blocks or is slow.
+        try:
+            from libs import dwh_session
+            import threading as _thr
+            def _close_dwh():
+                try:
+                    if 'root' in globals():
+                        dwh_session.close_dwh_connection(root)
+                except Exception:
+                    logger.debug('Failed to close DWH connection in background', exc_info=True)
+            _thr.Thread(target=_close_dwh, daemon=True).start()
+        except Exception:
+            pass
+
+        # Attempt to close any active login/prompt windows that were parented
+        # to the launcher root (for example DWH login Toplevel). Destroying
+        # these windows will release any grabs and prevent the main GUI from
+        # remaining unusable after abort.
+        try:
+            # Also signal any worker waiting on a prompt Event to wake immediately
+            try:
+                abort_manager.cancel_prompt_event()
+            except Exception:
+                pass
+            if 'root' in globals():
+                try:
+                    win = getattr(root, '_active_prompt_window', None)
+                    if win is not None:
+                        try:
+                            try:
+                                win.grab_release()
+                            except Exception:
+                                pass
+                            win.destroy()
+                        except Exception:
+                            try:
+                                # As a fallback, withdraw the window
+                                win.withdraw()
+                            except Exception:
+                                pass
+                        try:
+                            delattr(root, '_active_prompt_window')
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Best-effort close of the worker connection to interrupt blocking DB operations
+        try:
+            try:
+                abort_manager.close_registered_connection()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        # Monitor abort flag and re-enable UI when cleared by workers
+        def _monitor_abort():
+            import time
+            try:
+                # Wait until either the abort flag is cleared by the worker (reset)
+                # or cleanup_on_abort has completed (cleanup_done). Add a safety
+                # timeout so the launcher does not remain disabled indefinitely
+                # if the worker thread gets stuck.
+                max_wait = 30.0  # seconds
+                waited = 0.0
+                step = 0.2
+                while True:
+                    try:
+                        should = getattr(abort_manager, 'should_abort', False)
+                        done = getattr(abort_manager, 'cleanup_done', False)
+                    except Exception:
+                        should = False
+                        done = False
+                    if not should or done:
+                        break
+                    if waited >= max_wait:
+                        logger.warning("Abort monitor timed out waiting for worker cleanup; forcing reset and re-enabling UI")
+                        try:
+                            abort_manager.reset()
+                        except Exception:
+                            pass
+                        break
+                    time.sleep(step)
+                    waited += step
+            except Exception:
+                pass
+
+            def _reenable():
+                try:
+                    if 'status_light' in globals() and getattr(status_light, 'winfo_exists', lambda: False)():
+                        status_light.config(text="🟢")
+                except Exception:
+                    pass
+                try:
+                    if 'run_btn' in globals() and run_btn:
+                        run_btn.config(state='normal')
+                except Exception:
+                    pass
+                try:
+                    if 'tool_menu' in globals() and tool_menu:
+                        try:
+                            tool_menu.config(state='readonly')
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            try:
+                if 'root' in globals():
+                    try:
+                        root.after(0, _reenable)
+                    except Exception:
+                        _reenable()
+                else:
+                    _reenable()
+            except Exception:
+                pass
+
+        import threading
+        threading.Thread(target=_monitor_abort, daemon=True).start()
+    except Exception:
+        pass
 
 def run_selected():
     global should_abort
     should_abort = False
     tool_name = selected_tool.get()
+    logger.info(f"Run button pressed for tool: {tool_name}")
     log_text.delete(1.0, tk.END)
     status_light.config(text="⏳")     
 
@@ -243,16 +395,36 @@ def run_selected():
         finally:
             status_light.config(text="🟢")
 
-    if tool_name == "✅ Excel/CSV Loader":
+    # Run the Excel/CSV loader in a background thread so the main GUI remains responsive.
+    if tool_name == "☑ Excel/CSV Loader":
         def threaded_excel():
+            logger.info("Starting Excel/CSV loader thread")
             try:
-                TOOLS[tool_name]()
+                logger.info(f"threaded_excel: about to invoke loader callable for {tool_name}")
+                try:
+                    TOOLS[tool_name](root)
+                except TypeError:
+                    TOOLS[tool_name]()
+                logger.info("threaded_excel: loader callable returned")
             except Exception as e:
                 logger.exception(f"❌ Error running {tool_name}: {e}")
             finally:
-                status_light.config(text="🟢")
+                try:
+                    status_light.config(text="🟢")
+                except Exception:
+                    pass
 
         threading.Thread(target=threaded_excel, daemon=True).start()
+        return
+
+    # If selected tool is missing or None, inform the user
+    if tool_name not in TOOLS or TOOLS.get(tool_name) is None:
+        try:
+            from tkinter import messagebox
+            messagebox.showwarning("Tool Unavailable", f"Selected tool is not available: {tool_name}")
+        except Exception:
+            logger.warning(f"Selected tool is not available: {tool_name}")
+        status_light.config(text="🟢")
         return
 
     
@@ -368,7 +540,7 @@ def launch_tool_gui():
 
 
     
-    global root, selected_tool, log_text, log_stream, status_light
+    global root, selected_tool, log_text, log_stream, status_light, run_btn, tool_menu, abort_btn
 
     # Create the main Tk root directly and keep it hidden while login dialog appears.
     root = tk.Tk()
@@ -410,8 +582,18 @@ def launch_tool_gui():
     except Exception:
         pass
     if not session.stored_credentials:
-        root.destroy()
-        hidden_root.destroy()
+        try:
+            root.destroy()
+        except Exception:
+            pass
+        try:
+            if 'hidden_root' in globals() and getattr(hidden_root, 'winfo_exists', lambda: False)():
+                try:
+                    hidden_root.destroy()
+                except Exception:
+                    pass
+        except Exception:
+            pass
         return
     
     # ✅ After login success: show and center the main window
@@ -508,22 +690,34 @@ def launch_tool_gui():
         frame = tk.LabelFrame(parent, text=title, padx=6, pady=6)
         # allow frames to share available vertical space equally
         frame.pack(fill="both", pady=(0, 8), expand=True)
+
+        # Top bar inside the LabelFrame: Refresh button near the left (next to title)
+        # Add left padding so the button is visually separated from the frame border
+        top_bar = tk.Frame(frame)
+        top_bar.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
+        refresh_btn = tk.Button(top_bar, text="Refresh", width=10)
+        refresh_btn.pack(side="left", padx=(0, 8))
+        status_lbl = tk.Label(top_bar, text="", font=("Arial", 8), fg="#444444")
+        status_lbl.pack(side="left")
+
+        # Content area (treeview + scrollbar) sits below the top bar and expands
+        content_area = tk.Frame(frame)
+        content_area.pack(fill="both", expand=True)
+
         # Lock treeview width to avoid auto-resize when labels change
-        tv = ttk.Treeview(frame, columns=("name", "type"), show="headings")
+        # Add a third column `pk` to show primary key info (comma-separated columns or empty)
+        tv = ttk.Treeview(content_area, columns=("name", "type", "pk"), show="headings")
         tv.heading("name", text="Name")
         tv.heading("type", text="Type")
-        tv.column("name", width=180, anchor="w", stretch=False)
+        tv.heading("pk", text="PK")
+        tv.column("name", width=160, anchor="w", stretch=False)
         tv.column("type", width=120, anchor="center", stretch=False)
-        vs = tk.Scrollbar(frame, orient="vertical", command=tv.yview)
+        tv.column("pk", width=160, anchor="center", stretch=False)
+        vs = tk.Scrollbar(content_area, orient="vertical", command=tv.yview)
         tv.configure(yscrollcommand=vs.set)
         tv.pack(side="left", fill="both", expand=True)
         vs.pack(side="right", fill="y")
-        btn_frame_local = tk.Frame(frame)
-        btn_frame_local.pack(fill="x", pady=(6, 0))
-        refresh_btn = tk.Button(btn_frame_local, text="Refresh", width=10)
-        refresh_btn.pack(side="left")
-        status_lbl = tk.Label(btn_frame_local, text="", font=("Arial", 8), fg="#444444")
-        status_lbl.pack(side="left", padx=(6, 0))
+
         return frame, tv, refresh_btn, status_lbl
 
     # Create the two object panes in the left_pane (stacked, share vertical space)
@@ -598,8 +792,15 @@ def launch_tool_gui():
             tv.delete(*tv.get_children())
         except Exception:
             pass
-        for name, obj_type in rows:
-            tv.insert("", "end", values=(name, obj_type))
+        for row in rows:
+            # rows may be tuples of (name, type) or (name, type, pk)
+            try:
+                name = row[0]
+                obj_type = row[1]
+                pk = row[2] if len(row) > 2 else ""
+            except Exception:
+                continue
+            tv.insert("", "end", values=(name, obj_type, pk or ""))
 
     # Background refreshers
     def refresh_user_objects():
@@ -613,7 +814,18 @@ def launch_tool_gui():
             try:
                 cur = conn.cursor()
                 cur.execute("""
-                    SELECT object_name, object_type FROM all_objects
+                    SELECT ao.object_name,
+                           ao.object_type,
+                           (
+                             SELECT LISTAGG(acc.column_name, ', ') WITHIN GROUP (ORDER BY acc.position)
+                             FROM all_constraints ac
+                             JOIN all_cons_columns acc
+                               ON ac.owner = acc.owner AND ac.constraint_name = acc.constraint_name
+                             WHERE ac.owner = ao.owner
+                               AND ac.table_name = ao.object_name
+                               AND ac.constraint_type = 'P'
+                           ) AS primary_key_cols
+                    FROM all_objects ao
                     WHERE owner = :owner
                     AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
                     ORDER BY object_name
@@ -660,7 +872,18 @@ def launch_tool_gui():
                     conn = oracledb.connect(user=creds["username"], password=creds["password"], dsn=creds["dsn"])
                     cur = conn.cursor()
                     cur.execute("""
-                        SELECT object_name, object_type FROM all_objects
+                        SELECT ao.object_name,
+                               ao.object_type,
+                               (
+                                 SELECT LISTAGG(acc.column_name, ', ') WITHIN GROUP (ORDER BY acc.position)
+                                 FROM all_constraints ac
+                                 JOIN all_cons_columns acc
+                                   ON ac.owner = acc.owner AND ac.constraint_name = acc.constraint_name
+                                 WHERE ac.owner = ao.owner
+                                   AND ac.table_name = ao.object_name
+                                   AND ac.constraint_type = 'P'
+                               ) AS primary_key_cols
+                        FROM all_objects ao
                         WHERE owner = :owner
                         AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
                         ORDER BY object_name
@@ -801,8 +1024,11 @@ def launch_tool_gui():
     btn_frame = tk.Frame(toolbar_inner)
     btn_frame.pack(side="left", padx=12)
 
-    tk.Button(btn_frame, text="Run", width=10, command=lambda: run_selected()).pack(side="left", padx=7)
-    tk.Button(btn_frame, text="Abort", width=10, command=abort_process).pack(side="left", padx=7)
+    # Keep references to these controls so abort handler can disable/enable them
+    run_btn = tk.Button(btn_frame, text="Run", width=10, command=lambda: run_selected())
+    run_btn.pack(side="left", padx=7)
+    abort_btn = tk.Button(btn_frame, text="Abort", width=10, command=abort_process)
+    abort_btn.pack(side="left", padx=7)
 
     def safe_exit():
         global is_gui_running
@@ -832,6 +1058,9 @@ def launch_tool_gui():
         root.protocol("WM_DELETE_WINDOW", safe_exit)
     except Exception:
         pass
+
+    # Removed global Ctrl+C abort binding to avoid interfering with clipboard copy.
+    # Keyboard shortcuts should not override platform copy behavior.
 
     # Divider between toolbar and content
     tk.Frame(right_pane, height=1, bg="#ccc").pack(fill="x", padx=10, pady=(8, 12))
