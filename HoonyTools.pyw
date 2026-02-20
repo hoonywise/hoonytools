@@ -1125,6 +1125,7 @@ def launch_tool_gui():
                 owner = conn.username.upper()
                 
                 # Query for tables, views, materialized views with PK info
+                # Exclude TABLEs that are backing tables for materialized views (same name as an MV)
                 cur.execute("""
                     SELECT ao.object_name,
                            ao.object_type,
@@ -1138,9 +1139,18 @@ def launch_tool_gui():
                                AND ac.constraint_type = 'P'
                            ) AS primary_key_cols
                     FROM all_objects ao
-                    WHERE owner = :owner
-                    AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
-                    ORDER BY object_type, object_name
+                    WHERE ao.owner = :owner
+                    AND ao.object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
+                    AND NOT (
+                        ao.object_type = 'TABLE' 
+                        AND EXISTS (
+                            SELECT 1 FROM all_objects mv 
+                            WHERE mv.owner = ao.owner 
+                            AND mv.object_name = ao.object_name 
+                            AND mv.object_type = 'MATERIALIZED VIEW'
+                        )
+                    )
+                    ORDER BY ao.object_type, ao.object_name
                 """, [owner])
                 obj_rows = cur.fetchall()
                 
@@ -1240,6 +1250,7 @@ def launch_tool_gui():
                     cur = conn.cursor()
                     
                     # Query for tables, views, materialized views with PK info
+                    # Exclude TABLEs that are backing tables for materialized views (same name as an MV)
                     cur.execute("""
                         SELECT ao.object_name,
                                ao.object_type,
@@ -1253,9 +1264,18 @@ def launch_tool_gui():
                                    AND ac.constraint_type = 'P'
                                ) AS primary_key_cols
                         FROM all_objects ao
-                        WHERE owner = :owner
-                        AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
-                        ORDER BY object_type, object_name
+                        WHERE ao.owner = :owner
+                        AND ao.object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
+                        AND NOT (
+                            ao.object_type = 'TABLE' 
+                            AND EXISTS (
+                                SELECT 1 FROM all_objects mv 
+                                WHERE mv.owner = ao.owner 
+                                AND mv.object_name = ao.object_name 
+                                AND mv.object_type = 'MATERIALIZED VIEW'
+                            )
+                        )
+                        ORDER BY ao.object_type, ao.object_name
                     """, ["DWH"])
                     obj_rows = cur.fetchall()
                     
