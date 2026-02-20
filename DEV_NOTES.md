@@ -245,7 +245,44 @@ Additional findings (close-button / WM_DELETE_WINDOW)
 
 - Fix applied in launcher (`HoonyTools.pyw`): removed the early `root.protocol("WM_DELETE_WINDOW", root.quit)` binding and bound `WM_DELETE_WINDOW` to `safe_exit()` after `safe_exit()` is defined. `safe_exit()` now does a best-effort `hidden_root.destroy()` if a hidden root exists and then calls `sys.exit()`.
 
-- Developer notes:
+  - Developer notes:
   - When creating modal Toplevels in tools, prefer wiring an `on_close` that closes resources (DB connections, cursors) and calls any supplied `on_finish()` callback so the launcher can update UI state safely.
   - Search the codebase for other uses of `root.quit()` or early `WM_DELETE_WINDOW` bindings; they may need to be harmonized to avoid divergent shutdown behavior.
   - If you want the X to only hide the window instead of exiting the process, implement a `safe_hide()` that calls `root.withdraw()` and performs minimal cleanup without `sys.exit()` and bind WM_DELETE_WINDOW to that instead.
+
+---
+
+### 🧩 Entry #8: This development session — Focus behavior & DWH session refinements (2026-02-19)
+
+Summary: During this session I focused on two related issues: tool windows becoming hidden behind the main application after modal messageboxes/confirmation dialogs, and ensuring shared DWH connections are auto-registered and reliably cleaned up.
+
+Findings
+
+- Several Toplevels did not pass `parent=` to `messagebox.*` calls; on some Windows setups this allowed the main app window to steal focus and leave the tool window hidden after the modal dialog closed.
+- Some modules already used topmost hacks (lift + attributes('-topmost', True/False)) effectively; others lacked a consistent pattern and needed the small helper to restore stacking reliably.
+- Auto-registering shared DWH connections at creation time is convenient but must be best-effort to avoid import cycles or masking connection errors.
+
+Changes made
+
+- Added local helpers `ensure_root_on_top()` / `ensure_builder_on_top()` in affected modules to briefly set `-topmost` then clear it and used them after messagebox calls.
+- Updated `loaders/sql_view_loader.py` and `tools/object_cleanup_gui.py` to pass `parent=...` for messagebox calls where appropriate, and to call the `ensure_*_on_top()` helper afterward. Messagebox calls are wrapped in try/except with fallbacks.
+- Modified `libs/oracle_db_connector.py` to lazily import `libs.dwh_session` and perform a best-effort `dwh_session.register_connection(root, conn)` when `force_shared=True` and a `root` is supplied. Registration failures are logged and ignored so connection returns are not blocked.
+- Ensured `dwh_session.cleanup(root)` is invoked where connections are closed so the central session manager can clear in-memory credentials if `[dwh]` is not present in `libs/config.ini`.
+
+Issues encountered / notes for follow-up
+
+1. While editing `tools/object_cleanup_gui.py` I briefly removed the file and restored it from HEAD before applying updates — everything was restored but review the file once more in your IDE to confirm there are no unintended whitespace/indentation changes.
+2. There are remaining messagebox call sites across the repo (I found 61 occurrences during grep). I applied conservative fixes to the most user‑visible tools; a full repo-wide automatic rewrite was not performed to avoid accidental behavior changes. If you want full consistency I can prepare a patch that updates all occurrences (I recommend reviewing changes before committing).
+3. LSP/static-analysis warnings appeared for some edits (notably `_default_root` references and a few unbound-variable linter hints). These are non-fatal but a linter pass would tidy them; I used guarded constructs (e.g., `getattr(tk, '_default_root', None)`) in places to reduce false positives.
+
+Testing suggestions
+
+1. Open SQL View Loader and trigger missing-SQL and success flows — ensure the builder reappears on top after dismissing dialogs.
+2. Run MV Manager and SQL MV Loader flows (create MV, create logs, refresh) and confirm the Toplevels behave correctly after confirmations/errors.
+3. Run object cleanup and delete-row flows and confirm dialogs are parented and the root regains topmost stacking afterwards.
+
+Next steps (optional)
+
+1. Do a controlled repo-wide sweep to parent all messagebox calls used inside Toplevels and standardize on `ensure_*_on_top()` helper usage. I can generate a patch and a summary of changes for review.
+2. Run a linter (flake8/ruff/mypy) and fix the remaining diagnostics; I can apply low-risk fixes automatically.
+3. Add unit tests for `dwh_session` behaviors to verify cleanup clears in-memory credentials only when `[dwh]` section is absent in `libs/config.ini`.

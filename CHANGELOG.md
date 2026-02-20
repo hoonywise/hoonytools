@@ -4,6 +4,38 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🚀 v1.3.7 — Focus & DWH session reliability fixes (2026-02-19)
+
+This patch improves Toplevel/dialog focus and stacking behavior after messageboxes, and makes shared DWH connection registration and cleanup more robust.
+
+### Added
+
+- `ensure_root_on_top()` / `ensure_builder_on_top()` helpers: briefly set a Toplevel as `-topmost` then clear it so tool windows reliably reappear above the main application after modal dialogs.
+
+### Changed
+
+- Parent messagebox dialogs to their Toplevel where applicable (`parent=builder_window`), and call the small `ensure_*_on_top()` helper afterwards to restore stacking. This prevents hidden tool windows after confirmation dialogs.
+- Use safe try/except wrappers around `lift()` / `.attributes()` and parented messagebox calls to avoid failures in environments where those attributes are unsupported.
+
+### Fixed
+
+- Auto-register shared DWH connections returned by `get_db_connection(force_shared=True, root=...)` within `libs/oracle_db_connector.py` using a lazy import of `libs.dwh_session`. Registration is best-effort and will not prevent returning the connection on failure.
+- Added `dwh_session.cleanup(root)` usage points to ensure registered shared DWH connections are closed and in-memory DWH credentials cleared where appropriate.
+
+### Files touched
+
+- `loaders/sql_view_loader.py` — parented messageboxes, added `ensure_builder_on_top()`, safer DWH register/cleanup calls.
+- `tools/object_cleanup_gui.py` — restored from HEAD and updated dialogs to be parented; added `ensure_root_on_top()` helper and called it after dialogs.
+- `loaders/sql_mv_loader.py`, `tools/mv_refresh_gui.py`, `libs/oracle_db_connector.py` — earlier session edits (auto-registration and topmost handling) integrated into this release.
+
+### Notes
+
+- Changes are conservative and wrapped with try/except so they are safe on platforms without full support for `-topmost` or when `tk._default_root` is unavailable to static analysis. Please run a linter/IDE pass for remaining non-fatal diagnostics.
+- Manual verification: open the SQL View Loader and MV Manager flows and confirm dialogs are parented and their windows reappear on top after dismissing messageboxes.
+
+
+---
+
 ## 🚀 v1.3.6 — Fix: Ensure DWH connection always closed on early exits (2026-02-19)
 
 This patch fixes a connection leak in the SQL Materialized View Loader when the "Load to DWH" (shared login) option is used but the user cancels or errors out during the materialized-view-log creation flow.
@@ -20,7 +52,7 @@ This patch fixes a connection leak in the SQL Materialized View Loader when the 
 
 ### Hotfix
 
-- Fix: Ensure the main window close button (title-bar X) performs the same full cleanup as the `Exit` button. Previously the X binding used `root.quit`, which only stopped the Tk mainloop and could leave the process in an inconsistent state after certain tool failures. The X now calls the launcher's `safe_exit()` routine so the GUI and any hidden root are destroyed and the process exits reliably.
+    - Fix: Ensure the main window close button (title-bar X) performs the same full cleanup as the `Exit` button. Previously the X binding used `root.quit`, which only stopped the Tk mainloop and could leave the process in an inconsistent state after certain tool failures. The X now calls the launcher's `safe_exit()` routine so the GUI and any hidden root are destroyed and the process exits reliably.
 
 ### Notes (runtime)
 
