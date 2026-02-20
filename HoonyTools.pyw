@@ -809,9 +809,31 @@ def launch_tool_gui():
 
         return frame, tv, refresh_btn, status_lbl
 
+    # Ensure Treeview style is configured before creating tree widgets so
+    # style settings are honored by backends (especially on Windows ttk).
+    try:
+        pre_style = ttk.Style()
+        try:
+            pre_style.theme_use('clam')
+        except Exception:
+            pass
+        try:
+            # Default (light) appearance for Pane.Treeview; setters below will
+            # override when user enables pane-only dark mode.
+            pre_style.configure('Pane.Treeview', background='white', fieldbackground='white', foreground='black', rowheight=20)
+            pre_style.configure('Treeview.Heading', background='#e8e8e8', foreground='black')
+        except Exception:
+            pass
+    except Exception:
+        pre_style = None
+
     # Create the two object panes in the left_pane (stacked, share vertical space)
     user_frame, user_tree, user_refresh_btn, user_status = _make_objects_frame(left_pane, "User Objects")
     dwh_frame, dwh_tree, dwh_refresh_btn, dwh_status = _make_objects_frame(left_pane, "DWH Objects")
+
+    # Keep cached row data so we can recreate trees when toggling theme
+    user_rows = []
+    dwh_rows = []
 
     # Prevent the left pane from auto-resizing when internal labels change
     left_pane.pack_propagate(False)
@@ -889,7 +911,22 @@ def launch_tool_gui():
                 pk = row[2] if len(row) > 2 else ""
             except Exception:
                 continue
-            tv.insert("", "end", values=(name, obj_type, pk or ""))
+            # Insert with a consistent tag so we can theme row backgrounds later
+            try:
+                tv.insert("", "end", values=(name, obj_type, pk or ""), tags=("row",))
+            except Exception:
+                tv.insert("", "end", values=(name, obj_type, pk or ""))
+
+        # cache rows for possible rebuild
+        try:
+            if tv is user_tree:
+                nonlocal user_rows
+                user_rows = list(rows)
+            elif tv is dwh_tree:
+                nonlocal dwh_rows
+                dwh_rows = list(rows)
+        except Exception:
+            pass
 
     # Background refreshers
     def refresh_user_objects():
@@ -1318,84 +1355,122 @@ def launch_tool_gui():
         pane_orig = {}
 
     def set_panes_dark():
-        # Treeviews: apply a per-widget style that sets the interior background to black
+        nonlocal user_tree, dwh_tree
+        # Apply/ensure styles first, then recreate the treeviews so the
+        # backend applies the new style at widget creation time.
         try:
             if style:
-                # Save original widget style names so we can restore later
                 try:
-                    if not pane_orig.get('user_tree_style'):
-                        pane_orig['user_tree_style'] = user_tree.cget('style') if user_tree else ''
+                    style.theme_use('clam')
                 except Exception:
                     pass
                 try:
-                    if not pane_orig.get('dwh_tree_style'):
-                        pane_orig['dwh_tree_style'] = dwh_tree.cget('style') if dwh_tree else ''
+                    style.configure('Treeview', background='#000000', fieldbackground='#000000', foreground='#ffffff', rowheight=18)
                 except Exception:
                     pass
+                try:
+                    style.configure('Pane.Treeview', background='#000000', fieldbackground='#000000', foreground='#ffffff', rowheight=18)
+                except Exception:
+                    pass
+                try:
+                    style.map('Treeview', background=[('selected', '#444444')], foreground=[('selected', '#ffffff')])
+                    style.map('Pane.Treeview', background=[('selected', '#444444')], foreground=[('selected', '#ffffff')])
+                except Exception:
+                    pass
+                try:
+                    style.configure('Treeview.Heading', background='#000000', foreground='#ffffff')
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-                # Create/overwrite a Pane style that affects the tree and its heading
-                style.configure('Pane.Treeview', background='#000000', fieldbackground='#000000', foreground='#ffffff')
-                try:
-                    style.configure('Pane.Treeview.Heading', background='#000000', foreground='#ffffff')
-                except Exception:
-                    # Some ttk backends ignore Heading style namespace; try generic
-                    try:
-                        style.configure('Treeview.Heading', background='#000000', foreground='#ffffff')
-                    except Exception:
-                        pass
+        # Save originals
+        try:
+            if not pane_orig.get('user_tree_style'):
+                pane_orig['user_tree_style'] = getattr(user_tree, 'cget', lambda k: '')('style')
+        except Exception:
+            pass
+        try:
+            if not pane_orig.get('dwh_tree_style'):
+                pane_orig['dwh_tree_style'] = getattr(dwh_tree, 'cget', lambda k: '')('style')
+        except Exception:
+            pass
+
+        try:
+            if not pane_orig.get('user_master_bg'):
+                pane_orig['user_master_bg'] = user_tree.master.cget('bg')
+        except Exception:
+            pass
+        try:
+            if not pane_orig.get('dwh_master_bg'):
+                pane_orig['dwh_master_bg'] = dwh_tree.master.cget('bg')
+        except Exception:
+            pass
+
+        try:
+            if not pane_orig.get('user_tree_widget'):
+                pane_orig['user_tree_widget'] = (user_tree.cget('background'), user_tree.cget('foreground'))
+        except Exception:
+            pass
+        try:
+            if not pane_orig.get('dwh_tree_widget'):
+                pane_orig['dwh_tree_widget'] = (dwh_tree.cget('background'), dwh_tree.cget('foreground'))
+        except Exception:
+            pass
+
+        # Recreate trees under the new style so the backend applies fieldbackground
+        try:
             try:
-                # store master (content_area) bg
-                try:
-                    if not pane_orig.get('user_master_bg'):
-                        pane_orig['user_master_bg'] = user_tree.master.cget('bg')
-                except Exception:
-                    pass
-                try:
-                    if not pane_orig.get('dwh_master_bg'):
-                        pane_orig['dwh_master_bg'] = dwh_tree.master.cget('bg')
-                except Exception:
-                    pass
-
-                # store original widget bg/fg so we can restore later
-                try:
-                    if not pane_orig.get('user_tree_widget'):
-                        pane_orig['user_tree_widget'] = (user_tree.cget('background'), user_tree.cget('foreground'))
-                except Exception:
-                    pass
-                try:
-                    if not pane_orig.get('dwh_tree_widget'):
-                        pane_orig['dwh_tree_widget'] = (dwh_tree.cget('background'), dwh_tree.cget('foreground'))
-                except Exception:
-                    pass
-
-                # Apply style and widget-level colors to fully darken the area
-                try:
-                    user_tree.configure(style='Pane.Treeview', background='#000000', foreground='#ffffff', fieldbackground='#000000', selectbackground='#444444')
-                except Exception:
-                    try:
-                        user_tree.configure(background='#000000', foreground='#ffffff')
-                    except Exception:
-                        pass
-                try:
-                    user_tree.master.config(bg='#000000')
-                except Exception:
-                    pass
+                user_tree = _recreate_tree(user_tree)
             except Exception:
                 pass
             try:
-                try:
-                    dwh_tree.configure(style='Pane.Treeview', background='#000000', foreground='#ffffff', fieldbackground='#000000', selectbackground='#444444')
-                except Exception:
-                    try:
-                        dwh_tree.configure(background='#000000', foreground='#ffffff')
-                    except Exception:
-                        pass
-                try:
-                    dwh_tree.master.config(bg='#000000')
-                except Exception:
-                    pass
+                dwh_tree = _recreate_tree(dwh_tree)
             except Exception:
                 pass
+        except Exception:
+            pass
+
+        # Set master backgrounds and darken log
+        try:
+            try:
+                user_tree.master.config(bg='#000000')
+            except Exception:
+                pass
+            try:
+                dwh_tree.master.config(bg='#000000')
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        try:
+            if 'log_text' in globals():
+                if not pane_orig.get('log'):
+                    pane_orig['log'] = (log_text.cget('bg'), log_text.cget('fg'), log_text.cget('insertbackground'))
+                try:
+                    log_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        try:
+            root._pane_orig = pane_orig
+        except Exception:
+            pass
+
+        # Debug write
+        try:
+            dbg = base_path / 'theme_debug.log'
+            with open(dbg, 'a', encoding='utf-8') as df:
+                df.write(f"SET DARK: user_tree.style={getattr(user_tree, 'cget', lambda k: None)('style')} bg={getattr(user_tree, 'cget', lambda k: None)('background')} fg={getattr(user_tree, 'cget', lambda k: None)('foreground')}\n")
+                try:
+                    its = list(user_tree.get_children())
+                    df.write(f"SET DARK: user_tree items={len(its)} sample_tags={[user_tree.item(its[0]).get('tags') if its else None]}\n")
+                except Exception:
+                    pass
+                df.write(f"SET DARK: dwh_tree.style={getattr(dwh_tree, 'cget', lambda k: None)('style')} bg={getattr(dwh_tree, 'cget', lambda k: None)('background')} fg={getattr(dwh_tree, 'cget', lambda k: None)('foreground')}\n")
         except Exception:
             pass
 
@@ -1413,12 +1488,38 @@ def launch_tool_gui():
         except Exception:
             pass
 
+        # Debug: write status to debug log
+        try:
+            dbg = base_path / 'theme_debug.log'
+            with open(dbg, 'a', encoding='utf-8') as df:
+                df.write(f"SET DARK: user_tree.style={getattr(user_tree, 'cget', lambda k: None)('style')} bg={getattr(user_tree, 'cget', lambda k: None)('background')} fg={getattr(user_tree, 'cget', lambda k: None)('foreground')}\n")
+                try:
+                    its = list(user_tree.get_children())
+                    df.write(f"SET DARK: user_tree items={len(its)} sample_tags={[user_tree.item(its[0]).get('tags') if its else None]}\n")
+                except Exception:
+                    pass
+                df.write(f"SET DARK: dwh_tree.style={getattr(dwh_tree, 'cget', lambda k: None)('style')} bg={getattr(dwh_tree, 'cget', lambda k: None)('background')} fg={getattr(dwh_tree, 'cget', lambda k: None)('foreground')}\n")
+        except Exception:
+            pass
+
     def set_panes_light():
+        nonlocal user_tree, dwh_tree
         try:
             # restore treeviews to default style
             try:
                 orig = getattr(root, '_pane_orig', {}).get('user_tree_style', '')
                 user_tree.configure(style=orig if orig is not None else '')
+                # restore original item tags if we saved them
+                try:
+                    orig_tags = getattr(root, '_pane_orig', {}).get('user_item_tags', None)
+                    if orig_tags:
+                        for it, tags in orig_tags.items():
+                            try:
+                                user_tree.item(it, tags=tags)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
                 # restore widget bg/fg
                 try:
                     uw = getattr(root, '_pane_orig', {}).get('user_tree_widget', None)
@@ -1438,6 +1539,16 @@ def launch_tool_gui():
             try:
                 orig2 = getattr(root, '_pane_orig', {}).get('dwh_tree_style', '')
                 dwh_tree.configure(style=orig2 if orig2 is not None else '')
+                try:
+                    orig_tags2 = getattr(root, '_pane_orig', {}).get('dwh_item_tags', None)
+                    if orig_tags2:
+                        for it, tags in orig_tags2.items():
+                            try:
+                                dwh_tree.item(it, tags=tags)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
                 try:
                     dw = getattr(root, '_pane_orig', {}).get('dwh_tree_widget', None)
                     if dw:
@@ -1476,6 +1587,20 @@ def launch_tool_gui():
         except Exception:
             pass
 
+        # Debug: write status to debug log
+        try:
+            dbg = base_path / 'theme_debug.log'
+            with open(dbg, 'a', encoding='utf-8') as df:
+                df.write(f"SET LIGHT: user_tree.style={getattr(user_tree, 'cget', lambda k: None)('style')} bg={getattr(user_tree, 'cget', lambda k: None)('background')} fg={getattr(user_tree, 'cget', lambda k: None)('foreground')}\n")
+                try:
+                    its = list(user_tree.get_children())
+                    df.write(f"SET LIGHT: user_tree items={len(its)} sample_tags={[user_tree.item(its[0]).get('tags') if its else None]}\n")
+                except Exception:
+                    pass
+                df.write(f"SET LIGHT: dwh_tree.style={getattr(dwh_tree, 'cget', lambda k: None)('style')} bg={getattr(dwh_tree, 'cget', lambda k: None)('background')} fg={getattr(dwh_tree, 'cget', lambda k: None)('foreground')}\n")
+        except Exception:
+            pass
+
     # Dark mode toggle variable (pane-only). Default off.
     dark_mode_var = tk.BooleanVar(value=False)
 
@@ -1490,6 +1615,46 @@ def launch_tool_gui():
 
     view_menu.add_checkbutton(label="Dark Mode", variable=dark_mode_var, command=_toggle_dark)
     menu_bar.add_cascade(label="View", menu=view_menu)
+    # Debug helper to inspect treeview style/tags at runtime
+    def _debug_panes():
+        try:
+            s = []
+            try:
+                s.append(f"user_tree.style={user_tree.cget('style')} bg={user_tree.cget('background')} fg={user_tree.cget('foreground')}")
+                items = list(user_tree.get_children())
+                s.append(f"user_tree.items={len(items)}")
+                if items:
+                    s.append(f"sample_item_tags={user_tree.item(items[0]).get('tags')}")
+            except Exception as e:
+                s.append(f"user_tree error: {e}")
+            try:
+                s.append(f"dwh_tree.style={dwh_tree.cget('style')} bg={dwh_tree.cget('background')} fg={dwh_tree.cget('foreground')}")
+                items2 = list(dwh_tree.get_children())
+                s.append(f"dwh_tree.items={len(items2)}")
+                if items2:
+                    s.append(f"sample_item_tags2={dwh_tree.item(items2[0]).get('tags')}")
+            except Exception as e:
+                s.append(f"dwh_tree error: {e}")
+            try:
+                style = ttk.Style()
+                s.append(f"Pane.Treeview lookup background={style.lookup('Pane.Treeview','background')} fieldbackground={style.lookup('Pane.Treeview','fieldbackground')} foreground={style.lookup('Pane.Treeview','foreground')}")
+                s.append(f"Treeview lookup background={style.lookup('Treeview','background')} fieldbackground={style.lookup('Treeview','fieldbackground')} foreground={style.lookup('Treeview','foreground')}")
+            except Exception as e:
+                s.append(f"style error: {e}")
+
+            dbg = base_path / 'theme_debug.log'
+            with open(dbg, 'a', encoding='utf-8') as df:
+                df.write('\n'.join(s) + '\n---\n')
+            from tkinter import messagebox
+            messagebox.showinfo('Theme Debug', '\n'.join(s))
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+                messagebox.showerror('Theme Debug Error', str(e))
+            except Exception:
+                pass
+
+    view_menu.add_command(label='Debug Panes', command=_debug_panes)
 
     help_menu = tk.Menu(menu_bar, tearoff=0)
     
