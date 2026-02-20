@@ -1384,6 +1384,25 @@ def launch_tool_gui():
                     self._popup.wm_overrideredirect(True)
                     self._popup.wm_geometry(f"+{x}+{y}")
                     lb = tk.Listbox(self._popup, exportselection=False)
+                    # Make the popup list wider than the entry so long names are visible.
+                    try:
+                        ew = self.entry.cget('width')
+                        try:
+                            ew = int(ew)
+                        except Exception:
+                            ew = None
+                        if ew:
+                            desired = min(max(ew + 6, 30), 120)  # chars, clamp to reasonable range
+                            lb.config(width=desired)
+                    except Exception:
+                        pass
+                    # Use same font as entry for consistent sizing
+                    try:
+                        f = self.entry.cget('font')
+                        if f:
+                            lb.config(font=f)
+                    except Exception:
+                        pass
                     for v in self.values:
                         lb.insert('end', v)
                     lb.pack()
