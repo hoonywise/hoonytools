@@ -85,9 +85,23 @@ def run_mv_refresh_gui(on_finish=None):
     right = tk.Frame(root)
     right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
 
-    tk.Label(left, text="Materialized Views:").pack(anchor="w")
-    mview_listbox = tk.Listbox(left, width=40, height=30)
-    mview_listbox.pack(fill="y")
+    # User MVs pane
+    tk.Label(left, text="User Materialized Views:").pack(anchor="w")
+    user_btn_frame = tk.Frame(left)
+    user_btn_frame.pack(fill="x")
+    tk.Button(user_btn_frame, text="Refresh", width=8, command=lambda: load_user_mviews()).pack(side="left")
+    mview_listbox_user = tk.Listbox(left, width=40, height=14)
+    mview_listbox_user.pack(fill="y")
+
+    # DWH MVs pane (lazy login)
+    tk.Label(left, text="DWH Materialized Views:").pack(anchor="w", pady=(8,0))
+    dwh_btn_frame = tk.Frame(left)
+    dwh_btn_frame.pack(fill="x")
+    tk.Button(dwh_btn_frame, text="Refresh DWH", width=12, command=lambda: refresh_dwh_mviews()).pack(side="left")
+    dwh_status_label = tk.Label(dwh_btn_frame, text="(not connected)")
+    dwh_status_label.pack(side="left", padx=(6,0))
+    mview_listbox_dwh = tk.Listbox(left, width=40, height=14)
+    mview_listbox_dwh.pack(fill="y")
 
     info_text = tk.Text(right, height=8)
     info_text.pack(fill="x")
@@ -111,7 +125,7 @@ def run_mv_refresh_gui(on_finish=None):
     include_new_var = tk.BooleanVar(value=True)
     tk.Checkbutton(btn_frame, text="INCLUDING NEW VALUES", variable=include_new_var).pack(side="left", padx=(8,0))
 
-    def load_mviews(selected_name=None):
+    def load_user_mviews(selected_name=None):
         try:
             cur = conn.cursor()
             # include REFRESH_MODE (ON DEMAND / ON COMMIT) when available
@@ -121,49 +135,137 @@ def run_mv_refresh_gui(on_finish=None):
                 # fallback for DBs that don't expose REFRESH_MODE column
                 cur.execute("SELECT mview_name, build_mode, refresh_method, rewrite_enabled, last_refresh_date, QUERY FROM user_mviews ORDER BY mview_name")
             rows = cur.fetchall()
-            mview_listbox.delete(0, tk.END)
+            mview_listbox_user.delete(0, tk.END)
             for r in rows:
                 name = r[0]
-                mview_listbox.insert(tk.END, name)
+                mview_listbox_user.insert(tk.END, name)
             # store metadata
             # attach as normal attribute for later lookup
-            setattr(root, '_mview_rows', {r[0]: r for r in rows})
+            setattr(root, '_mview_rows_user', {r[0]: r for r in rows})
             cur.close()
             # restore selection if requested
             try:
                 if selected_name:
                     # find index of the selected name
-                    for i in range(mview_listbox.size()):
-                        if mview_listbox.get(i) == selected_name:
-                            mview_listbox.selection_clear(0, tk.END)
-                            mview_listbox.selection_set(i)
-                            mview_listbox.activate(i)
+                    for i in range(mview_listbox_user.size()):
+                        if mview_listbox_user.get(i) == selected_name:
+                            mview_listbox_user.selection_clear(0, tk.END)
+                            mview_listbox_user.selection_set(i)
+                            mview_listbox_user.activate(i)
                             # update right pane to reflect restored selection
-                            on_select()
+                            on_select(None, source='user')
                             break
             except Exception:
                 pass
         except Exception as e:
             logger.exception(f"Failed to load materialized views: {e}")
 
-    def on_select(event=None):
-        sel = mview_listbox.curselection()
-        if not sel:
+    def load_dwh_mviews(dwh_conn, owner='DWH', selected_name=None):
+        try:
+            cur = dwh_conn.cursor()
+            # attempt to retrieve same columns as user view
+            try:
+                cur.execute(
+                    "SELECT mview_name, build_mode, refresh_method, refresh_mode, rewrite_enabled, last_refresh_date, QUERY FROM ALL_MVIEWS WHERE OWNER = :o ORDER BY mview_name",
+                    (owner,)
+                )
+            except Exception:
+                cur.execute(
+                    "SELECT mview_name, build_mode, refresh_method, rewrite_enabled, last_refresh_date, QUERY FROM ALL_MVIEWS WHERE OWNER = :o ORDER BY mview_name",
+                    (owner,)
+                )
+            rows = cur.fetchall()
+            mview_listbox_dwh.delete(0, tk.END)
+            for r in rows:
+                name = r[0]
+                display = f"{owner}.{name}"
+                mview_listbox_dwh.insert(tk.END, display)
+            setattr(root, '_mview_rows_dwh', {f"{owner}.{r[0]}": (owner,) + r for r in rows})
+            cur.close()
+            try:
+                if selected_name:
+                    for i in range(mview_listbox_dwh.size()):
+                        if mview_listbox_dwh.get(i) == selected_name:
+                            mview_listbox_dwh.selection_clear(0, tk.END)
+                            mview_listbox_dwh.selection_set(i)
+                            mview_listbox_dwh.activate(i)
+                            on_select(None, source='dwh')
+                            break
+            except Exception:
+                pass
+        except Exception as e:
+            logger.exception(f"Failed to load DWH materialized views: {e}")
+            mview_listbox_dwh.delete(0, tk.END)
+            mview_listbox_dwh.insert(tk.END, "(no access or error)")
+
+    def refresh_dwh_mviews():
+        # Prompt for DWH login only when user asks to refresh DWH list
+        dconn = getattr(root, '_dwh_conn', None)
+        if not dconn:
+            dconn = get_db_connection(force_shared=True, root=root)
+            if not dconn:
+                messagebox.showwarning("DWH Login", "DWH login cancelled or failed.")
+                return
+            setattr(root, '_dwh_conn', dconn)
+            try:
+                dwh_status_label.config(text=f"(connected as {dconn.username})" if hasattr(dconn, 'username') else '(connected)')
+            except Exception:
+                dwh_status_label.config(text='(connected)')
+        # load using owner DWH
+        try:
+            load_dwh_mviews(dconn, 'DWH')
+        except Exception as e:
+            logger.exception(f"Failed refreshing DWH mviews: {e}")
+
+    def on_select(event=None, source='user'):
+        # Determine selection source and take appropriate metadata
+        try:
+            if source == 'user':
+                sel = mview_listbox_user.curselection()
+                if not sel:
+                    return
+                name = mview_listbox_user.get(sel[0])
+                row = getattr(root, '_mview_rows_user', {}).get(name)
+                qualified = name
+                active_conn = conn
+            else:
+                sel = mview_listbox_dwh.curselection()
+                if not sel:
+                    return
+                display = mview_listbox_dwh.get(sel[0])
+                # display format: OWNER.NAME
+                name = display.split('.', 1)[-1]
+                qualified = display
+                row = getattr(root, '_mview_rows_dwh', {}).get(display)
+                active_conn = getattr(root, '_dwh_conn', None)
+        except Exception:
             return
-        name = mview_listbox.get(sel[0])
-        row = getattr(root, '_mview_rows', {}).get(name)
         if not row:
             return
+        # store last selected for action buttons
+        try:
+            setattr(root, '_last_selected', {'source': source, 'qualified': qualified, 'name': name})
+        except Exception:
+            pass
+        # normalize row so both user and dwh use same indexing: row_data[0] == mview_name
+        if source == 'user':
+            owner = None
+            row_data = row
+        else:
+            # stored as (owner,) + original_row
+            owner = row[0] if len(row) > 0 else 'DWH'
+            row_data = row[1:]
         # defensive extraction because REFRESH_MODE may not be available in older DBs
-        build = row[1] if len(row) > 1 else ''
-        refresh_method = row[2] if len(row) > 2 else ''
-        refresh_mode = row[3] if len(row) > 3 else ''
-        rewrite_enabled = row[4] if len(row) > 4 else (row[3] if len(row) > 3 else '')
-        last_refresh = row[5] if len(row) > 5 else (row[4] if len(row) > 4 else '')
-        query = row[6] if len(row) > 6 else (row[5] if len(row) > 5 else '')
+        build = row_data[1] if len(row_data) > 1 else ''
+        refresh_method = row_data[2] if len(row_data) > 2 else ''
+        refresh_mode = row_data[3] if len(row_data) > 3 else ''
+        rewrite_enabled = row_data[4] if len(row_data) > 4 else (row_data[3] if len(row_data) > 3 else '')
+        last_refresh = row_data[5] if len(row_data) > 5 else (row_data[4] if len(row_data) > 4 else '')
+        query = row_data[6] if len(row_data) > 6 else (row_data[5] if len(row_data) > 5 else '')
 
         info_text.delete('1.0', tk.END)
-        info_text.insert(tk.END, f"Name: {row[0]}\nBuild: {build}\nRefresh Method: {refresh_method}\nRefresh Type: {refresh_mode or 'ON DEMAND'}\nRewrite Enabled: {rewrite_enabled}\nLast Refresh: {last_refresh}\n")
+        mv_display_name = row_data[0] if row_data and len(row_data) > 0 else (row[0] if row else '')
+        info_text.insert(tk.END, f"Name: {mv_display_name}\nBuild: {build}\nRefresh Method: {refresh_method}\nRefresh Type: {refresh_mode or 'ON DEMAND'}\nRewrite Enabled: {rewrite_enabled}\nLast Refresh: {last_refresh}\n")
         # Insert current log type information (bold, blue)
         try:
             info_text.tag_configure('logtype', foreground='blue', font=('Arial', 10, 'bold'))
@@ -179,23 +281,25 @@ def run_mv_refresh_gui(on_finish=None):
             # Fallback: if regex detection failed, try USER_DEPENDENCIES / ALL_DEPENDENCIES to find referenced tables
             if not bases:
                 try:
-                    cur = conn.cursor()
+                    # Use the active connection where possible (DWH vs user)
+                    cur = active_conn.cursor() if active_conn else conn.cursor()
                     try:
+                        # If connected as the owning schema, USER_DEPENDENCIES is preferred
                         cur.execute(
                             "SELECT REFERENCED_OWNER, REFERENCED_NAME FROM USER_DEPENDENCIES WHERE NAME = :mv AND REFERENCED_TYPE = 'TABLE'",
-                            (row[0],)
+                            (row[0] if source == 'user' else name,)
                         )
                         dep_rows = cur.fetchall()
                         if dep_rows:
                             bases = [ (r[0] + '.' + r[1]) if r[0] else r[1] for r in dep_rows ]
                         else:
-                            # try ALL_DEPENDENCIES with current user as owner
                             try:
+                                # try ALL_DEPENDENCIES with current user as owner
                                 cur.execute("SELECT USER FROM DUAL")
                                 cur_user = cur.fetchone()[0]
                                 cur.execute(
                                     "SELECT REFERENCED_OWNER, REFERENCED_NAME FROM ALL_DEPENDENCIES WHERE OWNER = :own AND NAME = :mv AND REFERENCED_TYPE = 'TABLE'",
-                                    (cur_user, row[0])
+                                    (cur_user, row[0] if source == 'user' else name)
                                 )
                                 dep_rows = cur.fetchall()
                                 bases = [ f"{r[0]}.{r[1]}" for r in dep_rows ]
@@ -210,7 +314,7 @@ def run_mv_refresh_gui(on_finish=None):
                     bases = []
             # Filter out the MV itself if it appears in the detected bases
             try:
-                mv_basename = row[0].split('.')[-1].upper()
+                mv_basename = mv_display_name.split('.')[-1].upper()
                 filtered = []
                 seen = set()
                 for b in bases:
@@ -232,7 +336,7 @@ def run_mv_refresh_gui(on_finish=None):
             else:
                 parts = []
                 try:
-                    cur = conn.cursor()
+                    cur = active_conn.cursor() if active_conn else conn.cursor()
                     for b in bases:
                         try:
                             if detect_existing_mlog:
@@ -263,34 +367,77 @@ def run_mv_refresh_gui(on_finish=None):
             sql_text.insert(tk.END, "")
 
     def do_refresh():
-        sel = mview_listbox.curselection()
+        sel = getattr(root, '_last_selected', None)
         if not sel:
             messagebox.showwarning("Select MV", "Please select a materialized view first.")
             return
-        name = mview_listbox.get(sel[0])
-        # Only COMPLETE mode is supported here; pass 'C' to DBMS_MVIEW.REFRESH
+        source = sel.get('source')
+        qualified = sel.get('qualified')
         mode = 'C'
         try:
-            cur = conn.cursor()
-            cur.execute(f"BEGIN DBMS_MVIEW.REFRESH('{name}','{mode}'); END;")
-            conn.commit()
-            messagebox.showinfo("Refresh", f"Refresh of {name} requested (COMPLETE).")
-            cur.close()
-            load_mviews(name)
+            if source == 'user':
+                cur = conn.cursor()
+                cur.execute(f"BEGIN DBMS_MVIEW.REFRESH('{qualified}','{mode}'); END;")
+                conn.commit()
+                messagebox.showinfo("Refresh", f"Refresh of {qualified} requested (COMPLETE).")
+                cur.close()
+                load_user_mviews(qualified)
+            else:
+                # ensure we have a DWH connection
+                dconn = getattr(root, '_dwh_conn', None)
+                if not dconn:
+                    dconn = get_db_connection(force_shared=True, root=root)
+                    if not dconn:
+                        messagebox.showwarning("DWH Login", "DWH login cancelled or failed.")
+                        return
+                    setattr(root, '_dwh_conn', dconn)
+                    try:
+                        dwh_status_label.config(text=f"(connected as {dconn.username})" if hasattr(dconn, 'username') else '(connected)')
+                    except Exception:
+                        dwh_status_label.config(text='(connected)')
+                cur = dconn.cursor()
+                # qualified includes owner
+                cur.execute(f"BEGIN DBMS_MVIEW.REFRESH('{qualified}','{mode}'); END;")
+                dconn.commit()
+                messagebox.showinfo("Refresh", f"Refresh of {qualified} requested (COMPLETE).")
+                cur.close()
+                # extract owner from qualified
+                owner = qualified.split('.', 1)[0]
+                load_dwh_mviews(dconn, owner, qualified)
         except Exception as e:
-            logger.exception(f"Failed to refresh {name}: {e}")
+            logger.exception(f"Failed to refresh {qualified}: {e}")
             messagebox.showerror("Refresh Failed", str(e))
 
     def do_create_logs():
-        sel = mview_listbox.curselection()
+        sel = getattr(root, '_last_selected', None)
         if not sel:
             messagebox.showwarning("Select MV", "Please select a materialized view first.")
             return
-        name = mview_listbox.get(sel[0])
-        row = getattr(root, '_mview_rows', {}).get(name)
-        mv_query = ''
-        if row:
-            mv_query = row[6] if len(row) > 6 else (row[5] if len(row) > 5 else '')
+        source = sel.get('source')
+        qualified = sel.get('qualified')
+        # lookup row and query
+        if source == 'user':
+            row = getattr(root, '_mview_rows_user', {}).get(sel.get('name'))
+            mv_query = row[6] if row and len(row) > 6 else (row[5] if row and len(row) > 5 else '')
+            active_cursor = conn.cursor()
+        else:
+            # ensure DWH conn
+            dconn = getattr(root, '_dwh_conn', None)
+            if not dconn:
+                dconn = get_db_connection(force_shared=True, root=root)
+                if not dconn:
+                    messagebox.showwarning("DWH Login", "DWH login cancelled or failed.")
+                    return
+                setattr(root, '_dwh_conn', dconn)
+                try:
+                    dwh_status_label.config(text=f"(connected as {dconn.username})" if hasattr(dconn, 'username') else '(connected)')
+                except Exception:
+                    dwh_status_label.config(text='(connected)')
+            row = getattr(root, '_mview_rows_dwh', {}).get(qualified)
+            # stored as (owner,) + row
+            mv_row = row[1:] if row else None
+            mv_query = mv_row[6] if mv_row and len(mv_row) > 6 else (mv_row[5] if mv_row and len(mv_row) > 5 else '')
+            active_cursor = getattr(root, '_dwh_conn').cursor()
         tables = detect_tables_from_sql(mv_query)
         if not tables:
             messagebox.showinfo("No tables", "Could not detect base tables from the MV query.")
@@ -302,7 +449,7 @@ def run_mv_refresh_gui(on_finish=None):
 
         results = []
         try:
-            cur = conn.cursor()
+            cur = active_cursor
             for t in tables:
                 try:
                     # If helper available, detect existing log and offer reuse/drop
@@ -332,7 +479,6 @@ def run_mv_refresh_gui(on_finish=None):
                                     dlg.title(f"Existing MV Log on {table_name}")
                                     dlg.grab_set()
                                 except Exception:
-                                    # fallback: simple yes/no for drop
                                     ans = messagebox.askyesno("Existing MV Log Detected", f"A materialized view log already exists on {table_name}.\nDrop and recreate?")
                                     return 'drop' if ans else None
 
@@ -393,7 +539,10 @@ def run_mv_refresh_gui(on_finish=None):
                                                 diag_lines.append(f"all_tables_mlog_count: {cursor.fetchone()[0]}")
                                             except Exception:
                                                 diag_lines.append("all_tables_mlog_count: (no access)")
-                                            cursor.close()
+                                            try:
+                                                cursor.close()
+                                            except Exception:
+                                                pass
                                         except Exception:
                                             diag_lines = ["(could not collect diag counts)"]
                                         txt = f"detect_existing_mlog meta: {meta_text}\n" + '\n'.join(diag_lines)
@@ -513,13 +662,19 @@ def run_mv_refresh_gui(on_finish=None):
             if failed:
                 msg_lines = [f"{t}: {err}" for (t, err) in failed]
                 messagebox.showwarning("Some logs failed", "\n".join(msg_lines))
-            # preserve selection so the user can perform another action on the same MV
+            # preserve selection and reload appropriate list
             try:
-                sel = mview_listbox.curselection()
-                sel_name = mview_listbox.get(sel[0]) if sel else None
+                last = getattr(root, '_last_selected', None)
+                if last:
+                    if last.get('source') == 'user':
+                        load_user_mviews(last.get('name') or last.get('qualified'))
+                    else:
+                        dconn = getattr(root, '_dwh_conn', None)
+                        if dconn:
+                            owner = last.get('qualified').split('.', 1)[0]
+                            load_dwh_mviews(dconn, owner, last.get('qualified'))
             except Exception:
-                sel_name = None
-            load_mviews(sel_name)
+                pass
         except Exception as e:
             logger.exception(f"Failed to create logs: {e}")
             messagebox.showerror("Error", str(e))
@@ -527,9 +682,12 @@ def run_mv_refresh_gui(on_finish=None):
     tk.Button(btn_frame, text="Refresh MV", command=do_refresh).pack(side="right", padx=6)
     tk.Button(btn_frame, text="Create Logs", command=do_create_logs).pack(side="right", padx=6)
 
-    mview_listbox.bind('<<ListboxSelect>>', on_select)
+    # bind both listboxes to the shared handler
+    mview_listbox_user.bind('<<ListboxSelect>>', lambda e: on_select(e, source='user'))
+    mview_listbox_dwh.bind('<<ListboxSelect>>', lambda e: on_select(e, source='dwh'))
 
-    load_mviews()
+    # initial load of user mviews
+    load_user_mviews()
 
     # Center window on screen (was opening slightly left on some displays)
     try:
