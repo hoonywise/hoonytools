@@ -516,7 +516,7 @@ def launch_tool_gui():
         tv.heading("pk", text="PK")
         tv.column("name", width=160, anchor="w", stretch=False)
         tv.column("type", width=120, anchor="center", stretch=False)
-        tv.column("pk", width=160, anchor="w", stretch=False)
+        tv.column("pk", width=160, anchor="center", stretch=False)
         vs = tk.Scrollbar(frame, orient="vertical", command=tv.yview)
         tv.configure(yscrollcommand=vs.set)
         tv.pack(side="left", fill="both", expand=True)
