@@ -392,3 +392,107 @@ Follow-ups
 1. Consider adding more UI preferences to the `[preferences]` section (e.g., window geometry, last-used tool, font size) now that the infrastructure exists.
 2. Add dark mode support to `tools/object_cleanup_gui.py` and `loaders/excel_csv_loader.py` for full visual consistency.
 3. The `apply_dark_theme()` and `apply_light_theme()` functions defined at the top of `HoonyTools.pyw` (lines 32-90) are never called at runtime — they are remnants of an older full-window dark mode approach. Consider removing them or repurposing them if full-window dark mode is planned.
+
+---
+
+### 🔧 Entry #12: Data Loader Overhaul + Index Tool (2026-02-20)
+
+Summary: This session delivered a major overhaul of the Excel/CSV loader, replacing the old popup-driven flow with a structured dialog that supports tight VARCHAR2 sizing, user-controlled indexing, and integrated abort functionality. A new Index Management Tool was also created.
+
+#### Findings
+
+- **Composite index key length limits**: Oracle has a maximum index key length (~6397 bytes for 8KB block size). The old loader created ALL columns as VARCHAR2(4000), making composite indexes impossible (2 columns = 8000 bytes). The new `_compute_col_sizes()` function calculates tight sizes based on actual data: `max(20, ceil(max_byte_length * 1.2))`.
+
+- **Critical bug discovered**: The `_execute_load()` function in the new loader GUI defined `_worker()` and `_load_one_table()` but never actually spawned the worker thread. The `threading.Thread(target=_worker, daemon=True).start()` call was missing, causing the Load button to silently do nothing.
+
+- **Oracle MERGE restriction (ORA-38104)**: Oracle MERGE cannot update columns used in the ON clause. The old `merge_with_checks()` returned `{"ok": False}` when key columns appeared in the update set during dry_run, blocking upsert operations. Fixed to automatically exclude key columns and log an info message instead.
+
+- **Tkinter selection persistence challenge**: When switching between files in the loader treeview, the `<<TreeviewSelect>>` event fires and `_on_file_select()` repopulates all listboxes, losing user selections. Solved by storing selections per-file in the `file_entries` dict and restoring them on re-selection.
+
+- **Batch mode column consistency**: In batch mode (single table from multiple files), all files must have identical columns. The index listbox should show the same columns regardless of which file is selected, so we skip repopulating when `batch_mode_var == 1` and the listbox already has items.
+
+#### Challenges
+
+- **Abort button relocation**: Moving the Abort button from the main launcher into the loader required replicating the abort logic (`abort_manager.set_abort()`, DWH connection closure, prompt event cancellation, connection closure, monitor thread). The loader's abort handler is scoped to the loader dialog and doesn't touch the main launcher UI.
+
+- **DPY-1001 noise during abort**: When abort closes the worker's connection, subsequent operations (like index creation) raise DPY-1001. These are expected during abort and should not spam ERROR logs. Used `abort_manager.is_expected_disconnect(e)` to downgrade to debug level.
+
+- **Upsert listbox scrollbars**: The original upsert key_list and upd_list had no scrollbars, making them unusable with many columns. Added scrollbar frames following the pattern used for idx_list.
+
+- **Window sizing for dynamic content**: The upsert configuration pane is hidden by default and shown when Upsert mode is selected. Without resizing, it gets clipped. Added dynamic `win.geometry()` calls in `_toggle_upsert_frame()` to expand/shrink the window.
+
+- **FocusOut auto-rename**: Users often forget to click "Apply Rename" after editing the table name field. Binding `<FocusOut>` to `_apply_rename()` triggers on every focus loss, including when clicking other UI elements. This works well but could cause issues if `_apply_rename()` had side effects beyond updating the entry — currently safe since it only updates `file_entries` and refreshes the treeview.
+
+#### Architecture decisions
+
+- **Per-file vs. global selections**: Index selections are stored per-file (`file_entries[i]['index_selections']`) so each file can have different index columns in separate mode. In batch mode, a single selection applies to the merged table. Upsert selections follow the same pattern.
+
+- **SQL Preview for Create New**: Unlike Append/Replace/Upsert which operate on existing tables, Create New drops and creates fresh. Added a preview showing CREATE TABLE DDL (with actual column sizes from tight sizing) and sample INSERT to match the preview behavior of other modes.
+
+- **Abort state management**: The loader's `_on_worker_done()` callback re-enables the Load button and disables Abort. The abort monitor thread's `_reenable()` callback also does this if abort completes first. Both paths call `abort_manager.reset()` to clear state for the next operation.
+
+#### Code patterns established
+
+1. **Selection persistence pattern**:
+   ```python
+   def _save_selections():
+       cidx = _current_file_idx[0]
+       if cidx is not None and cidx < len(file_entries):
+           file_entries[cidx]['index_selections'] = [idx_list.get(i) for i in idx_list.curselection()]
+   
+   def _on_file_select(event=None):
+       _save_selections()  # Save before switching
+       # ... populate listbox ...
+       # Restore saved selections
+       saved = entry.get('index_selections', [])
+       for i, item in enumerate(all_items):
+           if item in saved:
+               idx_list.selection_set(i)
+   ```
+
+2. **Main-thread UI from worker pattern**:
+   ```python
+   result = [None]
+   ev = threading.Event()
+   def _show():
+       result[0] = show_sql_preview(win, title, summary, sql)
+       ev.set()
+   win.after(0, _show)
+   ev.wait()
+   if not result[0]:
+       return  # User cancelled
+   ```
+
+3. **Abort-aware loop pattern**:
+   ```python
+   for idx_col in index_cols_to_create:
+       if getattr(abort_manager, 'should_abort', False):
+           logger.info('Abort requested')
+           break
+       try:
+           create_index_if_columns_exist(cursor, schema, tbl_name, [idx_col])
+       except Exception as e:
+           if abort_manager.is_expected_disconnect(e):
+               logger.debug(f'Index creation interrupted: {idx_col}')
+           else:
+               logger.warning(f'Failed to create index: {e}')
+   ```
+
+#### Testing notes
+
+1. **Create New with preview**: Add a CSV, select Create New mode, check Preview SQL, click Load. Verify CREATE TABLE DDL shows correct VARCHAR2 sizes and the preview dialog appears.
+
+2. **Index selection persistence**: Add two CSVs, select index columns for file 1, switch to file 2, select different columns, switch back to file 1. Verify file 1's selections are restored.
+
+3. **Upsert flow**: Load a CSV with ID column, select Upsert mode, choose ID as key, select all other columns for update. Verify the MERGE preview shows key excluded from SET clause.
+
+4. **Abort during index creation**: Load a large file with index columns selected, click Load, then immediately click Abort. Verify no DPY-1001 errors in the log (only debug level).
+
+5. **Batch mode index persistence**: Add two CSVs with identical columns, select batch mode, select index columns, switch between files. Verify selections persist (same columns shown, same selections maintained).
+
+#### Follow-ups
+
+1. Consider adding dark mode support to the loader GUI for visual consistency with other tools.
+2. The `create_index_if_columns_exist()` function creates composite indexes from a list. For the loader's per-column indexing, we call it with single-element lists. Consider adding a dedicated `create_single_index()` helper for clarity.
+3. The old `load_multiple_files()` function and `select_sheets_gui()` are now dead code but remain in the file. Consider removing them in a cleanup pass.
+4. Add validation for batch mode: warn if files have different row counts or data types that might cause issues when merged.

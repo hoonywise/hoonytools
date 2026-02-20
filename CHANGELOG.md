@@ -4,6 +4,51 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🚀 v1.5.0 — Data Loader Overhaul + Index Tool (2026-02-20)
+
+This release delivers a complete overhaul of the Excel/CSV loader with a new structured dialog, tight VARCHAR2 sizing for index-friendly columns, inline index selection, and integrated abort functionality. The auto-indexing of PIDM/TERM/STUDENT_ID columns has been removed in favor of user-controlled indexing.
+
+### Added
+
+- **New Index Management Tool** (`tools/index_gui.py`): Full-featured dialog for managing table indexes with column byte-size display, existing index listing, individual/composite index creation modes, key size pre-validation, and drop index support.
+- **Structured Data Loader GUI** (`load_files_gui()`): Replaces the old popup-driven flow with a comprehensive dialog featuring:
+  - File list treeview with Add/Remove/Clear controls
+  - Excel sheet picker for multi-sheet workbooks
+  - Batch mode options (separate tables vs. single merged table)
+  - VARCHAR2 sizing toggle (tight sizing with 20% buffer vs. fixed 4000)
+  - Load mode selection (Create New / Append / Replace / Upsert)
+  - Column preview with max length, Oracle size, and sample values
+  - **Index column selection**: Multi-select listbox to choose columns for individual index creation after loading
+  - **Upsert configuration**: Key column and update column selectors with scrollbars
+  - SQL preview for all load modes including Create New
+  - Integrated Abort button (moved from main launcher toolbar)
+- **Per-file selection persistence**: Index selections and upsert key/update selections are saved per-file and restored when switching between files in the loader.
+- **Auto-apply table rename**: Table name changes are automatically applied when the user tabs out or presses Enter in the rename field.
+- **SQL Preview for Create New mode**: Shows CREATE TABLE DDL with column definitions and sample INSERT statement before execution.
+
+### Changed
+
+- **Removed auto-indexing**: The automatic creation of indexes on PIDM/TERM/STUDENT_ID columns in `create_table()` has been removed. Users now explicitly select which columns to index via the loader GUI.
+- **Removed special-case column sizing**: The hardcoded VARCHAR2(9) for PIDM/STUDENT_ID and VARCHAR2(6) for TERM fallbacks have been removed from `_col_def()`. All columns now use tight sizing from data analysis or fall back to VARCHAR2(4000).
+- **Abort button relocated**: The Abort button has been moved from the main HoonyTools toolbar into the Data Loader dialog where it's contextually relevant. It enables during load operations and handles DWH vs. User schema connections appropriately.
+- **Upsert MERGE behavior**: Key columns are now automatically excluded from the update set (Oracle ORA-38104 restriction) instead of failing with an error. An info message is logged when this occurs.
+- **Window resizing for Upsert mode**: The loader dialog expands from 860px to 1000px height when Upsert mode is selected to accommodate the configuration pane.
+
+### Fixed
+
+- **Critical bug**: `_execute_load()` was missing the `threading.Thread(target=_worker, daemon=True).start()` call, causing the Load button to do nothing.
+- **DPY log noise during abort**: Index creation failures during abort now use `abort_manager.is_expected_disconnect()` to downgrade DPY-1001 errors to debug level.
+- **Upsert key column error**: Fixed "Removed key columns from update set" error that blocked upsert operations. Key columns are now silently excluded from updates as required by Oracle MERGE.
+- **File list not clearing**: The file list pane now clears automatically after successful load completion.
+
+### Files touched
+
+- `loaders/excel_csv_loader.py` — Major refactor: `load_files_gui()`, `_compute_col_sizes()`, `create_table()` changes, `merge_with_checks()` fix, selection persistence, abort integration
+- `tools/index_gui.py` — New file for index management tool
+- `HoonyTools.pyw` — Added Index/Load buttons to object panes, removed Abort button from toolbar, removed Excel/CSV Loader from TOOLS dict
+
+---
+
 ## 🚀 v1.4.6 — Dark mode persistence + selection highlight improvements (2026-02-20)
 
 This patch adds persistent dark mode preference storage and improves dark mode visual fidelity across the launcher and tool windows.
