@@ -6,6 +6,7 @@ import re
 import time
 import threading
 import queue as _queue
+import tkinter as tk
 from tkinter import Tk, filedialog, simpledialog, Toplevel, Label, Checkbutton, IntVar, Button, Entry
 import sys
 from pathlib import Path
@@ -203,13 +204,25 @@ def drop_table_if_exists(cursor, schema, table_name):
         logger.warning(f"⚠️ Could not drop table {table_name}: {e}")
 
 # ==== CREATE TABLE ====
-def create_table(cursor, schema, table_name, df):
-    cols_sql = ', '.join([
-        f'"{col}" VARCHAR2(9)' if col.upper() in ['PIDM', 'STUDENT_ID'] else
-        f'"{col}" VARCHAR2(6)' if col.upper() == 'TERM' else
-        f'"{col}" VARCHAR2(4000)'
-        for col in df.columns
-    ])
+def create_table(cursor, schema, table_name, df, col_sizes=None):
+    """Create a new Oracle table from a DataFrame's column list.
+
+    Parameters
+    ----------
+    col_sizes : dict or None
+        Optional mapping of column_name -> VARCHAR2 size (int).
+        When provided, each column uses the specified size instead of
+        the default 4000.
+    """
+    def _col_def(col):
+        if col_sizes and col.upper() in {k.upper() for k in col_sizes}:
+            # Find the matching key (case-insensitive)
+            for k, v in col_sizes.items():
+                if k.upper() == col.upper():
+                    return f'"{col}" VARCHAR2({v})'
+        return f'"{col}" VARCHAR2(4000)'
+
+    cols_sql = ', '.join([_col_def(col) for col in df.columns])
     cursor.execute(f'CREATE TABLE {schema}.{table_name.upper()} ({cols_sql})')
     cursor.execute(f'GRANT SELECT ON {schema}.{table_name.upper()} TO PUBLIC')
     # Register the fully-qualified table name so abort cleanup can drop it
@@ -220,9 +233,6 @@ def create_table(cursor, schema, table_name, df):
         # Best-effort registration; do not fail table creation if this errors.
         logger.debug("Failed to register created table with abort_manager")
     logger.info(f"✅ Created table and granted SELECT to PUBLIC: {schema}.{table_name}")
-    
-    # ==== CREATE INDEX IF COLUMNS EXIST ====
-    create_index_if_columns_exist(cursor, schema, table_name, ["PIDM", "TERM", "STUDENT_ID"])
 
 # ==== INSERT DATA ====
 def insert_data(cursor, schema, table_name, df, conn):
@@ -938,15 +948,10 @@ def merge_with_checks(conn, cursor, schema, target_table, staging_table, key_col
     # Ensure we do not try to update key columns (Oracle ORA-38104)
     keys_in_updates = [c for c in update_cols_u if c in key_cols_u]
     if keys_in_updates:
-        # remove keys from update list and inform via message
+        # Oracle MERGE cannot update columns used in the ON clause (ORA-38104).
+        # Automatically remove key columns from the update list and continue.
         update_cols_u = [c for c in update_cols_u if c not in key_cols_u]
-        # include note in result when appropriate
-        # If dry_run we will return message; if executing, proceed silently after removal
-        msg = f"Removed key columns from update set: {keys_in_updates}"
-        if dry_run:
-            return {"ok": False, "message": msg}
-        else:
-            logger.info(msg)
+        logger.info(f"Auto-excluded key columns from update set (Oracle restriction): {keys_in_updates}")
 
     # existence checks
     missing_keys = [k for k in key_cols_u if k not in tgt_cols or k not in stg_cols]
@@ -1601,7 +1606,1076 @@ def load_multiple_files(launcher_root=None):
             pass
 
 
-if __name__ == '__main__':
-    load_multiple_files()
+# =============================================================================
+# New structured Data Loader GUI  (launched from pane Load buttons)
+# =============================================================================
 
-    
+def _compute_col_sizes(df, buffer=1.2, minimum=20):
+    """Compute tight VARCHAR2 sizes from actual data in a DataFrame.
+
+    Returns a dict mapping column_name -> int size.
+    Each size is max(observed_byte_length) * buffer, rounded up,
+    with a floor of *minimum*.
+    """
+    import math
+    sizes = {}
+    for col in df.columns:
+        max_len = df[col].astype(str).str.encode('utf-8').apply(len).max()
+        if pd.isna(max_len) or max_len == 0:
+            max_len = 1
+        computed = max(minimum, math.ceil(int(max_len) * buffer))
+        sizes[col.upper()] = computed
+    return sizes
+
+
+def load_files_gui(parent=None, schema_choice='user'):
+    """Open the structured Data Loader dialog.
+
+    Parameters
+    ----------
+    parent : Tk widget or None
+        The launcher root window.
+    schema_choice : str
+        'user' or 'dwh' — determines the target schema.
+    """
+    import math
+    from tkinter import Toplevel, Frame, Label, Button, Entry, StringVar, IntVar
+    from tkinter import Listbox, Scrollbar, filedialog
+    from tkinter.constants import LEFT, RIGHT, BOTH, Y, END, EXTENDED
+    try:
+        import tkinter.ttk as ttk
+    except Exception:
+        ttk = None
+
+    # --- file entry storage ---
+    # Each entry is a dict:
+    #   { 'path': str, 'sheet': str or None, 'df': DataFrame,
+    #     'table_name': str, 'rows': int, 'cols': int,
+    #     'col_sizes': dict, 'columns': list }
+    file_entries = []
+
+    # --- Build dialog window ---
+    if parent:
+        win = Toplevel(parent)
+        try:
+            win.transient(parent)
+        except Exception:
+            pass
+    else:
+        win = tk.Tk()
+
+    schema_label = schema_choice.upper() if schema_choice == 'dwh' else 'User'
+    win.title(f'Data Loader - {schema_label} Schema')
+
+    # --- File list section ---
+    file_frame = tk.LabelFrame(win, text='Files to Load', padx=6, pady=6)
+    file_frame.pack(fill=BOTH, expand=True, padx=8, pady=(8, 4))
+
+    file_btn_bar = Frame(file_frame)
+    file_btn_bar.pack(fill='x', pady=(0, 4))
+
+    add_btn = Button(file_btn_bar, text='Add Files...', width=12)
+    add_btn.pack(side=LEFT, padx=(0, 6))
+    remove_btn = Button(file_btn_bar, text='Remove Selected', width=14)
+    remove_btn.pack(side=LEFT, padx=(0, 6))
+    clear_btn = Button(file_btn_bar, text='Clear All', width=10)
+    clear_btn.pack(side=LEFT)
+
+    # File treeview
+    file_tv_frame = Frame(file_frame)
+    file_tv_frame.pack(fill=BOTH, expand=True)
+
+    file_cols = ("filename", "sheet", "rows", "columns", "table_name")
+    if ttk:
+        file_tv = ttk.Treeview(file_tv_frame, columns=file_cols, show="headings", height=8)
+    else:
+        file_tv = ttk.Treeview(file_tv_frame, columns=file_cols, show="headings", height=8) if ttk else None
+
+    if file_tv:
+        file_tv.heading("filename", text="File")
+        file_tv.heading("sheet", text="Sheet")
+        file_tv.heading("rows", text="Rows")
+        file_tv.heading("columns", text="Cols")
+        file_tv.heading("table_name", text="Table Name")
+        file_tv.column("filename", width=200, anchor="w")
+        file_tv.column("sheet", width=80, anchor="center")
+        file_tv.column("rows", width=60, anchor="center")
+        file_tv.column("columns", width=50, anchor="center")
+        file_tv.column("table_name", width=200, anchor="w")
+        file_vs = Scrollbar(file_tv_frame, orient="vertical", command=file_tv.yview)
+        file_tv.configure(yscrollcommand=file_vs.set)
+        file_tv.pack(side=LEFT, fill=BOTH, expand=True)
+        file_vs.pack(side=RIGHT, fill=Y)
+
+    # --- Table name edit ---
+    name_frame = Frame(file_frame)
+    name_frame.pack(fill='x', pady=(4, 0))
+    Label(name_frame, text='Table Name (selected):', font=("Arial", 9)).pack(side=LEFT, padx=(0, 6))
+    table_name_var = StringVar()
+    name_entry = Entry(name_frame, textvariable=table_name_var, width=40)
+    name_entry.pack(side=LEFT, padx=(0, 6))
+    rename_btn = Button(name_frame, text='Apply Rename', width=14)
+    rename_btn.pack(side=LEFT)
+
+    # --- Batch mode + sizing ---
+    options_frame = tk.LabelFrame(win, text='Options', padx=6, pady=6)
+    options_frame.pack(fill='x', padx=8, pady=4)
+
+    # Batch mode
+    batch_row = Frame(options_frame)
+    batch_row.pack(fill='x', pady=(0, 4))
+    Label(batch_row, text='Batch Mode:', font=("Arial", 9, 'bold')).pack(side=LEFT, padx=(0, 8))
+    batch_mode_var = IntVar(value=0)  # 0 = separate, 1 = single
+    tk.Radiobutton(batch_row, text='Separate tables (one per file)', variable=batch_mode_var, value=0).pack(side=LEFT, padx=(0, 12))
+    tk.Radiobutton(batch_row, text='Single table (merge all files)', variable=batch_mode_var, value=1).pack(side=LEFT, padx=(0, 12))
+    Label(batch_row, text='Name:', font=("Arial", 9)).pack(side=LEFT, padx=(0, 4))
+    single_table_var = StringVar(value='BATCH_LOAD')
+    single_entry = Entry(batch_row, textvariable=single_table_var, width=24)
+    single_entry.pack(side=LEFT)
+
+    # Sizing mode
+    sizing_row = Frame(options_frame)
+    sizing_row.pack(fill='x', pady=(0, 4))
+    Label(sizing_row, text='VARCHAR2 Sizing:', font=("Arial", 9, 'bold')).pack(side=LEFT, padx=(0, 8))
+    sizing_mode_var = IntVar(value=0)  # 0 = tight, 1 = fixed 4000
+    tk.Radiobutton(sizing_row, text='Tight (max data length + 20%)', variable=sizing_mode_var, value=0).pack(side=LEFT, padx=(0, 12))
+    tk.Radiobutton(sizing_row, text='Fixed VARCHAR2(4000)', variable=sizing_mode_var, value=1).pack(side=LEFT)
+
+    # Load mode
+    mode_row = Frame(options_frame)
+    mode_row.pack(fill='x', pady=(0, 4))
+    Label(mode_row, text='Load Mode:', font=("Arial", 9, 'bold')).pack(side=LEFT, padx=(0, 8))
+    load_mode_var = IntVar(value=0)  # 0=create, 1=append, 2=replace, 3=upsert
+    tk.Radiobutton(mode_row, text='Create New', variable=load_mode_var, value=0).pack(side=LEFT, padx=(0, 8))
+    tk.Radiobutton(mode_row, text='Append', variable=load_mode_var, value=1).pack(side=LEFT, padx=(0, 8))
+    tk.Radiobutton(mode_row, text='Replace', variable=load_mode_var, value=2).pack(side=LEFT, padx=(0, 8))
+    tk.Radiobutton(mode_row, text='Upsert (MERGE)', variable=load_mode_var, value=3).pack(side=LEFT)
+
+    # Preview SQL checkbox
+    preview_row = Frame(options_frame)
+    preview_row.pack(fill='x')
+    preview_var = IntVar(value=1)
+    tk.Checkbutton(preview_row, text='Preview SQL before executing', variable=preview_var).pack(side=LEFT)
+
+    # --- Column preview ---
+    col_frame = tk.LabelFrame(win, text='Column Preview (selected file)', padx=6, pady=6)
+    col_frame.pack(fill=BOTH, expand=True, padx=8, pady=4)
+
+    col_tv_frame = Frame(col_frame)
+    col_tv_frame.pack(fill=BOTH, expand=True)
+
+    col_cols = ("col_name", "max_len", "oracle_size", "sample")
+    if ttk:
+        col_tv = ttk.Treeview(col_tv_frame, columns=col_cols, show="headings", height=6)
+        col_tv.heading("col_name", text="Column")
+        col_tv.heading("max_len", text="Max Length")
+        col_tv.heading("oracle_size", text="VARCHAR2 Size")
+        col_tv.heading("sample", text="Sample Values")
+        col_tv.column("col_name", width=160, anchor="w")
+        col_tv.column("max_len", width=80, anchor="center")
+        col_tv.column("oracle_size", width=100, anchor="center")
+        col_tv.column("sample", width=250, anchor="w")
+        col_vs = Scrollbar(col_tv_frame, orient="vertical", command=col_tv.yview)
+        col_tv.configure(yscrollcommand=col_vs.set)
+        col_tv.pack(side=LEFT, fill=BOTH, expand=True)
+        col_vs.pack(side=RIGHT, fill=Y)
+    else:
+        col_tv = None
+
+    # --- Index column selection ---
+    idx_frame = tk.LabelFrame(win, text='Index Columns (optional)', padx=6, pady=6)
+    idx_frame.pack(fill=BOTH, expand=True, padx=8, pady=4)
+
+    idx_inner = Frame(idx_frame)
+    idx_inner.pack(fill=BOTH, expand=True)
+    Label(idx_inner, text='Select columns to index after loading (each gets its own index):',
+          font=("Arial", 9)).pack(anchor='w')
+    idx_list_frame = Frame(idx_inner)
+    idx_list_frame.pack(fill=BOTH, expand=True, pady=(4, 0))
+    idx_list = Listbox(idx_list_frame, height=5, selectmode=EXTENDED, exportselection=False)
+    idx_list_sb = Scrollbar(idx_list_frame, orient="vertical", command=idx_list.yview)
+    idx_list.configure(yscrollcommand=idx_list_sb.set)
+    idx_list.pack(side=LEFT, fill=BOTH, expand=True)
+    idx_list_sb.pack(side=RIGHT, fill=Y)
+
+    # --- Upsert key/update column selectors (shown only in upsert mode) ---
+    upsert_frame = tk.LabelFrame(win, text='Upsert Configuration', padx=6, pady=6)
+    # Don't pack yet — will be shown/hidden dynamically
+
+    upsert_inner = Frame(upsert_frame)
+    upsert_inner.pack(fill=BOTH, expand=True)
+
+    key_frame = Frame(upsert_inner)
+    key_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=(0, 6))
+    Label(key_frame, text='Key Columns (select for MERGE ON)', font=("Arial", 9, 'bold')).pack(anchor='w')
+    key_list_frame = Frame(key_frame)
+    key_list_frame.pack(fill=BOTH, expand=True)
+    key_list = Listbox(key_list_frame, height=6, selectmode=EXTENDED, exportselection=False)
+    key_list_sb = Scrollbar(key_list_frame, orient="vertical", command=key_list.yview)
+    key_list.configure(yscrollcommand=key_list_sb.set)
+    key_list.pack(side=LEFT, fill=BOTH, expand=True)
+    key_list_sb.pack(side=RIGHT, fill=Y)
+
+    upd_frame = Frame(upsert_inner)
+    upd_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=(6, 0))
+    Label(upd_frame, text='Update Columns (WHEN MATCHED)', font=("Arial", 9, 'bold')).pack(anchor='w')
+    upd_list_frame = Frame(upd_frame)
+    upd_list_frame.pack(fill=BOTH, expand=True)
+    upd_list = Listbox(upd_list_frame, height=6, selectmode=EXTENDED, exportselection=False)
+    upd_list_sb = Scrollbar(upd_list_frame, orient="vertical", command=upd_list.yview)
+    upd_list.configure(yscrollcommand=upd_list_sb.set)
+    upd_list.pack(side=LEFT, fill=BOTH, expand=True)
+    upd_list_sb.pack(side=RIGHT, fill=Y)
+
+    def _toggle_upsert_frame(*args):
+        if load_mode_var.get() == 3:
+            upsert_frame.pack(fill=BOTH, expand=True, padx=8, pady=4, before=btn_frame)
+            # Expand window height to accommodate upsert pane
+            try:
+                win.geometry('960x1000')
+            except Exception:
+                pass
+        else:
+            upsert_frame.pack_forget()
+            # Shrink window back
+            try:
+                win.geometry('960x860')
+            except Exception:
+                pass
+    load_mode_var.trace_add('write', _toggle_upsert_frame)
+
+    # --- Status / progress ---
+    status_var = StringVar(value='Ready')
+    status_label = Label(win, textvariable=status_var, font=("Arial", 9), fg='#444444', anchor='w')
+    status_label.pack(fill='x', padx=8, pady=(4, 0))
+
+    # --- Button bar ---
+    btn_frame = Frame(win)
+    btn_frame.pack(fill='x', padx=8, pady=(6, 8))
+
+    load_btn = Button(btn_frame, text='Load', width=12)
+    load_btn.pack(side=LEFT, padx=(0, 6))
+    abort_btn = Button(btn_frame, text='Abort', width=10, state='disabled')
+    abort_btn.pack(side=LEFT, padx=(0, 6))
+    close_btn = Button(btn_frame, text='Close', width=10, command=win.destroy)
+    close_btn.pack(side=RIGHT)
+
+    # =========================================================================
+    # Event handlers / logic
+    # =========================================================================
+
+    def _sanitize_table_name(name):
+        return name.strip().replace('-', '_').replace(' ', '_').replace('.', '_').upper()
+
+    def _abort_load():
+        """Abort an in-progress load operation.
+
+        Mirrors the abort logic from HoonyTools.pyw but scoped to this loader
+        dialog.  Sets the abort_manager flag, closes registered connections,
+        and spawns a monitor thread to re-enable the UI.
+        """
+        abort_manager.set_abort(True)
+        logger.warning("Abort requested by user (loader).")
+        status_var.set('Aborting...')
+        abort_btn.config(state='disabled')
+
+        # Close DWH connections in background if applicable
+        try:
+            if schema_choice == 'dwh' and parent:
+                import threading as _thr
+                def _close_dwh():
+                    try:
+                        dwh_session.close_dwh_connection(parent)
+                    except Exception:
+                        logger.debug('Failed to close DWH connection during abort', exc_info=True)
+                _thr.Thread(target=_close_dwh, daemon=True).start()
+        except Exception:
+            pass
+
+        # Cancel any pending prompt events (unblock workers waiting on prompts)
+        try:
+            abort_manager.cancel_prompt_event()
+        except Exception:
+            pass
+
+        # Close the worker's registered connection to interrupt blocking DB calls
+        try:
+            abort_manager.close_registered_connection()
+        except Exception:
+            pass
+
+        # Monitor thread: wait for abort to clear, then re-enable UI
+        def _monitor():
+            import time
+            max_wait = 30.0
+            waited = 0.0
+            step = 0.2
+            while True:
+                try:
+                    should = getattr(abort_manager, 'should_abort', False)
+                    done = getattr(abort_manager, 'cleanup_done', False)
+                except Exception:
+                    should = False
+                    done = False
+                if not should or done:
+                    break
+                if waited >= max_wait:
+                    logger.warning("Abort monitor timed out; forcing reset")
+                    try:
+                        abort_manager.reset()
+                    except Exception:
+                        pass
+                    break
+                time.sleep(step)
+                waited += step
+
+            def _reenable():
+                try:
+                    load_btn.config(state='normal')
+                except Exception:
+                    pass
+                try:
+                    abort_btn.config(state='disabled')
+                except Exception:
+                    pass
+                try:
+                    status_var.set('Aborted.')
+                except Exception:
+                    pass
+
+            try:
+                win.after(0, _reenable)
+            except Exception:
+                pass
+
+        threading.Thread(target=_monitor, daemon=True).start()
+
+    abort_btn.config(command=_abort_load)
+
+    def _refresh_file_tv():
+        """Rebuild the file treeview from file_entries."""
+        if not file_tv:
+            return
+        file_tv.delete(*file_tv.get_children())
+        for i, entry in enumerate(file_entries):
+            sheet = entry.get('sheet') or '-'
+            file_tv.insert("", "end", iid=str(i), values=(
+                os.path.basename(entry['path']),
+                sheet,
+                entry['rows'],
+                entry['cols'],
+                entry['table_name'],
+            ))
+
+    # Track the currently-selected file entry index so we can persist
+    # index selections when switching between files.
+    _current_file_idx = [None]  # mutable container so nested functions can update
+
+    def _save_selections():
+        """Save the current idx_list, key_list, and upd_list selections to the active file entry."""
+        cidx = _current_file_idx[0]
+        if cidx is not None and cidx < len(file_entries):
+            sel = idx_list.curselection()
+            file_entries[cidx]['index_selections'] = [idx_list.get(i) for i in sel]
+            # Save upsert selections
+            key_sel = key_list.curselection()
+            file_entries[cidx]['upsert_key_selections'] = [key_list.get(i) for i in key_sel]
+            upd_sel = upd_list.curselection()
+            file_entries[cidx]['upsert_upd_selections'] = [upd_list.get(i) for i in upd_sel]
+
+    def _on_file_select(event=None):
+        """When a file is selected in the file treeview, show its column preview."""
+        sel = file_tv.selection() if file_tv else ()
+        if not sel:
+            return
+        idx = int(sel[0])
+        if idx >= len(file_entries):
+            return
+
+        # Save selections from the previously-selected file
+        _save_selections()
+
+        entry = file_entries[idx]
+        _current_file_idx[0] = idx
+        table_name_var.set(entry['table_name'])
+
+        # Populate column preview
+        if col_tv:
+            col_tv.delete(*col_tv.get_children())
+        df = entry['df']
+        col_sizes = entry.get('col_sizes', {})
+        for col in df.columns:
+            max_len = df[col].astype(str).str.len().max()
+            if pd.isna(max_len):
+                max_len = 0
+            else:
+                max_len = int(max_len)
+            oracle_size = col_sizes.get(col.upper(), 4000) if sizing_mode_var.get() == 0 else 4000
+            # Sample: first 3 non-empty unique values
+            uniq = df[col].dropna().astype(str).unique()[:3]
+            sample = ', '.join(uniq)
+            if len(sample) > 60:
+                sample = sample[:57] + '...'
+            if col_tv:
+                col_tv.insert("", "end", values=(col, max_len, oracle_size, sample))
+
+        # Populate index column list — in batch mode, only repopulate if empty
+        # (columns are identical across files) to preserve selections.
+        is_batch = batch_mode_var.get() == 1
+        if is_batch and idx_list.size() > 0:
+            # Batch mode: keep existing list and selections as-is
+            pass
+        else:
+            idx_list.delete(0, END)
+            for col in df.columns:
+                idx_list.insert(END, col)
+            # Restore previously-saved index selections for this entry
+            saved = entry.get('index_selections', [])
+            if saved:
+                all_items = [idx_list.get(i) for i in range(idx_list.size())]
+                for i, item in enumerate(all_items):
+                    if item in saved:
+                        idx_list.selection_set(i)
+
+        # Populate upsert column lists and restore saved selections
+        key_list.delete(0, END)
+        upd_list.delete(0, END)
+        for col in df.columns:
+            key_list.insert(END, col)
+        for col in df.columns:
+            upd_list.insert(END, col)
+
+        # Restore saved upsert selections for this entry
+        saved_keys = entry.get('upsert_key_selections', [])
+        if saved_keys:
+            all_keys = [key_list.get(i) for i in range(key_list.size())]
+            for i, item in enumerate(all_keys):
+                if item in saved_keys:
+                    key_list.selection_set(i)
+        saved_upd = entry.get('upsert_upd_selections', [])
+        if saved_upd:
+            all_upd = [upd_list.get(i) for i in range(upd_list.size())]
+            for i, item in enumerate(all_upd):
+                if item in saved_upd:
+                    upd_list.selection_set(i)
+
+    if file_tv:
+        file_tv.bind('<<TreeviewSelect>>', _on_file_select)
+
+    def _add_files():
+        """Open file dialog and add selected files."""
+        paths = filedialog.askopenfilenames(
+            parent=win,
+            title='Select files to load',
+            filetypes=[
+                ('Data Files', '*.csv *.xlsx *.xls'),
+                ('CSV Files', '*.csv'),
+                ('Excel Files', '*.xlsx *.xls'),
+                ('All Files', '*.*'),
+            ]
+        )
+        if not paths:
+            return
+
+        for path in paths:
+            # Duplicate detection
+            existing_paths = [(e['path'], e.get('sheet')) for e in file_entries]
+
+            lower = path.lower()
+            if lower.endswith('.csv'):
+                if (path, None) in existing_paths:
+                    continue
+                try:
+                    df = pd.read_csv(path)
+                    df = clean_column_names(df)
+                    file_name = os.path.splitext(os.path.basename(path))[0]
+                    file_prefix = file_name.replace('-', '_').replace(' ', '_').upper()
+                    df.columns = [col.replace(f"{file_prefix}_", "") for col in df.columns]
+                    df = df.astype(str).fillna('')
+                    tbl_name = _sanitize_table_name(file_name)
+                    col_sizes = _compute_col_sizes(df)
+                    file_entries.append({
+                        'path': path, 'sheet': None, 'df': df,
+                        'table_name': tbl_name,
+                        'rows': len(df), 'cols': len(df.columns),
+                        'col_sizes': col_sizes, 'columns': list(df.columns),
+                        'index_selections': [],
+                        'upsert_key_selections': [],
+                        'upsert_upd_selections': [],
+                    })
+                except Exception as e:
+                    logger.exception(f'Failed to read CSV {path}: {e}')
+                    _safe_messagebox('showerror', 'Read Error', f'Failed to read {os.path.basename(path)}:\n{e}', dlg=win)
+
+            elif lower.endswith(('.xlsx', '.xls')):
+                try:
+                    xls = pd.ExcelFile(path)
+                    sheets = xls.sheet_names
+                    if not sheets:
+                        continue
+
+                    # If multiple sheets, let user pick via a quick dialog
+                    if len(sheets) > 1:
+                        selected_sheets = _pick_sheets(path, sheets)
+                        if not selected_sheets:
+                            continue
+                    else:
+                        selected_sheets = sheets
+
+                    file_name = os.path.splitext(os.path.basename(path))[0]
+                    for sheet in selected_sheets:
+                        if (path, sheet) in existing_paths:
+                            continue
+                        try:
+                            df = pd.read_excel(xls, sheet_name=sheet)
+                            df = clean_column_names(df)
+                            df = df.astype(str).fillna('')
+                            if len(sheets) > 1:
+                                tbl_name = _sanitize_table_name(f'{file_name}_{sheet}')
+                            else:
+                                tbl_name = _sanitize_table_name(file_name)
+                            col_sizes = _compute_col_sizes(df)
+                            file_entries.append({
+                                'path': path, 'sheet': sheet, 'df': df,
+                                'table_name': tbl_name,
+                                'rows': len(df), 'cols': len(df.columns),
+                                'col_sizes': col_sizes, 'columns': list(df.columns),
+                                'index_selections': [],
+                                'upsert_key_selections': [],
+                                'upsert_upd_selections': [],
+                            })
+                        except Exception as e:
+                            logger.exception(f'Failed to read sheet {sheet} from {path}: {e}')
+                except Exception as e:
+                    logger.exception(f'Failed to read Excel {path}: {e}')
+                    _safe_messagebox('showerror', 'Read Error', f'Failed to read {os.path.basename(path)}:\n{e}', dlg=win)
+
+        _refresh_file_tv()
+        # Auto-select first entry
+        if file_tv and file_entries:
+            file_tv.selection_set('0')
+            _on_file_select()
+
+    def _pick_sheets(path, sheets):
+        """Show a small dialog to let the user select which sheets to load."""
+        result = []
+        dlg = Toplevel(win)
+        dlg.title(f'Select Sheets: {os.path.basename(path)}')
+        dlg.transient(win)
+        dlg.grab_set()
+
+        Label(dlg, text='Select sheets to load:', font=("Arial", 10, 'bold')).pack(pady=(8, 4))
+
+        vars_ = {}
+        for sheet in sheets:
+            var = IntVar(value=1)
+            tk.Checkbutton(dlg, text=sheet, variable=var).pack(anchor='w', padx=16)
+            vars_[sheet] = var
+
+        def _ok():
+            for sheet, var in vars_.items():
+                if var.get():
+                    result.append(sheet)
+            dlg.destroy()
+
+        def _cancel():
+            dlg.destroy()
+
+        bf = Frame(dlg)
+        bf.pack(pady=8)
+        Button(bf, text='OK', width=8, command=_ok).pack(side=LEFT, padx=4)
+        Button(bf, text='Cancel', width=8, command=_cancel).pack(side=LEFT, padx=4)
+
+        dlg.protocol('WM_DELETE_WINDOW', _cancel)
+        dlg.wait_window()
+        return result
+
+    def _remove_selected():
+        sel = file_tv.selection() if file_tv else ()
+        if not sel:
+            return
+        indices = sorted([int(s) for s in sel], reverse=True)
+        for idx in indices:
+            if idx < len(file_entries):
+                del file_entries[idx]
+        _refresh_file_tv()
+        if col_tv:
+            col_tv.delete(*col_tv.get_children())
+
+    def _clear_all():
+        file_entries.clear()
+        _refresh_file_tv()
+        if col_tv:
+            col_tv.delete(*col_tv.get_children())
+        table_name_var.set('')
+
+    def _apply_rename():
+        sel = file_tv.selection() if file_tv else ()
+        if not sel:
+            return
+        idx = int(sel[0])
+        if idx >= len(file_entries):
+            return
+        new_name = _sanitize_table_name(table_name_var.get())
+        if new_name:
+            file_entries[idx]['table_name'] = new_name
+            _refresh_file_tv()
+            try:
+                file_tv.selection_set(str(idx))
+            except Exception:
+                pass
+
+    add_btn.config(command=_add_files)
+    remove_btn.config(command=_remove_selected)
+    clear_btn.config(command=_clear_all)
+    rename_btn.config(command=_apply_rename)
+
+    # Auto-apply rename when user tabs out or clicks away from the name entry
+    def _on_name_entry_focus_out(event=None):
+        _apply_rename()
+    name_entry.bind('<FocusOut>', _on_name_entry_focus_out)
+    # Also apply on Enter key
+    name_entry.bind('<Return>', _on_name_entry_focus_out)
+
+    # =========================================================================
+    # Load execution
+    # =========================================================================
+    def _execute_load():
+        if not file_entries:
+            _safe_messagebox('showwarning', 'No Files', 'Add at least one file to load.', dlg=win)
+            return
+
+        is_single = batch_mode_var.get() == 1
+        use_tight = sizing_mode_var.get() == 0
+        mode = load_mode_var.get()  # 0=create, 1=append, 2=replace, 3=upsert
+        do_preview = preview_var.get() == 1
+
+        # Validate batch single-table mode: all files must have same columns
+        if is_single and len(file_entries) > 1:
+            base_cols = set(c.upper() for c in file_entries[0]['columns'])
+            for entry in file_entries[1:]:
+                entry_cols = set(c.upper() for c in entry['columns'])
+                if entry_cols != base_cols:
+                    _safe_messagebox('showerror', 'Column Mismatch',
+                        f'Cannot merge into single table: column mismatch.\n\n'
+                        f'{os.path.basename(file_entries[0]["path"])}: {sorted(base_cols)}\n'
+                        f'{os.path.basename(entry["path"])}: {sorted(entry_cols)}',
+                        dlg=win)
+                    return
+
+        # Get upsert config if needed
+        upsert_keys = []
+        upsert_updates = []
+        if mode == 3:
+            key_sel = key_list.curselection()
+            upd_sel = upd_list.curselection()
+            if not key_sel:
+                _safe_messagebox('showwarning', 'Upsert Keys', 'Select at least one key column for MERGE ON.', dlg=win)
+                return
+            upsert_keys = [key_list.get(i) for i in key_sel]
+            upsert_updates = [upd_list.get(i) for i in upd_sel]
+            if not upsert_updates:
+                upsert_updates = [c for c in file_entries[0]['columns'] if c not in upsert_keys]
+
+        # Save current selections to the active file entry before snapshotting
+        _save_selections()
+
+        # Capture index columns to create after loading.
+        # In batch mode (single table), use the current listbox selection for all.
+        # In separate mode, each file_entry carries its own 'index_selections'.
+        idx_sel = idx_list.curselection()
+        index_columns = [idx_list.get(i) for i in idx_sel] if idx_sel else []
+
+        # Disable controls during load; enable Abort
+        load_btn.config(state='disabled')
+        abort_btn.config(state='normal')
+        status_var.set('Connecting...')
+        win.update_idletasks()
+
+        # Snapshot entries for the worker (avoid reading UI from background)
+        _entries_snapshot = list(file_entries)
+        _single_tbl = _sanitize_table_name(single_table_var.get()) or 'BATCH_LOAD'
+
+        def _worker():
+            nonlocal is_single, use_tight, mode, do_preview, upsert_keys, upsert_updates, index_columns
+            conn = None
+            cursor = None
+            try:
+                conn = get_db_connection(force_shared=(schema_choice == 'dwh'), root=parent)
+                if not conn:
+                    win.after(0, lambda: status_var.set('Connection failed'))
+                    win.after(0, lambda: load_btn.config(state='normal'))
+                    return
+
+                try:
+                    if schema_choice == 'dwh' and parent:
+                        dwh_session.register_connection(parent, conn)
+                except Exception:
+                    pass
+
+                try:
+                    abort_manager.register_connection(conn)
+                except Exception:
+                    pass
+
+                schema = "DWH" if schema_choice == 'dwh' else conn.username.upper()
+                cursor = conn.cursor()
+                abort_manager.reset()
+
+                if is_single:
+                    # Merge all DataFrames into one
+                    combined_df = pd.concat([e['df'] for e in _entries_snapshot], ignore_index=True)
+                    combined_df = combined_df.astype(str).fillna('')
+                    tbl_name = _single_tbl
+                    col_sizes = _compute_col_sizes(combined_df) if use_tight else None
+
+                    total_rows = len(combined_df)
+                    win.after(0, lambda: status_var.set(f'Loading {total_rows} rows into {schema}.{tbl_name}...'))
+
+                    _load_one_table(conn, cursor, schema, tbl_name, combined_df,
+                                    col_sizes, mode, do_preview, upsert_keys, upsert_updates,
+                                    index_columns)
+                else:
+                    total = len(_entries_snapshot)
+                    for i, entry in enumerate(_entries_snapshot):
+                        if getattr(abort_manager, 'should_abort', False):
+                            logger.info('Abort requested during batch load')
+                            break
+                        tbl_name = entry['table_name']
+                        df = entry['df']
+                        col_sizes = entry['col_sizes'] if use_tight else None
+                        # In separate mode, use per-file index selections
+                        entry_idx_cols = entry.get('index_selections', []) or index_columns
+
+                        win.after(0, lambda tn=tbl_name, idx=i: status_var.set(
+                            f'Loading file {idx+1}/{total}: {schema}.{tn}...'))
+
+                        _load_one_table(conn, cursor, schema, tbl_name, df,
+                                        col_sizes, mode, do_preview, upsert_keys, upsert_updates,
+                                        entry_idx_cols)
+
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+
+                logger.info('All files processed.')
+                win.after(0, lambda: status_var.set('All files loaded successfully.'))
+
+                # Clear the file list pane on success
+                def _clear_after_load():
+                    file_entries.clear()
+                    _current_file_idx[0] = None
+                    _refresh_file_tv()
+                    if col_tv:
+                        col_tv.delete(*col_tv.get_children())
+                    idx_list.delete(0, END)
+                    key_list.delete(0, END)
+                    upd_list.delete(0, END)
+                    table_name_var.set('')
+                win.after(0, _clear_after_load)
+
+            except Exception as e:
+                logger.exception(f'Load failed: {e}')
+                win.after(0, lambda: status_var.set(f'Error: {e}'))
+            finally:
+                try:
+                    if cursor:
+                        cursor.close()
+                except Exception:
+                    pass
+                try:
+                    if conn:
+                        conn.close()
+                except Exception:
+                    pass
+                try:
+                    abort_manager.reset()
+                except Exception:
+                    pass
+                def _on_worker_done():
+                    load_btn.config(state='normal')
+                    abort_btn.config(state='disabled')
+                win.after(0, _on_worker_done)
+
+        def _load_one_table(conn, cursor, schema, tbl_name, df, col_sizes, mode,
+                            do_preview, upsert_keys, upsert_updates,
+                            index_cols_to_create=None):
+            """Process a single table load (create / append / replace / upsert).
+
+            Parameters
+            ----------
+            index_cols_to_create : list or None
+                Column names to create individual indexes on after loading.
+            """
+            cols_exist = get_table_columns(cursor, schema, tbl_name)
+
+            if mode == 0:
+                # Create New: drop + create + insert
+                if do_preview:
+                    # Build CREATE TABLE SQL for preview
+                    def _build_col_def(col):
+                        if col_sizes and col.upper() in {k.upper() for k in col_sizes}:
+                            for k, v in col_sizes.items():
+                                if k.upper() == col.upper():
+                                    return f'"{col}" VARCHAR2({v})'
+                        return f'"{col}" VARCHAR2(4000)'
+                    cols_sql = ', '.join([_build_col_def(c) for c in df.columns])
+                    create_sql = f'CREATE TABLE {schema}.{tbl_name} ({cols_sql})'
+                    sample = df.iloc[0].to_dict() if len(df) > 0 else None
+                    ins_sql = build_insert_preview_sql(schema, tbl_name, list(df.columns), sample)
+                    combined_sql = create_sql + ";\n\n" + ins_sql
+                    summary = f"Rows: {len(df)}\nColumns: {len(df.columns)}\nThis will DROP existing table (if any) and CREATE a new one."
+                    # Preview must run on main thread
+                    result = [None]
+                    import threading
+                    ev = threading.Event()
+                    def _show():
+                        result[0] = show_sql_preview(win, f"CREATE TABLE Preview: {schema}.{tbl_name}", summary, combined_sql)
+                        ev.set()
+                    win.after(0, _show)
+                    ev.wait()
+                    if not result[0]:
+                        return
+
+                drop_table_if_exists(cursor, schema, tbl_name)
+                create_table(cursor, schema, tbl_name, df, col_sizes=col_sizes)
+                success = insert_data(cursor, schema, tbl_name, df, conn)
+                if success:
+                    logger.info(f'Loaded {len(df)} rows into new table {schema}.{tbl_name}')
+                else:
+                    logger.warning(f'Insert aborted for {schema}.{tbl_name}')
+
+            elif mode == 1:
+                # Append
+                if not cols_exist:
+                    # Table doesn't exist: create it first
+                    create_table(cursor, schema, tbl_name, df, col_sizes=col_sizes)
+                    cols_exist = get_table_columns(cursor, schema, tbl_name)
+
+                existing_set = set(c.upper() for c in cols_exist)
+                incoming_set = set(c.upper() for c in df.columns)
+
+                if existing_set == incoming_set:
+                    insert_cols = list(df.columns)
+                elif incoming_set.issubset(existing_set):
+                    insert_cols = list(df.columns)
+                else:
+                    # Filter to matching columns only
+                    insert_cols = [c for c in df.columns if c.upper() in existing_set]
+                    if not insert_cols:
+                        logger.error(f'No matching columns for append to {schema}.{tbl_name}')
+                        return
+
+                if do_preview:
+                    sample = df.iloc[0].to_dict() if len(df) > 0 else None
+                    ins_sql = build_insert_preview_sql(schema, tbl_name, insert_cols, sample)
+                    summary = f"Rows: {len(df)}\nInsert columns: {insert_cols}"
+                    # Preview must run on main thread
+                    result = [None]
+                    import threading
+                    ev = threading.Event()
+                    def _show():
+                        result[0] = show_sql_preview(win, f"INSERT Preview: {schema}.{tbl_name}", summary, ins_sql)
+                        ev.set()
+                    win.after(0, _show)
+                    ev.wait()
+                    if not result[0]:
+                        return
+
+                inserted = bulk_insert_chunked(conn, cursor, schema, tbl_name, df,
+                                               insert_columns=insert_cols)
+                logger.info(f'Appended {inserted} rows to {schema}.{tbl_name}')
+
+            elif mode == 2:
+                # Replace
+                if not cols_exist:
+                    create_table(cursor, schema, tbl_name, df, col_sizes=col_sizes)
+
+                if do_preview:
+                    existing_cols_list = get_table_columns(cursor, schema, tbl_name)
+                    existing_set = set(c.upper() for c in existing_cols_list)
+                    insert_cols = [c for c in df.columns if c.upper() in existing_set] or list(df.columns)
+                    sample = df.iloc[0].to_dict() if len(df) > 0 else None
+                    trunc_sql = f"TRUNCATE TABLE {schema}.{tbl_name}"
+                    ins_sql = build_insert_preview_sql(schema, tbl_name, insert_cols, sample)
+                    combined = trunc_sql + "\n" + ins_sql
+                    summary = f"Rows: {len(df)}\nTRUNCATE then INSERT."
+                    result = [None]
+                    import threading
+                    ev = threading.Event()
+                    def _show():
+                        result[0] = show_sql_preview(win, f"REPLACE Preview: {schema}.{tbl_name}", summary, combined)
+                        ev.set()
+                    win.after(0, _show)
+                    ev.wait()
+                    if not result[0]:
+                        return
+
+                replace_table_with_df(conn, cursor, win, schema, tbl_name, df)
+                logger.info(f'Replaced {schema}.{tbl_name}')
+
+            elif mode == 3:
+                # Upsert (MERGE)
+                if not cols_exist:
+                    create_table(cursor, schema, tbl_name, df, col_sizes=col_sizes)
+                    # After creating, just do a plain insert since no existing data
+                    inserted = bulk_insert_chunked(conn, cursor, schema, tbl_name, df)
+                    logger.info(f'Created and inserted {inserted} rows into {schema}.{tbl_name} (upsert, new table)')
+                    return
+
+                import time as _time
+                ts = int(_time.time())
+                stg = f"{tbl_name}__STG_{ts}"
+                create_staging_table_from_df(cursor, schema, stg, df)
+                inserted = bulk_insert_chunked(conn, cursor, schema, stg, df)
+                logger.info(f'Loaded staging {schema}.{stg} ({inserted} rows)')
+
+                key_cols = [k.upper() for k in upsert_keys]
+                upd_cols = [u.upper() for u in upsert_updates] if upsert_updates else None
+
+                res = merge_with_checks(conn, cursor, schema, tbl_name, stg,
+                                        key_cols, upd_cols, dry_run=True)
+                if not res.get('ok'):
+                    logger.error(f'Merge pre-check failed: {res.get("message")}')
+                    try:
+                        _safe_messagebox('showerror', 'Merge Failed',
+                                         f'Pre-check failed:\n{res.get("message")}', dlg=win)
+                    except Exception:
+                        pass
+                    try:
+                        cursor.execute(f"DROP TABLE {schema}.{stg} PURGE")
+                    except Exception:
+                        pass
+                    try:
+                        conn.commit()
+                    except Exception:
+                        pass
+                    return
+
+                if do_preview:
+                    summary = (f"Staging rows: {res['total_staging']}\n"
+                               f"Matched (update): {res['matched']}\n"
+                               f"New (insert): {res['to_insert']}")
+                    result = [None]
+                    import threading
+                    ev = threading.Event()
+                    def _show():
+                        result[0] = show_sql_preview(win, f"MERGE Preview: {schema}.{tbl_name}",
+                                                     summary, res.get('sql', ''))
+                        ev.set()
+                    win.after(0, _show)
+                    ev.wait()
+                    if not result[0]:
+                        try:
+                            cursor.execute(f"DROP TABLE {schema}.{stg} PURGE")
+                            conn.commit()
+                        except Exception:
+                            pass
+                        return
+
+                exec_res = merge_with_checks(conn, cursor, schema, tbl_name, stg,
+                                             key_cols, upd_cols, dry_run=False)
+                if not exec_res.get('ok'):
+                    logger.error(f'MERGE failed: {exec_res.get("message")}')
+                else:
+                    logger.info(f'Upsert complete for {schema}.{tbl_name}')
+
+                try:
+                    cursor.execute(f"DROP TABLE {schema}.{stg} PURGE")
+                    conn.commit()
+                except Exception:
+                    pass
+
+            # --- Create individual indexes on user-selected columns ---
+            if index_cols_to_create:
+                for idx_col in index_cols_to_create:
+                    # Check for abort before each index creation
+                    if getattr(abort_manager, 'should_abort', False):
+                        logger.info('Abort requested during index creation')
+                        break
+                    try:
+                        create_index_if_columns_exist(cursor, schema, tbl_name, [idx_col])
+                    except Exception as e:
+                        # Downgrade DPY disconnect errors during abort to debug level
+                        if abort_manager.is_expected_disconnect(e):
+                            logger.debug(f'Index creation interrupted (abort): {idx_col}')
+                        else:
+                            logger.warning(f'Failed to create index on {idx_col} for {schema}.{tbl_name}: {e}')
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+
+        # Spawn the worker thread to perform DB operations in the background
+        threading.Thread(target=_worker, daemon=True).start()
+
+    # Wire the Load button — _execute_load reads UI state on the main thread
+    # then spawns _worker in a background thread for DB operations.
+    load_btn.config(command=_execute_load)
+
+    # --- Center and show ---
+    # Import center_window from index_gui which has the DPI-aware version
+    try:
+        from tools.index_gui import center_window as _center
+    except Exception:
+        def _center(w, width, height):
+            w.update_idletasks()
+            sw = w.winfo_screenwidth()
+            sh = w.winfo_screenheight()
+            x = int((sw - width) / 2)
+            y = int((sh - height) / 2)
+            w.geometry(f"{width}x{height}+{x}+{y}")
+
+    _center(win, 960, 860)
+    try:
+        win.deiconify()
+        win.lift()
+        win.focus_force()
+        try:
+            win.attributes('-topmost', True)
+            win.after(200, lambda: win.attributes('-topmost', False))
+        except Exception:
+            pass
+        win.grab_set()
+    except Exception:
+        pass
+
+    # --- Theme support ---
+    def _theme_cb(enable_dark):
+        try:
+            bg = '#0b0b0b' if enable_dark else 'white'
+            fg = '#e6e6e6' if enable_dark else 'black'
+            name_entry.config(bg=bg, fg=fg, insertbackground=fg)
+            single_entry.config(bg=bg, fg=fg, insertbackground=fg)
+        except Exception:
+            pass
+
+    try:
+        if parent and hasattr(parent, 'register_theme_callback'):
+            parent.register_theme_callback(_theme_cb)
+            def _on_destroy(event=None):
+                try:
+                    parent.unregister_theme_callback(_theme_cb)
+                except Exception:
+                    pass
+            win.bind('<Destroy>', _on_destroy)
+    except Exception:
+        pass
+
+    # --- Wait ---
+    if parent:
+        try:
+            win.wait_window()
+        except tk.TclError:
+            pass
+    else:
+        try:
+            win.mainloop()
+        except tk.TclError:
+            pass
+
+
+if __name__ == '__main__':
+    load_files_gui()
+

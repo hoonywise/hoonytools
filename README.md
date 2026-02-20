@@ -219,23 +219,6 @@ You can run as often as needed — no admin rights or elevated privileges requir
   - The GUI prefers materialized views when an underlying table shares the same name to avoid accidental failures.  
   - Use with caution — these actions are destructive and irreversible.
 
-
-### 📈 Automatic Indexing (PIDM / TERM / STUDENT_ID)
-
-To optimize query performance, **HoonyTools automatically creates indexes** on commonly used key columns — if they exist in your uploaded data.
-
-#### ✅ Indexable Columns by Tool
-
-| Loader         | Columns Automatically Indexed                                          |
-|----------------|------------------------------------------------------------------------|
-| Excel/CSV      | `PIDM`, `TERM`, `STUDENT_ID`                                           |
-
-Indexes are created after the table is generated. If the table already exists, HoonyTools safely skips duplicate index creation.
-
-> 💡 **Tip:** Make sure your column headers in Excel or CSV match exactly (e.g., `PIDM`, not `Pidm`) to benefit from automatic indexing.
-
-If Oracle cannot create the index due to a key size limit (e.g., `VARCHAR2(4000)`), HoonyTools automatically shortens the column length for these keys. A warning will be logged if indexing still fails.
-
 ---
 
 ## 📌 Notes for Users

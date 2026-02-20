@@ -130,7 +130,8 @@ for p in [path, base_path]:
         sys.path.append(str(p))
 
 from libs import abort_manager
-from loaders.excel_csv_loader import load_multiple_files
+# load_files_gui is imported lazily by pane Load button handlers
+# from loaders.excel_csv_loader import load_files_gui
 from loaders.sql_view_loader import run_sql_view_loader
 from loaders.sql_mv_loader import run_sql_mv_loader
 from tools.object_cleanup_gui import drop_user_tables, delete_dwh_rows
@@ -491,28 +492,6 @@ def run_selected():
         finally:
             status_light.config(text="🟢")
 
-    # Run the Excel/CSV loader in a background thread so the main GUI remains responsive.
-    if tool_name == "☑ Excel/CSV Loader":
-        def threaded_excel():
-            logger.info("Starting Excel/CSV loader thread")
-            try:
-                logger.info(f"threaded_excel: about to invoke loader callable for {tool_name}")
-                try:
-                    TOOLS[tool_name](root)
-                except TypeError:
-                    TOOLS[tool_name]()
-                logger.info("threaded_excel: loader callable returned")
-            except Exception as e:
-                logger.exception(f"❌ Error running {tool_name}: {e}")
-            finally:
-                try:
-                    status_light.config(text="🟢")
-                except Exception:
-                    pass
-
-        threading.Thread(target=threaded_excel, daemon=True).start()
-        return
-
     # If selected tool is missing or None, inform the user
     if tool_name not in TOOLS or TOOLS.get(tool_name) is None:
         try:
@@ -659,7 +638,7 @@ def launch_tool_gui():
 
 
     
-    global root, selected_tool, log_text, log_stream, status_light, run_btn, tool_menu, abort_btn
+    global root, selected_tool, log_text, log_stream, status_light, run_btn, tool_menu
 
     # Create the main Tk root directly and keep it hidden while login dialog appears.
     root = tk.Tk()
@@ -816,6 +795,10 @@ def launch_tool_gui():
         top_bar.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
         refresh_btn = tk.Button(top_bar, text="Refresh", width=10)
         refresh_btn.pack(side="left", padx=(0, 8))
+        index_btn = tk.Button(top_bar, text="Index", width=10)
+        index_btn.pack(side="left", padx=(0, 8))
+        load_btn = tk.Button(top_bar, text="Load", width=10)
+        load_btn.pack(side="left", padx=(0, 8))
         status_lbl = tk.Label(top_bar, text="", font=("Arial", 8), fg=getattr(parent.master, "_dark_theme", {}).get("muted", "#444444"))
         status_lbl.pack(side="left")
 
@@ -837,7 +820,7 @@ def launch_tool_gui():
         tv.pack(side="left", fill="both", expand=True)
         vs.pack(side="right", fill="y")
 
-        return frame, tv, refresh_btn, status_lbl
+        return frame, tv, refresh_btn, index_btn, load_btn, status_lbl
 
     # Ensure Treeview style is configured before creating tree widgets so
     # style settings are honored by backends (especially on Windows ttk).
@@ -858,8 +841,8 @@ def launch_tool_gui():
         pre_style = None
 
     # Create the two object panes in the left_pane (stacked, share vertical space)
-    user_frame, user_tree, user_refresh_btn, user_status = _make_objects_frame(left_pane, "User Objects")
-    dwh_frame, dwh_tree, dwh_refresh_btn, dwh_status = _make_objects_frame(left_pane, "DWH Objects")
+    user_frame, user_tree, user_refresh_btn, user_index_btn, user_load_btn, user_status = _make_objects_frame(left_pane, "User Objects")
+    dwh_frame, dwh_tree, dwh_refresh_btn, dwh_index_btn, dwh_load_btn, dwh_status = _make_objects_frame(left_pane, "DWH Objects")
 
     # Keep cached row data so we can recreate trees when toggling theme
     user_rows = []
@@ -1243,6 +1226,80 @@ def launch_tool_gui():
     user_refresh_btn.config(command=refresh_user_objects)
     dwh_refresh_btn.config(command=refresh_dwh_objects)
 
+    # --- Index button handlers ---
+    def _get_selected_object(tree):
+        """Return (name, type) from the currently selected treeview row, or (None, None)."""
+        sel = tree.selection()
+        if not sel:
+            return None, None
+        item = tree.item(sel[0])
+        vals = item.get('values', ())
+        if len(vals) < 2:
+            return None, None
+        return str(vals[0]), str(vals[1])
+
+    def launch_index_user():
+        name, obj_type = _get_selected_object(user_tree)
+        if not name:
+            from tkinter import messagebox
+            messagebox.showwarning('No Selection', 'Please select an object in the User Objects pane first.', parent=root)
+            return
+        if obj_type and obj_type.upper() == 'VIEW':
+            from tkinter import messagebox
+            messagebox.showwarning('Not Supported', 'Indexes cannot be created on views. Please select a table or materialized view.', parent=root)
+            return
+        # Determine user schema from session credentials
+        from libs import session as _sess
+        owner = None
+        if _sess.stored_credentials:
+            owner = _sess.stored_credentials.get('username', '').upper()
+        if not owner:
+            try:
+                from libs.oracle_db_connector import get_db_connection
+                conn = get_db_connection(force_shared=False, root=root)
+                if conn:
+                    owner = conn.username.upper()
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        if not owner:
+            from tkinter import messagebox
+            messagebox.showerror('Error', 'Could not determine user schema.', parent=root)
+            return
+        from tools.index_gui import main as index_main
+        index_main(parent=root, schema=owner, object_name=name, object_type=obj_type)
+
+    def launch_index_dwh():
+        name, obj_type = _get_selected_object(dwh_tree)
+        if not name:
+            from tkinter import messagebox
+            messagebox.showwarning('No Selection', 'Please select an object in the DWH Objects pane first.', parent=root)
+            return
+        if obj_type and obj_type.upper() == 'VIEW':
+            from tkinter import messagebox
+            messagebox.showwarning('Not Supported', 'Indexes cannot be created on views. Please select a table or materialized view.', parent=root)
+            return
+        from tools.index_gui import main as index_main
+        index_main(parent=root, schema='DWH', object_name=name, object_type=obj_type)
+
+    user_index_btn.config(command=launch_index_user)
+    dwh_index_btn.config(command=launch_index_dwh)
+
+    # --- Load button handlers ---
+    def launch_load_user():
+        from loaders.excel_csv_loader import load_files_gui
+        load_files_gui(parent=root, schema_choice='user')
+
+    def launch_load_dwh():
+        from loaders.excel_csv_loader import load_files_gui
+        load_files_gui(parent=root, schema_choice='dwh')
+
+    user_load_btn.config(command=launch_load_user)
+    dwh_load_btn.config(command=launch_load_dwh)
+
     # Top toolbar (centered): tool selector + buttons
     # Create the toolbar at the root level and pack it before the main content_frame
     # so it centers across the entire window (including the left pane).
@@ -1608,11 +1665,9 @@ def launch_tool_gui():
     # pack and grid in the same parent (toolbar_inner uses grid for children).
     btn_frame.grid(row=0, column=2, padx=12)
 
-    # Keep references to these controls so abort handler can disable/enable them
+    # Keep references to these controls so handlers can disable/enable them
     run_btn = tk.Button(btn_frame, text="Run", width=10, command=lambda: run_selected())
     run_btn.pack(side="left", padx=7)
-    abort_btn = tk.Button(btn_frame, text="Abort", width=10, command=abort_process)
-    abort_btn.pack(side="left", padx=7)
 
     def safe_exit():
         global is_gui_running
@@ -2630,8 +2685,7 @@ def launch_tool_gui():
 
     root.mainloop()
 
-TOOLS = {    
-    "☑ Excel/CSV Loader": load_multiple_files,
+TOOLS = {
     "☑ Object Dropper": drop_user_tables,
     "☑ SQL View Loader": run_sql_view_loader,
     "☑ SQL Materialized View Loader": run_sql_mv_loader,
