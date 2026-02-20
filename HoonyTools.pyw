@@ -14,7 +14,7 @@ import json
 import random
 import webbrowser
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.5"
 
 
 # Theme helpers
@@ -2459,7 +2459,7 @@ def launch_tool_gui():
             except Exception:
                 pass
 
-    view_menu.add_command(label='Debug Panes', command=_debug_panes)
+    # Debug Panes is intentionally hidden (keep handler for future use)
     
     # Replace native menu bar with a custom in-window menu bar composed of
     # Menubuttons inside a Frame so it can be reliably styled per-pane.
@@ -2507,8 +2507,7 @@ def launch_tool_gui():
         # Build View and Help menus using existing menu definitions
         # View: copy items from view_menu
         view_items = [
-            ('command', 'Dark Mode', lambda: view_menu.invoke(0)),
-            ('command', 'Debug Panes', _debug_panes)
+            ('command', 'Dark Mode', lambda: view_menu.invoke(0))
         ]
         # Help: use existing functions
         help_items = [
