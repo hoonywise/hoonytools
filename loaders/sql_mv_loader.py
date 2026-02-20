@@ -52,6 +52,34 @@ def run_sql_mv_loader(parent=None, on_finish=None):
                 seen.add(t); out.append(t)
         return out
 
+    # Centralized messagebox helper: prefer dlg (when provided), then builder_window,
+    # then parent, then unparented. Returns the messagebox result or sensible default.
+    # Prefer shared safe_messagebox from loaders package so other loaders can reuse it
+    try:
+        from loaders import safe_messagebox as _safe_messagebox
+    except Exception:
+        # Fallback to local shim if import fails
+        def _safe_messagebox(fn_name: str, *args, dlg=None):
+            try:
+                parent_to_use = None
+                if dlg is not None:
+                    parent_to_use = dlg
+                else:
+                    try:
+                        parent_to_use = builder_window  # may raise NameError if not yet created
+                    except Exception:
+                        parent_to_use = parent if parent is not None else None
+                if parent_to_use is not None:
+                    return getattr(messagebox, fn_name)(*args, parent=parent_to_use)
+                return getattr(messagebox, fn_name)(*args)
+            except Exception:
+                try:
+                    return getattr(messagebox, fn_name)(*args)
+                except Exception:
+                    if fn_name.startswith('ask'):
+                        return False
+                    return None
+
     def show_create_logs_dialog(tables):
         """Show a modal dialog asking which tables to create logs on.
         Returns (create_flag, selected_tables, log_type, include_new_values) or None if cancelled."""
@@ -81,9 +109,9 @@ def run_sql_mv_loader(parent=None, on_finish=None):
                 except NameError:
                     pb = parent
                 if pb is not None:
-                    create_choice = messagebox.askyesno("Create MV Logs?", f"Detected tables: {', '.join(tables)}\nCreate materialized view logs with WITH ROWID and INCLUDING NEW VALUES?", parent=pb)
+                    create_choice = _safe_messagebox('askyesno', "Create MV Logs?", f"Detected tables: {', '.join(tables)}\nCreate materialized view logs with WITH ROWID and INCLUDING NEW VALUES?", dlg=pb)
                 else:
-                    create_choice = messagebox.askyesno("Create MV Logs?", f"Detected tables: {', '.join(tables)}\nCreate materialized view logs with WITH ROWID and INCLUDING NEW VALUES?")
+                    create_choice = _safe_messagebox('askyesno', "Create MV Logs?", f"Detected tables: {', '.join(tables)}\nCreate materialized view logs with WITH ROWID and INCLUDING NEW VALUES?", dlg=None)
             except Exception:
                 create_choice = False
             if not create_choice:
@@ -253,9 +281,9 @@ def run_sql_mv_loader(parent=None, on_finish=None):
                 except NameError:
                     pb = parent
                 if pb is not None:
-                    ans = messagebox.askyesno("Drop & Recreate MV Log?", msg, parent=pb)
+                    ans = _safe_messagebox('askyesno', "Drop & Recreate MV Log?", msg, dlg=pb)
                 else:
-                    ans = messagebox.askyesno("Drop & Recreate MV Log?", msg)
+                    ans = _safe_messagebox('askyesno', "Drop & Recreate MV Log?", msg, dlg=None)
             except Exception:
                 ans = False
             return 'drop' if ans else None
@@ -372,28 +400,9 @@ def run_sql_mv_loader(parent=None, on_finish=None):
             try:
                 builder_window.clipboard_clear()
                 builder_window.clipboard_append('\n'.join(deps))
-                try:
-                    messagebox.showinfo('Copied', 'Dependent MV list copied to clipboard.', parent=dlg)
-                except Exception:
-                    try:
-                        # fallback to builder window as parent when dlg parenting fails
-                        messagebox.showinfo('Copied', 'Dependent MV list copied to clipboard.', parent=builder_window)
-                    except Exception:
-                        try:
-                            messagebox.showinfo('Copied', 'Dependent MV list copied to clipboard.', parent=builder_window)
-                        except Exception:
-                            pass
+                _safe_messagebox('showinfo', 'Copied', 'Dependent MV list copied to clipboard.', dlg=dlg)
             except Exception:
-                try:
-                    messagebox.showwarning('Copy Failed', 'Could not copy to clipboard.', parent=dlg)
-                except Exception:
-                    try:
-                        messagebox.showwarning('Copy Failed', 'Could not copy to clipboard.', parent=builder_window)
-                    except Exception:
-                        try:
-                            messagebox.showwarning('Copy Failed', 'Could not copy to clipboard.')
-                        except Exception:
-                            pass
+                _safe_messagebox('showwarning', 'Copy Failed', 'Could not copy to clipboard.', dlg=dlg)
 
         def save_deps():
             try:
@@ -401,27 +410,9 @@ def run_sql_mv_loader(parent=None, on_finish=None):
                 if path:
                     with open(path, 'w', encoding='utf-8') as f:
                         f.write('\n'.join(deps))
-                    try:
-                        messagebox.showinfo('Saved', f'List saved to {path}', parent=dlg)
-                    except Exception:
-                        try:
-                            messagebox.showinfo('Saved', f'List saved to {path}', parent=builder_window)
-                        except Exception:
-                            try:
-                                messagebox.showinfo('Saved', f'List saved to {path}', parent=builder_window)
-                            except Exception:
-                                pass
+                    _safe_messagebox('showinfo', 'Saved', f'List saved to {path}', dlg=dlg)
             except Exception as e:
-                try:
-                    messagebox.showwarning('Save Failed', f'Could not save list: {e}', parent=dlg)
-                except Exception:
-                    try:
-                        messagebox.showwarning('Save Failed', f'Could not save list: {e}', parent=builder_window)
-                    except Exception:
-                        try:
-                            messagebox.showwarning('Save Failed', f'Could not save list: {e}', parent=builder_window)
-                        except Exception:
-                            pass
+                _safe_messagebox('showwarning', 'Save Failed', f'Could not save list: {e}', dlg=dlg)
 
         btns_deps = tk.Frame(dlg)
         btns_deps.pack(padx=12, anchor='w')
@@ -469,27 +460,15 @@ def run_sql_mv_loader(parent=None, on_finish=None):
                 for k in ('user_mview_logs_count','all_mview_logs_count','user_tables_mlog_count','all_tables_mlog_count'):
                     lines.append(f"{k}: {diag.get(k)!r}")
                 try:
-                    messagebox.showinfo('Debug Info', '\n'.join(lines), parent=dlg)
+                    _safe_messagebox('showinfo', 'Debug Info', '\n'.join(lines), dlg=dlg)
                 except Exception:
-                    try:
-                        messagebox.showinfo('Debug Info', '\n'.join(lines), parent=builder_window)
-                    except Exception:
-                            try:
-                                messagebox.showinfo('Debug Info', '\n'.join(lines), parent=builder_window)
-                            except Exception:
-                                pass
-            except Exception as e:
+                    _safe_messagebox('showwarning', 'Debug Failed', f'Could not show debug info: (failed to display debug info)', dlg=dlg)
+            except Exception:
+                # swallow any unexpected errors while preparing debug text
                 try:
-                    messagebox.showwarning('Debug Failed', f'Could not show debug info: {e}', parent=dlg)
+                    _safe_messagebox('showwarning', 'Debug Failed', 'Could not produce debug info.', dlg=dlg)
                 except Exception:
-                    try:
-                        messagebox.showwarning('Debug Failed', f'Could not show debug info: {e}', parent=builder_window)
-                    except Exception:
-                            try:
-                                messagebox.showwarning('Debug Failed', f'Could not show debug info: {e}', parent=builder_window)
-                            except Exception:
-                                pass
-
+                    pass
         tk.Button(btns_deps, text='Show debug info', command=show_diag, width=14).pack(side='left', padx=(6,0))
 
         # acknowledgement checkbox variable (checkbox will be placed next to the confirmation entry)
@@ -653,9 +632,9 @@ def run_sql_mv_loader(parent=None, on_finish=None):
                             except NameError:
                                 pb = parent
                             if pb is not None:
-                                drop_confirm = messagebox.askyesno("Existing MV Log Detected", prompt, parent=pb)
+                                drop_confirm = _safe_messagebox('askyesno', "Existing MV Log Detected", prompt, dlg=pb)
                             else:
-                                drop_confirm = messagebox.askyesno("Existing MV Log Detected", prompt)
+                                drop_confirm = _safe_messagebox('askyesno', "Existing MV Log Detected", prompt, dlg=None)
                         except Exception:
                             drop_confirm = False
                     except Exception:
@@ -692,22 +671,22 @@ def run_sql_mv_loader(parent=None, on_finish=None):
 
         if not mv_name:
             try:
-                messagebox.showerror("Missing MV Name", "❌ Please enter a materialized view name.", parent=builder_window)
+                _safe_messagebox('showerror', "Missing MV Name", "\u274c Please enter a materialized view name.", dlg=builder_window)
             except Exception:
-                    try:
-                        messagebox.showerror("Missing MV Name", "❌ Please enter a materialized view name.", parent=builder_window)
-                    except Exception:
-                        pass
+                try:
+                    _safe_messagebox('showerror', "Missing MV Name", "\u274c Please enter a materialized view name.", dlg=builder_window)
+                except Exception:
+                    pass
             return
 
         if not sql_query:
             try:
-                messagebox.showerror("Missing SQL", "❌ Please paste a SQL query.", parent=builder_window)
+                _safe_messagebox('showerror', "Missing SQL", "\u274c Please paste a SQL query.", dlg=builder_window)
             except Exception:
-                    try:
-                        messagebox.showerror("Missing SQL", "❌ Please paste a SQL query.", parent=builder_window)
-                    except Exception:
-                        pass
+                try:
+                    _safe_messagebox('showerror', "Missing SQL", "\u274c Please paste a SQL query.", dlg=builder_window)
+                except Exception:
+                    pass
             return
 
         # Remove trailing semicolon if present
@@ -899,7 +878,7 @@ def run_sql_mv_loader(parent=None, on_finish=None):
                                 msgs.append(f"Reused existing logs: {', '.join(reused)}")
                             if msgs:
                                 try:
-                                    messagebox.showinfo("MV Logs Created", "\n".join(msgs), parent=builder_window)
+                                    _safe_messagebox('showinfo', "MV Logs Created", "\n".join(msgs), dlg=builder_window)
                                     ensure_builder_on_top()
                                 except Exception:
                                     pass
@@ -907,7 +886,7 @@ def run_sql_mv_loader(parent=None, on_finish=None):
                                 msg_lines = [f"{t}: {err}" for (t, err) in failed]
                                 msg = "Some MV logs could not be created:\n\n" + "\n".join(msg_lines) + "\n\nDo you want to continue creating the materialized view anyway?"
                                 try:
-                                    cont = messagebox.askyesno("MV Log Creation Failed", msg, parent=builder_window)
+                                    cont = _safe_messagebox('askyesno', "MV Log Creation Failed", msg, dlg=builder_window)
                                     ensure_builder_on_top()
                                 except Exception:
                                     cont = False
@@ -949,11 +928,11 @@ def run_sql_mv_loader(parent=None, on_finish=None):
                 logger.info(f"✅ Materialized View '{mv_name}' created and granted SELECT to PUBLIC.")
 
                 try:
-                    messagebox.showinfo("Success", f"✅ Materialized View '{mv_name}' created successfully.", parent=builder_window)
+                    _safe_messagebox('showinfo', "Success", f"\u2705 Materialized View '{mv_name}' created successfully.", dlg=builder_window)
                     ensure_builder_on_top()
                 except Exception:
                     try:
-                        messagebox.showinfo("Success", f"✅ Materialized View '{mv_name}' created successfully.", parent=builder_window)
+                        _safe_messagebox('showinfo', "Success", f"\u2705 Materialized View '{mv_name}' created successfully.", dlg=builder_window)
                     except Exception:
                         pass
                 builder_window.destroy()
@@ -976,15 +955,15 @@ def run_sql_mv_loader(parent=None, on_finish=None):
                 hint = "\n\nTip: REFRESH FAST/ON COMMIT may require materialized view logs or PKs on source tables."
                 # Show dialog with concise message but include trace in log file
                 try:
-                    messagebox.showerror("Error", f"❌ Failed to create materialized view:\n{e}{hint}", parent=builder_window)
+                    _safe_messagebox('showerror', "Error", f"\u274c Failed to create materialized view:\n{e}{hint}", dlg=builder_window)
                     ensure_builder_on_top()
                 except Exception:
                     try:
-                        messagebox.showerror("Error", f"❌ Failed to create materialized view:\n{e}{hint}", parent=builder_window)
+                        _safe_messagebox('showerror', "Error", f"\u274c Failed to create materialized view:\n{e}{hint}", dlg=builder_window)
                         ensure_builder_on_top()
                     except Exception:
                         try:
-                            messagebox.showerror("Error", f"❌ Failed to create materialized view:\n{e}{hint}")
+                            _safe_messagebox('showerror', "Error", f"\u274c Failed to create materialized view:\n{e}{hint}", dlg=None)
                         except Exception:
                             pass
         finally:

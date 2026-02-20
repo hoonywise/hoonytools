@@ -74,13 +74,30 @@ def run_sql_view_loader(parent=None, on_finish=None):
         except Exception:
             pass
 
+    # Use shared safe messagebox helper when available for consistent parenting
+    try:
+        from loaders import safe_messagebox as _safe_messagebox
+    except Exception:
+        def _safe_messagebox(fn_name: str, *args, dlg=None):
+            try:
+                if dlg is not None:
+                    return getattr(messagebox, fn_name)(*args, parent=dlg)
+                return getattr(messagebox, fn_name)(*args)
+            except Exception:
+                try:
+                    return getattr(messagebox, fn_name)(*args)
+                except Exception:
+                    if fn_name.startswith('ask'):
+                        return False
+                    return None
+
     def on_submit():
         view_name = view_name_entry.get().strip()
         sql_query = sql_text.get("1.0", tk.END).strip()
         use_dwh = dwh_var.get()
 
         if not view_name:
-            messagebox.showerror("Missing View Name", "❌ Please enter a view name.", parent=builder_window)
+            _safe_messagebox('showerror', "Missing View Name", "❌ Please enter a view name.", dlg=builder_window)
             try:
                 ensure_builder_on_top()
             except Exception:
@@ -88,7 +105,7 @@ def run_sql_view_loader(parent=None, on_finish=None):
             return
 
         if not sql_query:
-            messagebox.showerror("Missing SQL", "❌ Please paste a SQL query.", parent=builder_window)
+            _safe_messagebox('showerror', "Missing SQL", "❌ Please paste a SQL query.", dlg=builder_window)
             try:
                 ensure_builder_on_top()
             except Exception:
@@ -120,18 +137,18 @@ def run_sql_view_loader(parent=None, on_finish=None):
             conn.commit()
             logger.info(f"✅ View '{view_name}' created and granted SELECT to PUBLIC.")
 
-            messagebox.showinfo("Success", f"✅ View '{view_name}' created successfully.", parent=builder_window)
+            _safe_messagebox('showinfo', "Success", f"✅ View '{view_name}' created successfully.", dlg=builder_window)
             builder_window.destroy()
             if on_finish:
                 on_finish()            
         except Exception as e:
             logger.error(f"❌ Error creating view: {e}")
             try:
-                messagebox.showerror("Error", f"❌ Failed to create view:\n{e}", parent=builder_window)
+                _safe_messagebox('showerror', "Error", f"❌ Failed to create view:\n{e}", dlg=builder_window)
             except Exception:
                 # fallback if parenting fails
                 try:
-                    messagebox.showerror("Error", f"❌ Failed to create view:\n{e}")
+                    _safe_messagebox('showerror', "Error", f"❌ Failed to create view:\n{e}")
                 except Exception:
                     pass
             try:
