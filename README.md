@@ -14,6 +14,10 @@ Contact: hoonywise@proton.me
 
 ---
 
+![Main GUI](assets/main_gui_65.png)
+
+---
+
 HoonyTools is an all-in-one Python-based toolkit for loading, transforming, and cleaning data in Oracle databases.
 
 Designed with front-end users in mind, HoonyTools features an intuitive GUI that makes it easy to load data into Oracle as tables or views, run batch imports, and perform record-level cleanup.
