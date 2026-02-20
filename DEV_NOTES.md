@@ -219,3 +219,33 @@ Testing checklist
 1. With a valid `[dwh]` entry in `libs/config.ini`, restart the app and press DWH Refresh — no prompt should appear and objects should populate.
 2. Corrupt the saved DWH DSN (or remove `tnsnames.ora`) and press DWH Refresh — a single login prompt should appear; on successful login the list should populate and `config.ini` updated if Save checked.
 3. Ensure no background thread attempts to create UI elements directly (watch logs for "Login prompt must be called from the main thread.").
+
+---
+
+### 🛠 Entry #7: Fix — Ensure DWH connection closed on early exits (2026-02-19)
+
+Findings
+
+- The SQL Materialized View Loader (`loaders/sql_mv_loader.py`) could leave a live DWH connection open when the user checked "Load to DWH" and then cancelled or hit errors during the materialized-view-log flow. This happened regardless of whether DWH credentials were saved to `libs/config.ini` or only held in memory via `session.dwh_credentials`.
+
+Actions taken
+
+- Reworked `on_submit` in the SQL MV Loader to wrap the post-login flow in a `try/finally` and always close `cursor` and `conn` in the `finally` block. This guarantees connections are closed on early `return` paths and on exceptions.
+- Added conservative initialization for diagnostic variables (e.g., `mlog_name = None`) to avoid linter warnings and accidental use of unbound variables in diagnostic codepaths.
+
+Notes for developers
+
+1. This fix covers both disk-saved credentials and session-only (in-memory) credentials — closure is performed on the connection object returned by `get_db_connection()` regardless of credential persistence.
+2. If you add further early-returns in `on_submit` or similar flows, follow the pattern of opening the connection before the guarded `try` and closing in `finally` to avoid leaks.
+3. Consider adding explicit connect/disconnect logging in `libs/oracle_db_connector.py` to make future investigations of leaked sessions easier (I can add this if desired).
+
+Additional findings (close-button / WM_DELETE_WINDOW)
+
+- During investigation we discovered an inconsistency between the launcher Exit button and the window manager close button (title-bar X). The Exit button called a `safe_exit()` routine that performs deterministic teardown and calls `sys.exit()`, while the WM_DELETE_WINDOW binding used `root.quit()` earlier in the launcher. `root.quit()` merely stops the Tk mainloop and does not perform the same cleanup, which could leave the process in an inconsistent state after certain loader/tool failures (for example, when a runner tool raises an exception or is closed unexpectedly).
+
+- Fix applied in launcher (`HoonyTools.pyw`): removed the early `root.protocol("WM_DELETE_WINDOW", root.quit)` binding and bound `WM_DELETE_WINDOW` to `safe_exit()` after `safe_exit()` is defined. `safe_exit()` now does a best-effort `hidden_root.destroy()` if a hidden root exists and then calls `sys.exit()`.
+
+- Developer notes:
+  - When creating modal Toplevels in tools, prefer wiring an `on_close` that closes resources (DB connections, cursors) and calls any supplied `on_finish()` callback so the launcher can update UI state safely.
+  - Search the codebase for other uses of `root.quit()` or early `WM_DELETE_WINDOW` bindings; they may need to be harmonized to avoid divergent shutdown behavior.
+  - If you want the X to only hide the window instead of exiting the process, implement a `safe_hide()` that calls `root.withdraw()` and performs minimal cleanup without `sys.exit()` and bind WM_DELETE_WINDOW to that instead.
