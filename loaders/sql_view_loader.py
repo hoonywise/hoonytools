@@ -13,6 +13,61 @@ logger = logging.getLogger(__name__)
 _tk_default_root = getattr(tk, '_default_root', None)
 
 def run_sql_view_loader(on_finish=None):
+    # Theme support for pane-only dark mode (polling fallback)
+    try:
+        import tkinter.ttk as _ttk
+    except Exception:
+        _ttk = None
+    _last_dark = None
+    _poll_id = None
+
+    def _detect_dark_from_style():
+        try:
+            if _ttk:
+                st = _ttk.Style()
+                bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+                if isinstance(bg, str) and bg.strip():
+                    b = bg.strip().lower()
+                    if b in ('#000000', '#000') or 'black' in b:
+                        return True
+        except Exception:
+            pass
+        return False
+
+    def _apply_theme(dark: bool):
+        # Only apply dark colors to the main SQL pane. Do not recolor frames
+        # or other chrome — the launcher wants pane-only dark mode.
+        try:
+            if dark:
+                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+            else:
+                sql_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
+        except Exception:
+            pass
+
+    def _poll_theme():
+        nonlocal _last_dark, _poll_id
+        try:
+            dark = _detect_dark_from_style()
+            if dark is not _last_dark:
+                _last_dark = dark
+                _apply_theme(dark)
+        except Exception:
+            pass
+        try:
+            _poll_id = builder_window.after(600, _poll_theme)
+        except Exception:
+            _poll_id = None
+
+    def _stop_polling(event=None):
+        nonlocal _poll_id
+        try:
+            if _poll_id:
+                builder_window.after_cancel(_poll_id)
+                _poll_id = None
+        except Exception:
+            pass
+
     def on_submit():
         view_name = view_name_entry.get().strip()
         sql_query = sql_text.get("1.0", tk.END).strip()
@@ -103,6 +158,25 @@ def run_sql_view_loader(on_finish=None):
     builder_window.title("SQL View Loader")
     builder_window.geometry("800x600")
     builder_window.grab_set()
+
+    # Start theme polling so panes follow launcher's pane-only dark mode
+    try:
+        # apply initial
+        try:
+            if _detect_dark_from_style():
+                _apply_theme(True)
+            else:
+                _apply_theme(False)
+        except Exception:
+            pass
+        try:
+            builder_window.after(600, _poll_theme)
+        except Exception:
+            pass
+        # stop polling when window closed
+        builder_window.bind('<Destroy>', _stop_polling)
+    except Exception:
+        pass
 
     # ✅ Ensure taskbar icon and branding is preserved
     try:
