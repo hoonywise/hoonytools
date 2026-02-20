@@ -311,48 +311,72 @@ def main(parent=None):
 
     _apply_entry_theme()
 
-    # Periodically check the global Pane.Treeview style to detect launcher
-    # pane-only dark mode toggles and update the entry colors live. This is
-    # best-effort: it reads ttk.Style lookups which the launcher updates when
-    # toggling dark mode.
+    # Theme detection helper
     last_dark = None
-    def _poll_theme():
-        nonlocal last_dark
+    def _detect_dark_from_style():
         try:
-            dark = False
             if ttk:
-                try:
-                    st = ttk.Style()
-                    bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-                    if isinstance(bg, str) and bg.strip():
-                        b = bg.strip().lower()
-                        if b in ('#000000', '#000') or 'black' in b:
-                            dark = True
-                except Exception:
-                    dark = False
-            # If detection changed, apply new colors
-            if dark is not last_dark:
-                last_dark = dark
-                if dark:
-                    try:
-                        cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        cname_entry.config(bg='white', fg='black', insertbackground='black')
-                    except Exception:
-                        pass
+                st = ttk.Style()
+                bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+                if isinstance(bg, str) and bg.strip():
+                    sb = bg.strip().lower()
+                    if sb in ('#000000', '#000') or 'black' in sb:
+                        return True
         except Exception:
             pass
+        return False
+
+    def _theme_cb(enable_dark: bool):
         try:
-            win.after(600, _poll_theme)
+            if enable_dark:
+                cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+            else:
+                cname_entry.config(bg='white', fg='black', insertbackground='black')
         except Exception:
             pass
 
-    # Start polling for theme changes
+    # If parent provides registration API, use it for instant callbacks.
+    # Otherwise, fall back to polling.
     try:
-        win.after(600, _poll_theme)
+        if parent and hasattr(parent, 'register_theme_callback'):
+            try:
+                parent.register_theme_callback(_theme_cb)
+            except Exception:
+                pass
+
+            # ensure we unregister when this dialog is destroyed
+            def _on_destroy(event=None):
+                try:
+                    if parent and hasattr(parent, 'unregister_theme_callback'):
+                        parent.unregister_theme_callback(_theme_cb)
+                except Exception:
+                    pass
+            try:
+                win.bind('<Destroy>', _on_destroy)
+            except Exception:
+                pass
+        else:
+            # fallback polling implementation
+            def _poll_theme():
+                nonlocal last_dark
+                try:
+                    dark = _detect_dark_from_style()
+                    if dark is not last_dark:
+                        last_dark = dark
+                        if dark:
+                            cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+                        else:
+                            cname_entry.config(bg='white', fg='black', insertbackground='black')
+                except Exception:
+                    pass
+                try:
+                    win.after(600, _poll_theme)
+                except Exception:
+                    pass
+            try:
+                win.after(600, _poll_theme)
+            except Exception:
+                pass
     except Exception:
         pass
     # Button to restore full column list after detect filtered it

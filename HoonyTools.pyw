@@ -2374,8 +2374,41 @@ def launch_tool_gui():
                 set_panes_dark()
             else:
                 set_panes_light()
+            # Notify registered callbacks about theme change
+            try:
+                for cb in getattr(root, '_theme_callbacks', [])[:]:
+                    try:
+                        cb(dark_mode_var.get())
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         except Exception:
             pass
+
+    # Expose a registration API on the root so child dialogs can register
+    # callbacks to be notified when the pane-only dark mode changes.
+    try:
+        root._theme_callbacks = []
+
+        def _register_theme_callback(cb):
+            try:
+                if callable(cb):
+                    root._theme_callbacks.append(cb)
+            except Exception:
+                pass
+
+        def _unregister_theme_callback(cb):
+            try:
+                if cb in getattr(root, '_theme_callbacks', []):
+                    root._theme_callbacks.remove(cb)
+            except Exception:
+                pass
+
+        root.register_theme_callback = _register_theme_callback
+        root.unregister_theme_callback = _unregister_theme_callback
+    except Exception:
+        pass
 
     view_menu.add_checkbutton(label="Dark Mode", variable=dark_mode_var, command=_toggle_dark)
     menu_bar.add_cascade(label="View", menu=view_menu)
