@@ -2412,6 +2412,32 @@ def load_files_gui(parent=None, schema_choice='user'):
 
             if mode == 0:
                 # Create New: drop + create + insert
+                if do_preview:
+                    # Build CREATE TABLE SQL for preview
+                    def _build_col_def(col):
+                        if col_sizes and col.upper() in {k.upper() for k in col_sizes}:
+                            for k, v in col_sizes.items():
+                                if k.upper() == col.upper():
+                                    return f'"{col}" VARCHAR2({v})'
+                        return f'"{col}" VARCHAR2(4000)'
+                    cols_sql = ', '.join([_build_col_def(c) for c in df.columns])
+                    create_sql = f'CREATE TABLE {schema}.{tbl_name} ({cols_sql})'
+                    sample = df.iloc[0].to_dict() if len(df) > 0 else None
+                    ins_sql = build_insert_preview_sql(schema, tbl_name, list(df.columns), sample)
+                    combined_sql = create_sql + ";\n\n" + ins_sql
+                    summary = f"Rows: {len(df)}\nColumns: {len(df.columns)}\nThis will DROP existing table (if any) and CREATE a new one."
+                    # Preview must run on main thread
+                    result = [None]
+                    import threading
+                    ev = threading.Event()
+                    def _show():
+                        result[0] = show_sql_preview(win, f"CREATE TABLE Preview: {schema}.{tbl_name}", summary, combined_sql)
+                        ev.set()
+                    win.after(0, _show)
+                    ev.wait()
+                    if not result[0]:
+                        return
+
                 drop_table_if_exists(cursor, schema, tbl_name)
                 create_table(cursor, schema, tbl_name, df, col_sizes=col_sizes)
                 success = insert_data(cursor, schema, tbl_name, df, conn)
