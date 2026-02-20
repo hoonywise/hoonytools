@@ -526,3 +526,84 @@ Follow-ups
 
 1. The main `load_files_gui` dialog still uses default colors for most widgets (Treeviews, column preview). Consider extending pane-only dark mode to those as well for full consistency.
 2. Entry #11 noted `excel_csv_loader.py` as not having dark mode support — this entry partially addresses that (preview window only, not the main loader dialog).
+
+---
+
+### 🗑️ Entry #14: Integrated Drop Button, Status Indicator & Oracle Object Handling (2026-02-20)
+
+Summary: This session integrated the Object Dropper tool directly into the main GUI's left pane as Drop buttons, added comprehensive status indicator support, and resolved several Oracle-specific object handling challenges.
+
+#### Key Implementation Details
+
+**1. Drop Button Integration**
+
+- Added "Drop" button to both User and DWH object panes in `_make_objects_frame()`.
+- Enabled multi-select on Treeviews with `selectmode="extended"` for batch dropping.
+- Created `_get_selected_objects(tree)` helper to extract all selected items as a list of dicts.
+- The `drop_objects()` function in `object_cleanup_gui.py` handles the actual drop logic with confirmation dialog.
+
+**2. Sortable Column Headers**
+
+- Implemented `_make_sortable_tree(tv)` helper that binds click handlers to column headings.
+- Sort state tracked per-column in a closure; clicking toggles between ascending (▲) and descending (▼).
+- Headers update with arrow indicators to show current sort direction.
+- Required updating `_recreate_tree()` to also call the sortable setup and preserve the new column name ("info" instead of "pk").
+
+**3. Ctrl+A Select All**
+
+- Added `_bind_select_all(tv)` helper that binds `<Control-a>` and `<Control-A>` to select all items.
+- Uses `tv.selection_set(tv.get_children(''))` to select all rows.
+
+**4. Oracle Object Type Challenges**
+
+- **Materialized View dual entries**: Oracle creates both a `MATERIALIZED VIEW` and a `TABLE` object with the same name for each MV. Had to add an `EXISTS` subquery to exclude the TABLE entry when an MV exists, otherwise dropping would fail with `ORA-12083: must use DROP MATERIALIZED VIEW`.
+
+- **MLOG tables**: Materialized view logs appear as TABLEs named `MLOG$_TABLENAME`. Detection done by checking if name starts with `MLOG$`. Must use `DROP MATERIALIZED VIEW LOG ON base_table` syntax, not `DROP TABLE`.
+
+- **PK-backing indexes**: Indexes that back primary key constraints cannot be dropped directly without dropping the constraint first. Excluded these from the index list using `NOT EXISTS` subquery against `all_constraints`.
+
+- **Drop order matters**: When batch-dropping a table and its MLOG together, the table must drop first (which auto-drops the MLOG). Implemented `_sort_objects_for_drop()` to order: TABLE → MATERIALIZED VIEW → VIEW → MVIEW LOG → INDEX → PRIMARY KEY.
+
+- **Auto-skip dependent objects**: Track which tables are being dropped; skip INDEXes/MLOGs/PKs whose parent table is in the drop set to avoid "object doesn't exist" errors.
+
+**5. Status Indicator Overhaul**
+
+- **Problem**: Emoji-based status indicator (`🟢`/`🔴`) rendered as tiny grey circles with minimal color visibility on some systems due to font/emoji rendering differences.
+
+- **Solution**: Replaced with a `tk.Canvas` widget containing a drawn oval (circle). Created a `StatusLight` wrapper class that implements `.config(text=...)` to maintain compatibility with existing code that sets emoji text.
+
+- **Color mapping**:
+  - `🟢` / `'idle'` → Green (#22c55e)
+  - `🔴` / `'busy'` → Red (#ef4444)  
+  - `⏳` / `'aborting'` → Amber (#f59e0b)
+
+**6. Status Callback Pattern**
+
+- Added `on_status_change` parameter to `drop_objects()` and `load_files_gui()`.
+- Helper function `_set_main_status(status)` defined inside each function to safely call the callback.
+- Callback called with `'busy'` when operation starts, `'aborting'` when abort requested, `'idle'` when complete.
+- Includes `parent.update_idletasks()` and `parent.update()` to force UI refresh during synchronous operations.
+
+#### Challenges Encountered
+
+1. **Global vs local variable timing**: `status_light` widget is created late in `launch_tool_gui()` but drop handlers are defined earlier. Initially tried storing reference on `root._status_light` but simpler solution was using the global `status_light` variable directly since it's declared in the function's global scope.
+
+2. **`_recreate_tree()` losing features**: This function recreates Treeviews when toggling themes. Had to update it to use new column name ("info"), enable multi-select, and call both `_make_sortable_tree()` and `_bind_select_all()` on the new tree.
+
+3. **MLOG drop syntax**: Initial implementation tried `DROP TABLE` which fails with `ORA-32417`. Oracle requires `DROP MATERIALIZED VIEW LOG ON base_table_name` syntax. Had to extract base table name from MLOG object name (`MLOG$_TABLENAME` → `TABLENAME`).
+
+4. **Force Drop scope**: `CASCADE CONSTRAINTS PURGE` only applies to TABLEs. The "Force Drop" button in the error dialog is only shown for TABLE objects.
+
+#### Files Modified
+
+| File | Changes |
+|------|---------|
+| `HoonyTools.pyw` | `_make_sortable_tree()`, `_bind_select_all()`, `_make_objects_frame()` (Drop button), `_recreate_tree()` updates, `_update_status_light()`, `StatusLight` class, updated refresh queries for INDEX/PK/MLOG |
+| `tools/object_cleanup_gui.py` | `drop_objects()`, `_drop_table_indexes()`, `_show_error_dialog()`, `_sort_objects_for_drop()`, `_get_table_for_object()` |
+| `loaders/excel_csv_loader.py` | `on_status_change` parameter, `_set_main_status()` helper, status callbacks in load/abort flows |
+
+#### Follow-ups
+
+1. Consider adding status indicator support to other tools (SQL View Loader, MV Manager, PK Designator).
+2. The `_recreate_tree()` function is getting complex; may benefit from refactoring to use a shared configuration object.
+3. Could add a "Select All of Type" feature (e.g., right-click to select all TABLEs).

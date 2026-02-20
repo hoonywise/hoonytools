@@ -4,6 +4,48 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🚀 v1.5.5 — Integrated Drop Button & Status Indicator (2026-02-20)
+
+This release integrates the Object Dropper functionality directly into the main GUI's left pane, adds comprehensive status indicator support, and introduces sortable column headers with multi-select capability.
+
+### Added
+
+- **Drop Button in Object Panes**: New "Drop" button added to both User and DWH object panes, replacing the standalone Object Dropper tool from the combobox.
+- **Multi-Select Support**: Object lists now support Ctrl+click and Shift+click for selecting multiple objects to drop in a single operation.
+- **Ctrl+A Select All**: Press Ctrl+A while focused on an object list to select all items.
+- **Sortable Column Headers**: Click any column header (Name, Type, Info) to sort ascending (▲); click again to sort descending (▼).
+- **INDEX Objects in List**: User-created indexes (excluding system and PK-backing indexes) now appear in the object list with `Table: TABLE_NAME` in the Info column.
+- **PRIMARY KEY Objects in List**: Primary key constraints now appear as droppable objects with `Table: TABLE_NAME` in the Info column.
+- **MVIEW LOG Objects in List**: Materialized view logs (MLOG$...) now appear with type "MVIEW LOG" and can be dropped individually.
+- **Smart Drop Order**: When batch-dropping, TABLEs are dropped first (auto-dropping their indexes/MLOGs), then other objects. Dependent objects selected alongside their parent table are auto-skipped.
+- **Force Drop Option**: Error dialog includes "Force Drop" button for TABLEs that uses `CASCADE CONSTRAINTS PURGE` to handle foreign key dependencies.
+- **Status Indicator**: Canvas-based colored circle replaces emoji indicator for better visibility:
+  - 🟢 Green: Idle
+  - 🔴 Red: Busy (loading/dropping)
+  - 🟡 Amber: Aborting
+- **Status Indicator for Data Loader**: The Excel/CSV loader now updates the main GUI's status indicator during load operations and abort processing.
+
+### Changed
+
+- **Column Renamed**: "PK" column renamed to "Info" for broader use (shows PK columns for tables, parent table for indexes/PKs/MLOGs).
+- **Info Column Format**: Tables with primary keys show `PK: col1, col2`; indexes/PKs/MLOGs show `Table: TABLE_NAME`.
+- **Object Dropper Removed from Combobox**: The "☑ Object Dropper" entry has been removed from the tool selector; functionality is now integrated into Drop buttons.
+- **MV Backing Tables Excluded**: Tables that are backing tables for Materialized Views are now excluded from the list (only the MV entry is shown).
+
+### Fixed
+
+- **ORA-12083 Error**: Materialized Views are no longer incorrectly identified as TABLEs, preventing "must use DROP MATERIALIZED VIEW" errors.
+- **ORA-32417 Error**: MLOG objects are now properly dropped using `DROP MATERIALIZED VIEW LOG ON table_name` instead of `DROP TABLE`.
+- **Status Indicator Visibility**: Replaced emoji-based status indicator with canvas-drawn circle for consistent, visible colors across all systems.
+
+### Files touched
+
+- `HoonyTools.pyw` — Added Drop buttons, sortable headers, Ctrl+A, status indicator overhaul, updated refresh queries
+- `tools/object_cleanup_gui.py` — Added `drop_objects()`, `_drop_table_indexes()`, `_show_error_dialog()`, `_sort_objects_for_drop()` functions
+- `loaders/excel_csv_loader.py` — Added `on_status_change` parameter and status callbacks for load/abort operations
+
+---
+
 ## 🚀 v1.5.1 — SQL Preview Window Dark Mode (2026-02-20)
 
 This patch adds pane-only dark mode support to the SQL preview window in the Excel/CSV loader.
