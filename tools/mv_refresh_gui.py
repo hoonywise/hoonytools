@@ -222,6 +222,18 @@ def run_mv_refresh_gui(on_finish=None):
         except Exception as e:
             logger.exception(f"Failed refreshing DWH mviews: {e}")
 
+    # Bring this window back on top after modal dialogs (messagebox) so the
+    # smaller MV window does not get hidden behind the main app window.
+    def ensure_root_on_top(delay=50):
+        try:
+            root.lift()
+            # Temporarily set topmost to ensure it appears above other windows,
+            # then clear the flag shortly after to restore normal stacking.
+            root.attributes('-topmost', True)
+            root.after(delay, lambda: root.attributes('-topmost', False))
+        except Exception:
+            pass
+
     def on_select(event=None, source='user'):
         # Determine selection source and take appropriate metadata
         try:
@@ -385,6 +397,10 @@ def run_mv_refresh_gui(on_finish=None):
                 cur.execute(f"BEGIN DBMS_MVIEW.REFRESH('{qualified}','{mode}'); END;")
                 conn.commit()
                 messagebox.showinfo("Refresh", f"Refresh of {qualified} requested (COMPLETE).")
+                try:
+                    ensure_root_on_top()
+                except Exception:
+                    pass
                 cur.close()
                 load_user_mviews(qualified)
             else:
@@ -409,6 +425,10 @@ def run_mv_refresh_gui(on_finish=None):
                 cur.execute(f"BEGIN DBMS_MVIEW.REFRESH('{qualified}','{mode}'); END;")
                 dconn.commit()
                 messagebox.showinfo("Refresh", f"Refresh of {qualified} requested (COMPLETE).")
+                try:
+                    ensure_root_on_top()
+                except Exception:
+                    pass
                 cur.close()
                 # extract owner from qualified
                 owner = qualified.split('.', 1)[0]
@@ -454,6 +474,10 @@ def run_mv_refresh_gui(on_finish=None):
         tables = detect_tables_from_sql(mv_query)
         if not tables:
             messagebox.showinfo("No tables", "Could not detect base tables from the MV query.")
+            try:
+                ensure_root_on_top()
+            except Exception:
+                pass
             return
         # Ask user to confirm table list and chosen options
         opt_label = f"Create materialized view logs on: {', '.join(tables)}\nType: {log_type_var.get()}\nINCLUDING NEW VALUES: {include_new_var.get()}"
@@ -672,9 +696,17 @@ def run_mv_refresh_gui(on_finish=None):
                 msgs.append(f"Reused existing logs: {', '.join(reused)}")
             if msgs:
                 messagebox.showinfo("MV Logs Created", "\n".join(msgs))
+                try:
+                    ensure_root_on_top()
+                except Exception:
+                    pass
             if failed:
                 msg_lines = [f"{t}: {err}" for (t, err) in failed]
                 messagebox.showwarning("Some logs failed", "\n".join(msg_lines))
+                try:
+                    ensure_root_on_top()
+                except Exception:
+                    pass
             # preserve selection and reload appropriate list
             try:
                 last = getattr(root, '_last_selected', None)
@@ -691,6 +723,10 @@ def run_mv_refresh_gui(on_finish=None):
         except Exception as e:
             logger.exception(f"Failed to create logs: {e}")
             messagebox.showerror("Error", str(e))
+            try:
+                ensure_root_on_top()
+            except Exception:
+                pass
 
     tk.Button(btn_frame, text="Refresh MV", command=do_refresh).pack(side="right", padx=6)
     tk.Button(btn_frame, text="Create Logs", command=do_create_logs).pack(side="right", padx=6)
