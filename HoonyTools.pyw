@@ -1533,20 +1533,20 @@ def launch_tool_gui():
                 result.append({'name': name, 'type': obj_type, 'info': info})
         return result
 
-    # Status callback function - will be set later when status_light is created
-    def _get_status_callback():
-        """Return the status change callback if status_light exists."""
-        def status_callback(status):
-            try:
-                if hasattr(root, '_status_light'):
-                    if status == 'busy':
-                        root._status_light.config(text="🔴")
-                    else:  # idle
-                        root._status_light.config(text="🟢")
-                    root.update_idletasks()
-            except Exception:
-                pass
-        return status_callback
+    # Status callback function - uses global status_light
+    def _update_status_light(status):
+        """Update the status light indicator. Called during drop operations."""
+        try:
+            global status_light
+            if status == 'busy':
+                status_light.config(text="🔴")
+            else:  # idle
+                status_light.config(text="🟢")
+            # Force UI update during synchronous operations
+            root.update_idletasks()
+            root.update()
+        except Exception:
+            pass
 
     def launch_drop_user():
         """Handle Drop button click for User schema."""
@@ -1586,7 +1586,7 @@ def launch_tool_gui():
             objects=objects,
             parent_window=root,
             on_complete=lambda: refresh_user_objects(),
-            on_status_change=_get_status_callback()
+            on_status_change=_update_status_light
         )
 
     def launch_drop_dwh():
@@ -1605,7 +1605,7 @@ def launch_tool_gui():
             objects=objects,
             parent_window=root,
             on_complete=lambda: refresh_dwh_objects(),
-            on_status_change=_get_status_callback()
+            on_status_change=_update_status_light
         )
 
     user_drop_btn.config(command=launch_drop_user)
@@ -2041,15 +2041,34 @@ def launch_tool_gui():
         justify="left"
     ).pack(side="left")
 
-    status_light = tk.Label(
-        status_bar,
-        text="🟢",
-        font=("Arial", 12)
-    )
-    status_light.pack(side="right", padx=10)
+    # Status indicator using a canvas circle for better visibility
+    status_canvas = tk.Canvas(status_bar, width=16, height=16, highlightthickness=0)
+    status_canvas.pack(side="right", padx=10)
+    # Draw a filled circle (oval) - green by default
+    status_circle = status_canvas.create_oval(2, 2, 14, 14, fill="#22c55e", outline="#16a34a")
     
-    # Store reference on root so status callbacks can access it
-    root._status_light = status_light
+    # Create a wrapper label that holds reference to canvas for compatibility with existing code
+    class StatusLight:
+        def __init__(self, canvas, circle_id):
+            self.canvas = canvas
+            self.circle_id = circle_id
+        def config(self, text=None, **kwargs):
+            # Map emoji text to colors
+            if text == "🔴":
+                self.canvas.itemconfig(self.circle_id, fill="#ef4444", outline="#dc2626")
+            elif text == "🟢":
+                self.canvas.itemconfig(self.circle_id, fill="#22c55e", outline="#16a34a")
+            elif text == "⏳":
+                self.canvas.itemconfig(self.circle_id, fill="#f59e0b", outline="#d97706")  # amber/yellow
+            elif text == "⏹️ Aborting...":
+                self.canvas.itemconfig(self.circle_id, fill="#f59e0b", outline="#d97706")
+        def winfo_exists(self):
+            try:
+                return self.canvas.winfo_exists()
+            except:
+                return False
+    
+    status_light = StatusLight(status_canvas, status_circle)
 
     def on_scroll(*args):
         global auto_scroll_enabled

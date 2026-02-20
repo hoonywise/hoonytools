@@ -648,6 +648,10 @@ def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_com
         if on_status_change:
             try:
                 on_status_change(status)
+                # Force UI refresh
+                if parent_window:
+                    parent_window.update_idletasks()
+                    parent_window.update()
             except Exception:
                 pass
     
