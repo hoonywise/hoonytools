@@ -1475,6 +1475,15 @@ def launch_tool_gui():
                         }
                 except Exception:
                     pane_orig['orig_pane_lookup'] = {}
+                try:
+                    # Save heading colors too (some backends use a separate heading style)
+                    if not pane_orig.get('orig_heading_lookup'):
+                        pane_orig['orig_heading_lookup'] = {
+                            'background': style.lookup('Treeview.Heading', 'background'),
+                            'foreground': style.lookup('Treeview.Heading', 'foreground'),
+                        }
+                except Exception:
+                    pane_orig['orig_heading_lookup'] = {}
 
         except Exception:
             pass
@@ -1533,7 +1542,16 @@ def launch_tool_gui():
                     style.configure('Pane.Treeview', background='#000000', fieldbackground='#000000', foreground='#ffffff', rowheight=18)
                     style.map('Treeview', background=[('selected', '#444444')], foreground=[('selected', '#ffffff')])
                     style.map('Pane.Treeview', background=[('selected', '#444444')], foreground=[('selected', '#ffffff')])
-                    style.configure('Treeview.Heading', background='#000000', foreground='#ffffff')
+                    # Explicitly configure heading style as well; on Windows the
+                    # heading often needs its own configure call to update at runtime.
+                    try:
+                        style.configure('Treeview.Heading', background='#000000', foreground='#ffffff')
+                    except Exception:
+                        # Some backends expose the heading as 'Heading' element
+                        try:
+                            style.configure('Heading', background='#000000', foreground='#ffffff')
+                        except Exception:
+                            pass
                 except Exception:
                     pass
         except Exception:
@@ -1656,6 +1674,19 @@ def launch_tool_gui():
                             style.configure('Pane.Treeview', background=op.get('background') or '', fieldbackground=op.get('fieldbackground') or '', foreground=op.get('foreground') or '')
                         except Exception:
                             pass
+                    # Restore heading lookups if available
+                    try:
+                        oh = po.get('orig_heading_lookup') or {}
+                        if oh:
+                            try:
+                                style.configure('Treeview.Heading', background=oh.get('background') or '', foreground=oh.get('foreground') or '')
+                            except Exception:
+                                try:
+                                    style.configure('Heading', background=oh.get('background') or '', foreground=oh.get('foreground') or '')
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 
