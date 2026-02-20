@@ -13,6 +13,7 @@ from pystray import MenuItem as item
 import json
 import random
 import webbrowser
+from configparser import ConfigParser
 
 APP_VERSION = "1.4.5"
 
@@ -2376,6 +2377,25 @@ def launch_tool_gui():
     # Dark mode toggle variable (pane-only). Default off.
     dark_mode_var = tk.BooleanVar(value=False)
 
+    def _save_dark_mode_pref(is_dark):
+        """Persist dark mode preference to libs/config.ini [preferences]."""
+        try:
+            from libs.paths import PROJECT_PATH as _BASE
+            _cfg_path = _BASE / "libs" / "config.ini"
+            _cfg = ConfigParser()
+            try:
+                _cfg.read(_cfg_path)
+            except Exception:
+                _cfg = ConfigParser()
+            if not _cfg.has_section("preferences"):
+                _cfg.add_section("preferences")
+            _cfg.set("preferences", "dark_mode", str(is_dark).lower())
+            _cfg_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(_cfg_path, "w", encoding="utf-8") as f:
+                _cfg.write(f)
+        except Exception:
+            pass
+
     def _toggle_dark():
         try:
             if dark_mode_var.get():
@@ -2391,6 +2411,8 @@ def launch_tool_gui():
                         pass
             except Exception:
                 pass
+            # Persist dark mode preference
+            _save_dark_mode_pref(dark_mode_var.get())
         except Exception:
             pass
 
@@ -2584,7 +2606,19 @@ def launch_tool_gui():
     # menu_bar structure around for compatibility but do not reattach it as
     # the root menubar (native menubars ignore styling on some platforms).
     tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#b0b0b0")).pack(fill="x")
-        
+
+    # Restore dark mode preference from config.ini on startup
+    try:
+        from libs.paths import PROJECT_PATH as _BASE
+        _cfg_path = _BASE / "libs" / "config.ini"
+        _cfg = ConfigParser()
+        _cfg.read(_cfg_path)
+        if _cfg.getboolean("preferences", "dark_mode", fallback=False):
+            dark_mode_var.set(True)
+            _toggle_dark()
+    except Exception:
+        pass
+
     root.mainloop()
 
 TOOLS = {    
