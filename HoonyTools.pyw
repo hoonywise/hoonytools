@@ -1418,7 +1418,7 @@ def launch_tool_gui():
                     try:
                         # Apply popup colors consistent with entry colors
                         if getattr(self, '_dark', False):
-                            lb.config(bg='#000000', fg='#ffffff', selectbackground='#444444')
+                            lb.config(bg='#000000', fg='#ffffff', selectbackground='#2a6bd6')
                         else:
                             lb.config(bg='white', fg='black', selectbackground='#2a6bd6')
                     except Exception:
@@ -1656,7 +1656,7 @@ def launch_tool_gui():
         # Default to light log colors; only change when user enables pane dark mode
         if getattr(root, '_dark_theme', None):
             lt = getattr(root, "_dark_theme", {})
-            log_text.config(bg=lt.get("panel", "#0b0b0b"), fg=lt.get("fg", "#e6e6e6"), insertbackground=lt.get("fg", "#e6e6e6"), selectbackground=lt.get("border", "#222222"))
+            log_text.config(bg=lt.get("panel", "#0b0b0b"), fg=lt.get("fg", "#e6e6e6"), insertbackground=lt.get("fg", "#e6e6e6"), selectbackground=lt.get("selection_bg", "#2a6bd6"))
         else:
             log_text.config(bg='white', fg='black', insertbackground='black')
     except Exception:
@@ -1944,8 +1944,8 @@ def launch_tool_gui():
                 try:
                     style.configure('Treeview', background='#000000', fieldbackground='#000000', foreground='#ffffff', rowheight=18)
                     style.configure('Pane.Treeview', background='#000000', fieldbackground='#000000', foreground='#ffffff', rowheight=18)
-                    style.map('Treeview', background=[('selected', '#444444')], foreground=[('selected', '#ffffff')])
-                    style.map('Pane.Treeview', background=[('selected', '#444444')], foreground=[('selected', '#ffffff')])
+                    style.map('Treeview', background=[('selected', '#2a6bd6')], foreground=[('selected', '#ffffff')])
+                    style.map('Pane.Treeview', background=[('selected', '#2a6bd6')], foreground=[('selected', '#ffffff')])
                     # Explicitly configure heading style as well; on Windows the
                     # heading often needs its own configure call to update at runtime.
                     try:
@@ -1974,7 +1974,7 @@ def launch_tool_gui():
                 try:
                     root.option_add('*Listbox.background', '#000000')
                     root.option_add('*Listbox.foreground', '#ffffff')
-                    root.option_add('*Listbox.selectBackground', '#444444')
+                    root.option_add('*Listbox.selectBackground', '#2a6bd6')
                     pane_orig['listbox_options_set'] = True
                 except Exception:
                     pass
@@ -2074,7 +2074,7 @@ def launch_tool_gui():
                 if not pane_orig.get('log'):
                     pane_orig['log'] = (log_text.cget('bg'), log_text.cget('fg'), log_text.cget('insertbackground'))
                 try:
-                    log_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+                    log_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
                 except Exception:
                     pass
         except Exception:
@@ -2104,7 +2104,7 @@ def launch_tool_gui():
             if 'log_text' in globals():
                 if not pane_orig.get('log'):
                     pane_orig['log'] = (log_text.cget('bg'), log_text.cget('fg'), log_text.cget('insertbackground'))
-                log_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+                log_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
         except Exception:
             pass
 

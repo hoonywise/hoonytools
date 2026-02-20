@@ -176,17 +176,17 @@ def run_mv_refresh_gui(on_finish=None):
     def _apply_text_theme(dark):
         try:
             if dark:
-                info_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
-                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+                info_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
+                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
                 try:
-                    info_text.tag_configure('logtype', foreground='#66ccff')
+                    info_text.tag_configure('logtype', foreground='#66ccff', selectforeground='#ffffff')
                 except Exception:
                     pass
             else:
                 info_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
                 sql_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
                 try:
-                    info_text.tag_configure('logtype', foreground='blue')
+                    info_text.tag_configure('logtype', foreground='blue', selectforeground='#ffffff')
                 except Exception:
                     pass
         except Exception:
@@ -437,7 +437,7 @@ def run_mv_refresh_gui(on_finish=None):
                             fg = '#66ccff'
             except Exception:
                 pass
-            info_text.tag_configure('logtype', foreground=fg, font=('Arial', 10, 'bold'))
+            info_text.tag_configure('logtype', foreground=fg, font=('Arial', 10, 'bold'), selectforeground='#ffffff')
         except Exception:
             pass
         log_info = ''
