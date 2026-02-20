@@ -496,3 +496,357 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     except Exception:
         pass
     logger.info("✅ Row deletion complete.")
+
+
+# --- New integrated drop functions for main GUI Drop buttons ---
+
+def _drop_table_indexes(cursor, schema, table_name):
+    """
+    Drop all user-created indexes on a table (silently, no confirmation).
+    Called automatically before dropping a table.
+    """
+    try:
+        cursor.execute("""
+            SELECT ai.index_name 
+            FROM all_indexes ai
+            WHERE ai.owner = :owner 
+              AND ai.table_name = :table_name
+              AND ai.index_name NOT LIKE 'SYS_%'
+              AND ai.index_name NOT LIKE 'BIN$%'
+              AND NOT EXISTS (
+                SELECT 1 FROM all_constraints ac
+                WHERE ac.owner = ai.owner
+                  AND ac.constraint_type = 'P'
+                  AND ac.index_name = ai.index_name
+              )
+        """, {'owner': schema, 'table_name': table_name})
+        indexes = cursor.fetchall()
+        for (idx_name,) in indexes:
+            try:
+                cursor.execute(f'DROP INDEX "{schema}"."{idx_name}"')
+                logger.info(f"Auto-dropped index: {schema}.{idx_name}")
+            except Exception as e:
+                logger.debug(f"Could not drop index {idx_name}: {e}")
+    except Exception as e:
+        logger.debug(f"Could not query indexes for {table_name}: {e}")
+
+
+def _show_error_dialog(parent, obj_name, obj_type, error_msg, remaining=0):
+    """
+    Show error dialog with options: Stop, Skip, Force (for tables only).
+    Returns: 'stop', 'skip', or 'force'
+    """
+    import tkinter as tk
+    
+    result = {'choice': 'skip'}
+    
+    dlg = tk.Toplevel(parent)
+    dlg.title("Drop Error")
+    dlg.transient(parent)
+    dlg.grab_set()
+    center_window(dlg, 500, 220)
+    dlg.resizable(False, False)
+    
+    tk.Label(dlg, text=f"Failed to drop {obj_type}: {obj_name}", font=("Arial", 11, "bold")).pack(pady=(15, 5))
+    
+    # Truncate long error messages
+    display_error = error_msg if len(error_msg) <= 200 else error_msg[:200] + "..."
+    tk.Label(dlg, text=display_error, wraplength=450, fg="red").pack(pady=5)
+    
+    if remaining > 0:
+        tk.Label(dlg, text=f"{remaining} object(s) remaining", fg="gray").pack()
+    
+    btn_frame = tk.Frame(dlg)
+    btn_frame.pack(pady=15)
+    
+    def stop():
+        result['choice'] = 'stop'
+        dlg.destroy()
+    
+    def skip():
+        result['choice'] = 'skip'
+        dlg.destroy()
+    
+    def force():
+        result['choice'] = 'force'
+        dlg.destroy()
+    
+    tk.Button(btn_frame, text="Stop", width=10, command=stop).pack(side="left", padx=5)
+    tk.Button(btn_frame, text="Skip", width=10, command=skip).pack(side="left", padx=5)
+    
+    # Only show Force option for TABLEs (CASCADE CONSTRAINTS)
+    if obj_type.upper() == 'TABLE':
+        force_btn = tk.Button(btn_frame, text="Force Drop", width=12, command=force)
+        force_btn.pack(side="left", padx=5)
+        # Add tooltip explaining what Force does
+        tk.Label(dlg, text="Force Drop: Drops table with CASCADE CONSTRAINTS", font=("Arial", 8), fg="gray").pack()
+    
+    dlg.wait_window()
+    return result['choice']
+
+
+def _sort_objects_for_drop(objects):
+    """
+    Sort objects so that TABLEs are dropped first (which auto-drops associated MLOGs, indexes, etc.),
+    followed by other object types. This prevents errors when dependent objects are selected
+    alongside their parent tables.
+    
+    Drop order priority:
+    1. TABLEs (highest priority - drops first, auto-drops MLOGs and indexes)
+    2. MATERIALIZED VIEWs
+    3. VIEWs
+    4. MVIEW LOGs (materialized view logs)
+    5. INDEXes
+    6. PRIMARY KEYs
+    """
+    type_order = {
+        'TABLE': 0,
+        'MATERIALIZED VIEW': 1,
+        'VIEW': 2,
+        'MVIEW LOG': 3,
+        'INDEX': 4,
+        'PRIMARY KEY': 5,
+    }
+    
+    def sort_key(obj):
+        obj_type = obj['type'].upper()
+        return (type_order.get(obj_type, 99), obj['name'].lower())
+    
+    return sorted(objects, key=sort_key)
+
+
+def _get_table_for_object(obj):
+    """
+    Extract the parent table name from an object's info field.
+    Returns the table name or None if not applicable.
+    """
+    info = obj.get('info', '')
+    if info.startswith('Table: '):
+        return info[7:]  # Remove 'Table: ' prefix
+    return None
+
+
+def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_complete=None, on_status_change=None):
+    """
+    Drop specified database objects. Called from main GUI Drop buttons.
+    
+    Args:
+        schema_choice: 'user' or 'dwh' - determines connection type
+        schema_name: The actual schema name (e.g., 'DWH' or user's schema name)
+        objects: List of dicts with keys: 'name', 'type', 'info' (optional)
+        parent_window: Parent Tk window for dialogs
+        on_complete: Callback function to run after completion (e.g., refresh)
+        on_status_change: Callback function(status) where status is 'busy' or 'idle'
+    
+    Returns:
+        True if any objects were dropped, False otherwise
+    """
+    from tkinter import messagebox
+    
+    # Helper to safely call status callback
+    def set_status(status):
+        if on_status_change:
+            try:
+                on_status_change(status)
+                # Force UI refresh
+                if parent_window:
+                    parent_window.update_idletasks()
+                    parent_window.update()
+            except Exception:
+                pass
+    
+    if not objects:
+        return False
+    
+    # Sort objects so TABLEs are dropped first (to auto-drop dependent objects)
+    sorted_objects = _sort_objects_for_drop(objects)
+    
+    # Build a set of table names being dropped (to skip dependent objects later)
+    tables_being_dropped = {
+        obj['name'].upper() for obj in sorted_objects 
+        if obj['type'].upper() == 'TABLE'
+    }
+    
+    # Build confirmation message
+    obj_names = [f"{o['name']} ({o['type']})" for o in sorted_objects]
+    if len(obj_names) > 10:
+        display_list = '\n'.join(obj_names[:10]) + f'\n... and {len(obj_names) - 10} more'
+    else:
+        display_list = '\n'.join(obj_names)
+    
+    # Confirmation dialog
+    confirmed = messagebox.askyesno(
+        "Confirm Drop",
+        f"Are you sure you want to drop the following {len(sorted_objects)} object(s)?\n\n{display_list}",
+        parent=parent_window
+    )
+    if not confirmed:
+        return False
+    
+    # Get database connection
+    conn = get_db_connection(force_shared=(schema_choice == 'dwh'), root=parent_window)
+    if not conn:
+        messagebox.showerror("Connection Error", "Failed to connect to database.", parent=parent_window)
+        return False
+    
+    # Register connection for cleanup
+    try:
+        if schema_choice == 'dwh' and conn:
+            dwh_session.register_connection(parent_window, conn)
+    except Exception:
+        logger.debug('Failed to register dwh connection', exc_info=True)
+    
+    schema = schema_name
+    cursor = conn.cursor()
+    
+    # Set status to busy (red indicator)
+    set_status('busy')
+    
+    dropped_count = 0
+    skipped_count = 0
+    auto_skipped_count = 0  # Objects skipped because parent table was dropped
+    
+    for i, obj in enumerate(sorted_objects):
+        obj_name = obj['name']
+        obj_type = obj['type'].upper()
+        remaining = len(sorted_objects) - i - 1
+        
+        # Check if this object's parent table is being dropped - if so, skip silently
+        # (the object will be auto-dropped with the table)
+        parent_table = _get_table_for_object(obj)
+        if parent_table and parent_table.upper() in tables_being_dropped and obj_type != 'TABLE':
+            logger.info(f"Skipping {obj_type} {obj_name} - parent table {parent_table} is being dropped")
+            auto_skipped_count += 1
+            continue
+        
+        try:
+            # For TABLEs, first drop associated indexes automatically (no confirmation)
+            if obj_type == 'TABLE':
+                _drop_table_indexes(cursor, schema, obj_name)
+            
+            # Execute the drop based on object type
+            if obj_type == 'TABLE':
+                cursor.execute(f'DROP TABLE "{schema}"."{obj_name}" PURGE')
+                logger.info(f"Dropped TABLE: {schema}.{obj_name}")
+            elif obj_type == 'VIEW':
+                cursor.execute(f'DROP VIEW "{schema}"."{obj_name}"')
+                logger.info(f"Dropped VIEW: {schema}.{obj_name}")
+            elif obj_type == 'MATERIALIZED VIEW':
+                cursor.execute(f'DROP MATERIALIZED VIEW "{schema}"."{obj_name}"')
+                logger.info(f"Dropped MATERIALIZED VIEW: {schema}.{obj_name}")
+            elif obj_type == 'MVIEW LOG':
+                # Materialized view log - need to drop on the base table
+                base_table = _get_table_for_object(obj)
+                if base_table:
+                    cursor.execute(f'DROP MATERIALIZED VIEW LOG ON "{schema}"."{base_table}"')
+                    logger.info(f"Dropped MVIEW LOG: {schema}.{obj_name} on table {base_table}")
+                else:
+                    logger.warning(f"Cannot drop MVIEW LOG {obj_name} - base table not found in info")
+                    skipped_count += 1
+                    continue
+            elif obj_type == 'INDEX':
+                cursor.execute(f'DROP INDEX "{schema}"."{obj_name}"')
+                logger.info(f"Dropped INDEX: {schema}.{obj_name}")
+            elif obj_type == 'PRIMARY KEY':
+                # Get the table name from the info field
+                table_name = _get_table_for_object(obj)
+                if table_name:
+                    cursor.execute(f'ALTER TABLE "{schema}"."{table_name}" DROP CONSTRAINT "{obj_name}"')
+                    logger.info(f"Dropped PRIMARY KEY: {schema}.{obj_name} on table {table_name}")
+                else:
+                    logger.warning(f"Cannot drop PRIMARY KEY {obj_name} - table name not found in info")
+                    skipped_count += 1
+                    continue
+            else:
+                logger.warning(f"Unknown object type: {obj_type} for {obj_name}")
+                skipped_count += 1
+                continue
+            
+            dropped_count += 1
+            
+        except Exception as e:
+            error_msg = str(e)
+            
+            # Check if error indicates object doesn't exist (already dropped with parent table)
+            if 'ORA-00942' in error_msg or 'ORA-01418' in error_msg or 'does not exist' in error_msg.lower():
+                logger.info(f"Object {obj_name} already dropped (likely with parent table)")
+                auto_skipped_count += 1
+                continue
+            
+            logger.warning(f"Failed to drop {obj_type} {obj_name}: {error_msg}")
+            
+            # Show error dialog with Stop/Skip/Force options
+            response = _show_error_dialog(
+                parent_window,
+                obj_name,
+                obj_type,
+                error_msg,
+                remaining=remaining
+            )
+            
+            if response == 'stop':
+                logger.info("Drop operation stopped by user")
+                break
+            elif response == 'force' and obj_type == 'TABLE':
+                # Try CASCADE CONSTRAINTS for tables with FK references
+                try:
+                    cursor.execute(f'DROP TABLE "{schema}"."{obj_name}" CASCADE CONSTRAINTS PURGE')
+                    dropped_count += 1
+                    logger.info(f"Force dropped TABLE (CASCADE CONSTRAINTS): {schema}.{obj_name}")
+                except Exception as e2:
+                    skipped_count += 1
+                    logger.warning(f"Force drop also failed for {obj_name}: {e2}")
+            else:  # skip
+                skipped_count += 1
+                logger.info(f"Skipped {obj_type}: {obj_name}")
+    
+    # Commit changes
+    try:
+        conn.commit()
+    except Exception as e:
+        logger.warning(f"Failed to commit: {e}")
+    
+    # Close connection
+    try:
+        cursor.close()
+    except Exception:
+        pass
+    try:
+        conn.close()
+    except Exception:
+        pass
+    
+    # Cleanup DWH session if applicable
+    try:
+        if schema_choice == 'dwh':
+            dwh_session.cleanup(parent_window)
+    except Exception:
+        logger.debug('DWH cleanup failed', exc_info=True)
+    
+    # Set status back to idle (green indicator)
+    set_status('idle')
+    
+    # Show summary
+    if dropped_count > 0 or skipped_count > 0 or auto_skipped_count > 0:
+        summary_msg = f"Dropped: {dropped_count}"
+        if auto_skipped_count > 0:
+            summary_msg += f"\nAuto-dropped with parent: {auto_skipped_count}"
+        if skipped_count > 0:
+            summary_msg += f"\nSkipped (errors): {skipped_count}"
+        messagebox.showinfo("Drop Complete", summary_msg, parent=parent_window)
+    
+    # Bring main window to front
+    try:
+        ensure_root_on_top(parent_window)
+    except Exception:
+        pass
+    
+    # Call completion callback (e.g., refresh object list)
+    if on_complete and (dropped_count > 0 or auto_skipped_count > 0):
+        try:
+            on_complete()
+        except Exception as e:
+            logger.warning(f"on_complete callback failed: {e}")
+    
+    logger.info(f"Drop operation complete. Dropped: {dropped_count}, Auto-skipped: {auto_skipped_count}, Skipped: {skipped_count}")
+    return dropped_count > 0 or auto_skipped_count > 0

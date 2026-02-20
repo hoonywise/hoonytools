@@ -1703,7 +1703,7 @@ def _compute_col_sizes(df, buffer=1.2, minimum=20):
     return sizes
 
 
-def load_files_gui(parent=None, schema_choice='user'):
+def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
     """Open the structured Data Loader dialog.
 
     Parameters
@@ -1712,6 +1712,9 @@ def load_files_gui(parent=None, schema_choice='user'):
         The launcher root window.
     schema_choice : str
         'user' or 'dwh' — determines the target schema.
+    on_status_change : callable or None
+        Callback function(status) where status is 'busy', 'aborting', or 'idle'.
+        Used to update the main GUI status indicator.
     """
     import math
     from tkinter import Toplevel, Frame, Label, Button, Entry, StringVar, IntVar
@@ -1728,6 +1731,17 @@ def load_files_gui(parent=None, schema_choice='user'):
     #     'table_name': str, 'rows': int, 'cols': int,
     #     'col_sizes': dict, 'columns': list }
     file_entries = []
+
+    # --- Status callback helper for main GUI indicator ---
+    def _set_main_status(status):
+        """Update main GUI status indicator if callback provided."""
+        if on_status_change:
+            try:
+                on_status_change(status)
+                if parent:
+                    parent.update_idletasks()
+            except Exception:
+                pass
 
     # --- Build dialog window ---
     if parent:
@@ -1952,6 +1966,7 @@ def load_files_gui(parent=None, schema_choice='user'):
         abort_manager.set_abort(True)
         logger.warning("Abort requested by user (loader).")
         status_var.set('Aborting...')
+        _set_main_status('aborting')  # Turn main GUI indicator amber
         abort_btn.config(state='disabled')
 
         # Close DWH connections in background if applicable
@@ -2017,6 +2032,7 @@ def load_files_gui(parent=None, schema_choice='user'):
                     status_var.set('Aborted.')
                 except Exception:
                     pass
+                _set_main_status('idle')  # Turn main GUI indicator green
 
             try:
                 win.after(0, _reenable)
@@ -2365,6 +2381,7 @@ def load_files_gui(parent=None, schema_choice='user'):
         load_btn.config(state='disabled')
         abort_btn.config(state='normal')
         status_var.set('Connecting...')
+        _set_main_status('busy')  # Turn main GUI indicator red
         win.update_idletasks()
 
         # Snapshot entries for the worker (avoid reading UI from background)
@@ -2471,6 +2488,7 @@ def load_files_gui(parent=None, schema_choice='user'):
                 def _on_worker_done():
                     load_btn.config(state='normal')
                     abort_btn.config(state='disabled')
+                    _set_main_status('idle')  # Turn main GUI indicator green
                 win.after(0, _on_worker_done)
 
         def _load_one_table(conn, cursor, schema, tbl_name, df, col_sizes, mode,
