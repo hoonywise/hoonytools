@@ -1,5 +1,4 @@
 import tkinter as tk
-from tkinter import messagebox
 import logging
 try:
     import tkinter.ttk as ttk
@@ -48,6 +47,29 @@ def run_mv_refresh_gui(on_finish=None):
     except Exception:
         detect_existing_mlog = None
         get_dependent_mviews = None
+
+    # Use shared safe messagebox helper when available for consistent parenting
+    try:
+        from loaders import safe_messagebox as _safe_messagebox
+    except Exception:
+        def _safe_messagebox(fn_name: str, *args, dlg=None):
+            try:
+                from tkinter import messagebox as _messagebox
+            except Exception:
+                _messagebox = None
+            try:
+                if _messagebox is None:
+                    return None
+                if dlg is not None:
+                    return getattr(_messagebox, fn_name)(*args, parent=dlg)
+                return getattr(_messagebox, fn_name)(*args)
+            except Exception:
+                try:
+                    return getattr(_messagebox, fn_name)(*args)
+                except Exception:
+                    if fn_name.startswith('ask'):
+                        return False
+                    return None
 
     def create_materialized_view_logs(cursor, conn, tables, log_type, include_new_values=True):
         for t in tables:
@@ -323,7 +345,7 @@ def run_mv_refresh_gui(on_finish=None):
         if not dconn:
             dconn = get_db_connection(force_shared=True, root=root)
             if not dconn:
-                messagebox.showwarning("DWH Login", "DWH login cancelled or failed.")
+                _safe_messagebox('showwarning', "DWH Login", "DWH login cancelled or failed.", dlg=root)
                 return
             setattr(root, '_dwh_conn', dconn)
             try:
@@ -516,7 +538,7 @@ def run_mv_refresh_gui(on_finish=None):
     def do_refresh():
         sel = getattr(root, '_last_selected', None)
         if not sel:
-            messagebox.showwarning("Select MV", "Please select a materialized view first.")
+            _safe_messagebox('showwarning', "Select MV", "Please select a materialized view first.", dlg=root)
             return
         source = sel.get('source')
         qualified = sel.get('qualified')
@@ -526,7 +548,7 @@ def run_mv_refresh_gui(on_finish=None):
                 cur = conn.cursor()
                 cur.execute(f"BEGIN DBMS_MVIEW.REFRESH('{qualified}','{mode}'); END;")
                 conn.commit()
-                messagebox.showinfo("Refresh", f"Refresh of {qualified} requested (COMPLETE).")
+                _safe_messagebox('showinfo', "Refresh", f"Refresh of {qualified} requested (COMPLETE).", dlg=root)
                 try:
                     ensure_root_on_top()
                 except Exception:
@@ -539,7 +561,7 @@ def run_mv_refresh_gui(on_finish=None):
                 if not dconn:
                     dconn = get_db_connection(force_shared=True, root=root)
                     if not dconn:
-                        messagebox.showwarning("DWH Login", "DWH login cancelled or failed.")
+                        _safe_messagebox('showwarning', "DWH Login", "DWH login cancelled or failed.", dlg=root)
                         return
                     setattr(root, '_dwh_conn', dconn)
                     try:
@@ -554,7 +576,7 @@ def run_mv_refresh_gui(on_finish=None):
                 # qualified includes owner
                 cur.execute(f"BEGIN DBMS_MVIEW.REFRESH('{qualified}','{mode}'); END;")
                 dconn.commit()
-                messagebox.showinfo("Refresh", f"Refresh of {qualified} requested (COMPLETE).")
+                _safe_messagebox('showinfo', "Refresh", f"Refresh of {qualified} requested (COMPLETE).", dlg=root)
                 try:
                     ensure_root_on_top()
                 except Exception:
@@ -565,12 +587,12 @@ def run_mv_refresh_gui(on_finish=None):
                 load_dwh_mviews(dconn, owner, qualified)
         except Exception as e:
             logger.exception(f"Failed to refresh {qualified}: {e}")
-            messagebox.showerror("Refresh Failed", str(e))
+            _safe_messagebox('showerror', "Refresh Failed", str(e), dlg=root)
 
     def do_create_logs():
         sel = getattr(root, '_last_selected', None)
         if not sel:
-            messagebox.showwarning("Select MV", "Please select a materialized view first.")
+            _safe_messagebox('showwarning', "Select MV", "Please select a materialized view first.", dlg=root)
             return
         source = sel.get('source')
         qualified = sel.get('qualified')
@@ -585,7 +607,7 @@ def run_mv_refresh_gui(on_finish=None):
             if not dconn:
                 dconn = get_db_connection(force_shared=True, root=root)
                 if not dconn:
-                    messagebox.showwarning("DWH Login", "DWH login cancelled or failed.")
+                    _safe_messagebox('showwarning', "DWH Login", "DWH login cancelled or failed.", dlg=root)
                     return
                 setattr(root, '_dwh_conn', dconn)
                 try:
@@ -603,7 +625,7 @@ def run_mv_refresh_gui(on_finish=None):
             active_cursor = getattr(root, '_dwh_conn').cursor()
         tables = detect_tables_from_sql(mv_query)
         if not tables:
-            messagebox.showinfo("No tables", "Could not detect base tables from the MV query.")
+            _safe_messagebox('showinfo', "No tables", "Could not detect base tables from the MV query.", dlg=root)
             try:
                 ensure_root_on_top()
             except Exception:
@@ -611,7 +633,7 @@ def run_mv_refresh_gui(on_finish=None):
             return
         # Ask user to confirm table list and chosen options
         opt_label = f"Create materialized view logs on: {', '.join(tables)}\nType: {log_type_var.get()}\nINCLUDING NEW VALUES: {include_new_var.get()}"
-        if not messagebox.askyesno("Create Logs", opt_label):
+        if not _safe_messagebox('askyesno', "Create Logs", opt_label, dlg=root):
             return
 
         results = []
@@ -646,7 +668,7 @@ def run_mv_refresh_gui(on_finish=None):
                                     dlg.title(f"Existing MV Log on {table_name}")
                                     dlg.grab_set()
                                 except Exception:
-                                    ans = messagebox.askyesno("Existing MV Log Detected", f"A materialized view log already exists on {table_name}.\nDrop and recreate?")
+                                    ans = _safe_messagebox('askyesno', "Existing MV Log Detected", f"A materialized view log already exists on {table_name}.\nDrop and recreate?", dlg=root)
                                     return 'drop' if ans else None
 
                                 tk.Label(dlg, text=f"A materialized view log already exists on {table_name}.").pack(padx=12, pady=(8,4), anchor='w')
@@ -713,10 +735,10 @@ def run_mv_refresh_gui(on_finish=None):
                                         except Exception:
                                             diag_lines = ["(could not collect diag counts)"]
                                         txt = f"detect_existing_mlog meta: {meta_text}\n" + '\n'.join(diag_lines)
-                                        messagebox.showinfo('Debug Info', txt)
+                                        _safe_messagebox('showinfo', 'Debug Info', txt, dlg=dlg)
                                     except Exception as e:
                                         try:
-                                            messagebox.showwarning('Debug Failed', f'Could not show debug info: {e}')
+                                            _safe_messagebox('showwarning', 'Debug Failed', f'Could not show debug info: {e}', dlg=dlg)
                                         except Exception:
                                             pass
 
@@ -795,7 +817,7 @@ def run_mv_refresh_gui(on_finish=None):
                         # If DB reports the log already exists (ORA-12000), offer to drop & recreate
                         if 'ORA-12000' in err or 'materialized view log already exists' in err.lower():
                             try:
-                                do_drop = messagebox.askyesno('Existing MV Log', f"The database reports a materialized view log already exists on {t}.\nDrop and recreate with the selected options?")
+                                do_drop = _safe_messagebox('askyesno', 'Existing MV Log', f"The database reports a materialized view log already exists on {t}.\nDrop and recreate with the selected options?", dlg=root)
                             except Exception:
                                 do_drop = False
                             if do_drop:
@@ -825,14 +847,14 @@ def run_mv_refresh_gui(on_finish=None):
             if reused:
                 msgs.append(f"Reused existing logs: {', '.join(reused)}")
             if msgs:
-                messagebox.showinfo("MV Logs Created", "\n".join(msgs))
+                _safe_messagebox('showinfo', "MV Logs Created", "\n".join(msgs), dlg=root)
                 try:
                     ensure_root_on_top()
                 except Exception:
                     pass
             if failed:
                 msg_lines = [f"{t}: {err}" for (t, err) in failed]
-                messagebox.showwarning("Some logs failed", "\n".join(msg_lines))
+                _safe_messagebox('showwarning', "Some logs failed", "\n".join(msg_lines), dlg=root)
                 try:
                     ensure_root_on_top()
                 except Exception:
@@ -852,7 +874,7 @@ def run_mv_refresh_gui(on_finish=None):
                 pass
         except Exception as e:
             logger.exception(f"Failed to create logs: {e}")
-            messagebox.showerror("Error", str(e))
+            _safe_messagebox('showerror', "Error", str(e), dlg=root)
             try:
                 ensure_root_on_top()
             except Exception:

@@ -7,7 +7,7 @@ try:
 except Exception:
     ttk = None
 from pathlib import Path
-from tkinter import Toplevel, Listbox, Scrollbar, Button, Label, Entry, StringVar, Checkbutton, IntVar, messagebox
+from tkinter import Toplevel, Listbox, Scrollbar, Button, Label, Entry, StringVar, Checkbutton, IntVar
 from tkinter.constants import MULTIPLE, END, LEFT, RIGHT, Y, BOTH
 from libs.paths import PROJECT_PATH as base_path
 
@@ -15,6 +15,29 @@ from libs.oracle_db_connector import get_db_connection
 from libs import dwh_session
 
 logger = logging.getLogger(__name__)
+
+# Use shared safe messagebox helper when available for consistent parenting
+try:
+    from loaders import safe_messagebox as _safe_messagebox
+except Exception:
+    def _safe_messagebox(fn_name: str, *args, dlg=None):
+        try:
+            from tkinter import messagebox as _messagebox
+        except Exception:
+            _messagebox = None
+        try:
+            if _messagebox is None:
+                return None
+            if dlg is not None:
+                return getattr(_messagebox, fn_name)(*args, parent=dlg)
+            return getattr(_messagebox, fn_name)(*args)
+        except Exception:
+            try:
+                return getattr(_messagebox, fn_name)(*args)
+            except Exception:
+                if fn_name.startswith('ask'):
+                    return False
+                return None
 
 
 def center_window(window, width, height):
@@ -448,7 +471,7 @@ def main(parent=None):
                 pass
         except Exception as e:
             logger.exception('Failed to list tables: %s', e)
-            messagebox.showerror('Error', f'Failed to list tables: {e}')
+            _safe_messagebox('showerror', 'Error', f'Failed to list tables: {e}', dlg=win)
         finally:
             cur.close()
 
@@ -503,7 +526,7 @@ def main(parent=None):
                 pass
         except Exception as e:
             logger.exception('Failed to list columns: %s', e)
-            messagebox.showerror('Error', f'Failed to list columns: {e}')
+            _safe_messagebox('showerror', 'Error', f'Failed to list columns: {e}', dlg=win)
         finally:
             cur.close()
 
@@ -627,7 +650,7 @@ def main(parent=None):
     def detect_candidates():
         sel = tbl_list.curselection()
         if not sel:
-            messagebox.showwarning('Select table', 'Please select a table first')
+            _safe_messagebox('showwarning', 'Select table', 'Please select a table first', dlg=win)
             return
         idx = sel[0]
         try:
@@ -715,17 +738,17 @@ def main(parent=None):
                     pass
             else:
                 logger.info('No PK candidates found for %s.%s; candidates list empty', owner, tbl)
-                messagebox.showinfo('No candidates', 'No single-column PK candidates detected. You can still select columns for a composite PK.')
+                _safe_messagebox('showinfo', 'No candidates', 'No single-column PK candidates detected. You can still select columns for a composite PK.', dlg=win)
         except Exception as e:
             logger.exception('Candidate detection failed: %s', e)
-            messagebox.showerror('Error', f'Candidate detection failed: {e}')
+            _safe_messagebox('showerror', 'Error', f'Candidate detection failed: {e}', dlg=win)
         finally:
             cur.close()
 
     def add_primary_key():
         sel = tbl_list.curselection()
         if not sel:
-            messagebox.showwarning('Select table', 'Please select a table first')
+            _safe_messagebox('showwarning', 'Select table', 'Please select a table first', dlg=win)
             return
         idx = sel[0]
         try:
@@ -735,7 +758,7 @@ def main(parent=None):
             tbl = tbl_list.get(idx).split('  (rows:')[0].strip()
         cols_idx = col_list.curselection()
         if not cols_idx:
-            messagebox.showwarning('Select columns', 'Select one or more columns for the primary key')
+            _safe_messagebox('showwarning', 'Select columns', 'Select one or more columns for the primary key', dlg=win)
             return
         cols = [col_list.get(i) for i in cols_idx]
 
@@ -748,7 +771,7 @@ def main(parent=None):
             cur.execute(null_sql)
             nulls = cur.fetchone()[0]
             if nulls > 0:
-                if not messagebox.askyesno('Nulls found', f'{nulls} row(s) have NULL in selected column(s). Proceed?'):
+                if not _safe_messagebox('askyesno', 'Nulls found', f'{nulls} row(s) have NULL in selected column(s). Proceed?', dlg=win):
                     return
 
             # duplicate check
@@ -758,7 +781,7 @@ def main(parent=None):
             cur.execute(dup_sql)
             dups = cur.fetchone()[0]
             if dups > 0:
-                messagebox.showerror('Duplicates found', f'{dups} duplicate key value(s) found. Cannot create PK.')
+                _safe_messagebox('showerror', 'Duplicates found', f'{dups} duplicate key value(s) found. Cannot create PK.', dlg=win)
                 return
 
             # constraint name
@@ -766,18 +789,18 @@ def main(parent=None):
             cname = _sanitize_constraint_name(cname)
 
             sql = f'ALTER TABLE {_quote_ident(owner)}.{_quote_ident(tbl)} ADD CONSTRAINT {_quote_ident(cname)} PRIMARY KEY ({group_cols})'
-            if not messagebox.askyesno('Confirm', f'Execute:\n{sql}'):
+            if not _safe_messagebox('askyesno', 'Confirm', f'Execute:\n{sql}', dlg=win):
                 return
 
             try:
                 cur.execute(sql)
                 conn.commit()
-                messagebox.showinfo('Success', f'Primary key {cname} created on {tbl}.')
+                _safe_messagebox('showinfo', 'Success', f'Primary key {cname} created on {tbl}.', dlg=win)
                 logger.info('Created PK %s on %s.%s', cname, owner, tbl)
             except Exception as e:
                 conn.rollback()
                 logger.exception('Failed to create PK: %s', e)
-                messagebox.showerror('Error', f'Failed to create PK: {e}')
+                _safe_messagebox('showerror', 'Error', f'Failed to create PK: {e}', dlg=win)
         finally:
             cur.close()
 
