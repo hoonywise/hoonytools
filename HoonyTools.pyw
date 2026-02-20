@@ -222,6 +222,85 @@ def center_window(window, width, height):
 def abort_process():
     abort_manager.set_abort(True)
     logger.warning("⛔ Abort requested by user.")
+    # Best-effort UI updates and attempt to interrupt blocking DB calls.
+    try:
+        # Update status light if present
+        if 'status_light' in globals() and getattr(status_light, 'winfo_exists', lambda: False)():
+            try:
+                status_light.config(text="⏹️ Aborting...")
+            except Exception:
+                pass
+
+        # Disable Run control to avoid starting another operation while aborting
+        try:
+            if 'run_btn' in globals() and run_btn:
+                run_btn.config(state='disabled')
+        except Exception:
+            pass
+        try:
+            if 'tool_menu' in globals() and tool_menu:
+                try:
+                    tool_menu.config(state='disabled')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Attempt to close any registered DWH connections on this root to help unblock DB calls
+        try:
+            from libs import dwh_session
+            if 'root' in globals():
+                try:
+                    dwh_session.close_dwh_connection(root)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Monitor abort flag and re-enable UI when cleared by workers
+        def _monitor_abort():
+            import time
+            try:
+                while abort_manager.should_abort:
+                    time.sleep(0.2)
+            except Exception:
+                pass
+
+            def _reenable():
+                try:
+                    if 'status_light' in globals() and getattr(status_light, 'winfo_exists', lambda: False)():
+                        status_light.config(text="🟢")
+                except Exception:
+                    pass
+                try:
+                    if 'run_btn' in globals() and run_btn:
+                        run_btn.config(state='normal')
+                except Exception:
+                    pass
+                try:
+                    if 'tool_menu' in globals() and tool_menu:
+                        try:
+                            tool_menu.config(state='readonly')
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            try:
+                if 'root' in globals():
+                    try:
+                        root.after(0, _reenable)
+                    except Exception:
+                        _reenable()
+                else:
+                    _reenable()
+            except Exception:
+                pass
+
+        import threading
+        threading.Thread(target=_monitor_abort, daemon=True).start()
+    except Exception:
+        pass
 
 def run_selected():
     global should_abort
@@ -368,7 +447,7 @@ def launch_tool_gui():
 
 
     
-    global root, selected_tool, log_text, log_stream, status_light
+    global root, selected_tool, log_text, log_stream, status_light, run_btn, tool_menu, abort_btn
 
     # Create the main Tk root directly and keep it hidden while login dialog appears.
     root = tk.Tk()
@@ -842,8 +921,11 @@ def launch_tool_gui():
     btn_frame = tk.Frame(toolbar_inner)
     btn_frame.pack(side="left", padx=12)
 
-    tk.Button(btn_frame, text="Run", width=10, command=lambda: run_selected()).pack(side="left", padx=7)
-    tk.Button(btn_frame, text="Abort", width=10, command=abort_process).pack(side="left", padx=7)
+    # Keep references to these controls so abort handler can disable/enable them
+    run_btn = tk.Button(btn_frame, text="Run", width=10, command=lambda: run_selected())
+    run_btn.pack(side="left", padx=7)
+    abort_btn = tk.Button(btn_frame, text="Abort", width=10, command=abort_process)
+    abort_btn.pack(side="left", padx=7)
 
     def safe_exit():
         global is_gui_running
@@ -871,6 +953,13 @@ def launch_tool_gui():
     # Ensure the window manager close button performs the same cleanup
     try:
         root.protocol("WM_DELETE_WINDOW", safe_exit)
+    except Exception:
+        pass
+
+    # Keyboard shortcut: Ctrl+C to request abort (acts like pressing Abort)
+    try:
+        root.bind_all('<Control-c>', lambda e: abort_process())
+        root.bind_all('<Control-C>', lambda e: abort_process())
     except Exception:
         pass
 

@@ -40,3 +40,8 @@ def cleanup_on_abort(conn, cursor):
             conn.close()
         except:
             pass
+        # Clear abort state and created table tracking so caller/monitor can resume
+        try:
+            reset()
+        except Exception:
+            pass
