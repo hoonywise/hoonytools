@@ -509,11 +509,14 @@ def launch_tool_gui():
         # allow frames to share available vertical space equally
         frame.pack(fill="both", pady=(0, 8), expand=True)
         # Lock treeview width to avoid auto-resize when labels change
-        tv = ttk.Treeview(frame, columns=("name", "type"), show="headings")
+        # Add a third column `pk` to show primary key info (comma-separated columns or empty)
+        tv = ttk.Treeview(frame, columns=("name", "type", "pk"), show="headings")
         tv.heading("name", text="Name")
         tv.heading("type", text="Type")
-        tv.column("name", width=180, anchor="w", stretch=False)
+        tv.heading("pk", text="PK")
+        tv.column("name", width=160, anchor="w", stretch=False)
         tv.column("type", width=120, anchor="center", stretch=False)
+        tv.column("pk", width=160, anchor="w", stretch=False)
         vs = tk.Scrollbar(frame, orient="vertical", command=tv.yview)
         tv.configure(yscrollcommand=vs.set)
         tv.pack(side="left", fill="both", expand=True)
@@ -598,8 +601,15 @@ def launch_tool_gui():
             tv.delete(*tv.get_children())
         except Exception:
             pass
-        for name, obj_type in rows:
-            tv.insert("", "end", values=(name, obj_type))
+        for row in rows:
+            # rows may be tuples of (name, type) or (name, type, pk)
+            try:
+                name = row[0]
+                obj_type = row[1]
+                pk = row[2] if len(row) > 2 else ""
+            except Exception:
+                continue
+            tv.insert("", "end", values=(name, obj_type, pk or ""))
 
     # Background refreshers
     def refresh_user_objects():
@@ -613,7 +623,18 @@ def launch_tool_gui():
             try:
                 cur = conn.cursor()
                 cur.execute("""
-                    SELECT object_name, object_type FROM all_objects
+                    SELECT ao.object_name,
+                           ao.object_type,
+                           (
+                             SELECT LISTAGG(acc.column_name, ', ') WITHIN GROUP (ORDER BY acc.position)
+                             FROM all_constraints ac
+                             JOIN all_cons_columns acc
+                               ON ac.owner = acc.owner AND ac.constraint_name = acc.constraint_name
+                             WHERE ac.owner = ao.owner
+                               AND ac.table_name = ao.object_name
+                               AND ac.constraint_type = 'P'
+                           ) AS primary_key_cols
+                    FROM all_objects ao
                     WHERE owner = :owner
                     AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
                     ORDER BY object_name
@@ -660,7 +681,18 @@ def launch_tool_gui():
                     conn = oracledb.connect(user=creds["username"], password=creds["password"], dsn=creds["dsn"])
                     cur = conn.cursor()
                     cur.execute("""
-                        SELECT object_name, object_type FROM all_objects
+                        SELECT ao.object_name,
+                               ao.object_type,
+                               (
+                                 SELECT LISTAGG(acc.column_name, ', ') WITHIN GROUP (ORDER BY acc.position)
+                                 FROM all_constraints ac
+                                 JOIN all_cons_columns acc
+                                   ON ac.owner = acc.owner AND ac.constraint_name = acc.constraint_name
+                                 WHERE ac.owner = ao.owner
+                                   AND ac.table_name = ao.object_name
+                                   AND ac.constraint_type = 'P'
+                               ) AS primary_key_cols
+                        FROM all_objects ao
                         WHERE owner = :owner
                         AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
                         ORDER BY object_name
