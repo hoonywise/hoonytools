@@ -4,6 +4,32 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🚀 v1.4.5 — Pane-only dark mode + modal dialog hygiene (2026-02-20)
+
+This patch refines pane-only dark mode behavior for SQL loaders and hardens dialog parenting so tool windows remain properly modal to the launcher.
+
+### Added
+
+- Shared `safe_messagebox(...)` helper (loaders package) to centralize parented messageboxes with safe fallbacks.
+
+### Changed
+
+- SQL View and SQL MV loaders now apply dark mode only to the content panes (SQL editor + MV name entry), detect theme before widget creation to avoid flash, and register theme callbacks when available (polling fallback retained).
+- Messageboxes across MV Manager, Object Cleanup, PK Designate, and Excel/CSV loader now use parented calls for proper modality.
+- Oracle connector uses a safe messagebox wrapper for queued errors and login validation.
+
+### Fixed
+
+- Modal dialogs now consistently parent to the active tool window or dialog, reducing focus/stacking issues after prompts.
+
+### Files touched (high level)
+
+- `loaders/sql_view_loader.py`, `loaders/sql_mv_loader.py`, `loaders/__init__.py`
+- `tools/mv_refresh_gui.py`, `tools/object_cleanup_gui.py`, `tools/pk_designate_gui.py`
+- `loaders/excel_csv_loader.py`, `libs/oracle_db_connector.py`
+
+---
+
 ## 🚀 v1.4.0 — Abort & Prompt Robustness Improvements (2026-02-19)
 
 This release improves the Excel/CSV loader and launcher Abort flow so UI remains responsive and cleanup is robust for both user and shared DWH logins.

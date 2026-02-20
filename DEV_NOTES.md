@@ -317,3 +317,30 @@ Developer notes / follow-ups
 1. Consider adding a small lock around `created_tables` mutations (`register_created_table`, `cleanup_on_abort`, and fallback loop) to eliminate race windows.
 2. Sweep remaining DPY codes (e.g., DPY-4026) and normalize expected-driver errors via `abort_manager.is_expected_disconnect()` or a new helper to centralize downgrade decisions.
 3. Add more instrumentation to fallback cleanup: log which credentials were used, and detailed per-table drop results to aid post-mortem in rare failures.
+
+---
+
+### 🧩 Entry #10: Pane-only dark mode + dialog parenting sweep (2026-02-20)
+
+Summary: This session focused on two related UI quality issues: avoiding white->black flashes when pane-only dark mode is active, and ensuring dialogs remain properly modal and parented to the active tool window.
+
+Findings
+
+- Tk/ttk style lookups are applied at widget creation time for text widgets. If the SQL editor or entry fields are created with default colors and then reconfigured, you can see a visible flash when dark mode is already enabled.
+- Unparented messagebox dialogs can cause focus and stacking glitches; the tool window can end up behind the launcher after the dialog closes unless dialogs are parented and (optionally) the tool is lifted after the prompt.
+
+Changes made
+
+- SQL View/MV loaders now detect pane-only dark mode before creating content widgets and create the SQL editor and MV name entry with the correct initial colors to avoid the flash.
+- Added a shared `safe_messagebox(...)` helper in the loaders package and switched major tools to use it (MV Manager, Object Cleanup, PK Designate, Excel/CSV loader).
+- Added a local safe messagebox wrapper in `libs/oracle_db_connector.py` for queued errors and login validation.
+
+Challenges / notes
+
+- Some modules rely on `_default_root` or UI globals; static analysis may flag these as unknown. We used guarded patterns elsewhere (`getattr(tk, '_default_root', None)`) to keep lint noise down.
+- If you expand the safe messagebox sweep, ensure you pass the correct `dlg` (inner dialog vs main tool window) so prompts stay modal to the right window.
+
+Follow-ups
+
+1. Consider extracting the safe messagebox helper into `libs/ui_utils.py` if other non-loader modules need it (avoid circular imports).
+2. Run a linter pass after UI edits to catch unbound-variable warnings introduced by large refactors.
