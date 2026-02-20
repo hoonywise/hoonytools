@@ -616,9 +616,9 @@ def run_sql_mv_loader(on_finish=None):
         try:
             if use_dwh:
                 # Register with central DWH session manager for cleanup
-                from tkinter import _default_root
+                from tkinter import _default_root as _tk_default_root
                 from libs import dwh_session
-                dwh_session.register_connection(_default_root, conn)
+                dwh_session.register_connection(_tk_default_root, conn)
         except Exception:
             logger.debug('Failed to register dwh connection', exc_info=True)
         cursor = None
@@ -791,14 +791,16 @@ def run_sql_mv_loader(on_finish=None):
                                 msgs.append(f"Reused existing logs: {', '.join(reused)}")
                             if msgs:
                                 try:
-                                    messagebox.showinfo("MV Logs Created", "\n".join(msgs))
+                                    messagebox.showinfo("MV Logs Created", "\n".join(msgs), parent=builder_window)
+                                    ensure_builder_on_top()
                                 except Exception:
                                     pass
                             if failed:
                                 msg_lines = [f"{t}: {err}" for (t, err) in failed]
                                 msg = "Some MV logs could not be created:\n\n" + "\n".join(msg_lines) + "\n\nDo you want to continue creating the materialized view anyway?"
                                 try:
-                                    cont = messagebox.askyesno("MV Log Creation Failed", msg)
+                                    cont = messagebox.askyesno("MV Log Creation Failed", msg, parent=builder_window)
+                                    ensure_builder_on_top()
                                 except Exception:
                                     cont = False
                                 if not cont:
@@ -838,7 +840,11 @@ def run_sql_mv_loader(on_finish=None):
                 conn.commit()
                 logger.info(f"✅ Materialized View '{mv_name}' created and granted SELECT to PUBLIC.")
 
-                messagebox.showinfo("Success", f"✅ Materialized View '{mv_name}' created successfully.")
+                try:
+                    messagebox.showinfo("Success", f"✅ Materialized View '{mv_name}' created successfully.", parent=builder_window)
+                    ensure_builder_on_top()
+                except Exception:
+                    messagebox.showinfo("Success", f"✅ Materialized View '{mv_name}' created successfully.")
                 builder_window.destroy()
                 if on_finish:
                     on_finish()
@@ -858,7 +864,11 @@ def run_sql_mv_loader(on_finish=None):
                 # Provide helpful hint for common MV issues
                 hint = "\n\nTip: REFRESH FAST/ON COMMIT may require materialized view logs or PKs on source tables."
                 # Show dialog with concise message but include trace in log file
-                messagebox.showerror("Error", f"❌ Failed to create materialized view:\n{e}{hint}")
+                try:
+                    messagebox.showerror("Error", f"❌ Failed to create materialized view:\n{e}{hint}", parent=builder_window)
+                    ensure_builder_on_top()
+                except Exception:
+                    messagebox.showerror("Error", f"❌ Failed to create materialized view:\n{e}{hint}")
         finally:
             try:
                 if cursor:
@@ -882,6 +892,15 @@ def run_sql_mv_loader(on_finish=None):
     # widen builder window so bottom option row isn't squished on smaller displays
     builder_window.geometry("1300x740")
     builder_window.grab_set()
+
+    # Helper to briefly bring the builder window to the front after modal messageboxes
+    def ensure_builder_on_top(delay=50):
+        try:
+            builder_window.lift()
+            builder_window.attributes('-topmost', True)
+            builder_window.after(delay, lambda: builder_window.attributes('-topmost', False))
+        except Exception:
+            pass
 
     # Preserve taskbar icon and branding
     try:
