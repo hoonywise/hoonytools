@@ -2,6 +2,10 @@ import re
 import logging
 import json
 import tkinter as tk
+try:
+    import tkinter.ttk as ttk
+except Exception:
+    ttk = None
 from pathlib import Path
 from tkinter import Toplevel, Listbox, Scrollbar, Button, Label, Entry, StringVar, Checkbutton, IntVar, messagebox
 from tkinter.constants import MULTIPLE, END, LEFT, RIGHT, Y, BOTH
@@ -253,6 +257,86 @@ def main(parent=None):
     Label(ctrl, text='Constraint name:').pack(pady=(0,4))
     cname_entry = Entry(ctrl, textvariable=constraint_name_var, width=28)
     cname_entry.pack()
+    # Apply pane-aware colors: if the parent/dialog background is dark,
+    # make the entry dark background with light text so it matches launcher
+    # pane-only dark mode. This detects the window background brightness
+    # at creation time and adjusts the entry accordingly.
+    def _apply_entry_theme():
+        try:
+            bg = win.cget('bg')
+            dark = False
+            if isinstance(bg, str):
+                b = bg.strip()
+                if b.startswith('#') and len(b) >= 7:
+                    try:
+                        r = int(b[1:3], 16)
+                        g = int(b[3:5], 16)
+                        bl = int(b[5:7], 16)
+                        lum = 0.2126 * r + 0.7152 * g + 0.0722 * bl
+                        dark = lum < 128
+                    except Exception:
+                        dark = b.lower() in ('#000000', 'black')
+                else:
+                    dark = b.lower() in ('black',)
+            if dark:
+                try:
+                    cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+                except Exception:
+                    pass
+            else:
+                try:
+                    cname_entry.config(bg='white', fg='black', insertbackground='black')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    _apply_entry_theme()
+
+    # Periodically check the global Pane.Treeview style to detect launcher
+    # pane-only dark mode toggles and update the entry colors live. This is
+    # best-effort: it reads ttk.Style lookups which the launcher updates when
+    # toggling dark mode.
+    last_dark = None
+    def _poll_theme():
+        nonlocal last_dark
+        try:
+            dark = False
+            if ttk:
+                try:
+                    st = ttk.Style()
+                    bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+                    if isinstance(bg, str) and bg.strip():
+                        b = bg.strip().lower()
+                        if b in ('#000000', '#000') or 'black' in b:
+                            dark = True
+                except Exception:
+                    dark = False
+            # If detection changed, apply new colors
+            if dark is not last_dark:
+                last_dark = dark
+                if dark:
+                    try:
+                        cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        cname_entry.config(bg='white', fg='black', insertbackground='black')
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        try:
+            win.after(600, _poll_theme)
+        except Exception:
+            pass
+
+    # Start polling for theme changes
+    try:
+        win.after(600, _poll_theme)
+    except Exception:
+        pass
     # Button to restore full column list after detect filtered it
     def show_all_columns():
         try:
