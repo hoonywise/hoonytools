@@ -349,7 +349,19 @@ def run_mv_refresh_gui(on_finish=None):
         info_text.insert(tk.END, f"Name: {mv_display_name}\nBuild: {build}\nRefresh Method: {refresh_method}\nRefresh Type: {refresh_mode or 'ON DEMAND'}\nRewrite Enabled: {rewrite_enabled}\nLast Refresh: {last_refresh}\n")
         # Insert current log type information (bold, blue)
         try:
-            info_text.tag_configure('logtype', foreground='blue', font=('Arial', 10, 'bold'))
+            # Choose a readable logtype color depending on pane theme
+            fg = 'blue'
+            try:
+                if ttk:
+                    st = ttk.Style()
+                    sbg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+                    if isinstance(sbg, str) and sbg.strip():
+                        sb = sbg.strip().lower()
+                        if sb in ('#000000', '#000') or 'black' in sb:
+                            fg = '#66ccff'
+            except Exception:
+                pass
+            info_text.tag_configure('logtype', foreground=fg, font=('Arial', 10, 'bold'))
         except Exception:
             pass
         log_info = ''
