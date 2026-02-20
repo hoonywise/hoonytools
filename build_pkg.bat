@@ -33,7 +33,7 @@ if exist "%SOURCE_DIR%tools" xcopy /s /e /y /i "%SOURCE_DIR%tools" "%RELEASE_DIR
 REM Copy files if present
 if exist "%SOURCE_DIR%HoonyTools.pyw" copy "%SOURCE_DIR%HoonyTools.pyw" "%RELEASE_DIR%\" >nul
 :: Do not copy root-level config.py or setup_config.py; libs/ is already copied above
-if exist "%SOURCE_DIR%README.txt" copy "%SOURCE_DIR%README.txt" "%RELEASE_DIR%\" >nul
+if exist "%SOURCE_DIR%README.md" copy "%SOURCE_DIR%README.md" "%RELEASE_DIR%\" >nul
 if exist "%SOURCE_DIR%LICENSE.md" copy "%SOURCE_DIR%LICENSE.md" "%RELEASE_DIR%\" >nul
 if exist "%SOURCE_DIR%CHANGELOG.md" copy "%SOURCE_DIR%CHANGELOG.md" "%RELEASE_DIR%\" >nul
 if exist "%SOURCE_DIR%requirements.txt" copy "%SOURCE_DIR%requirements.txt" "%RELEASE_DIR%\" >nul
