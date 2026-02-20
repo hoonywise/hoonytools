@@ -1986,6 +1986,10 @@ def launch_tool_gui():
                     root.option_add('*Menu.activeForeground', '#ffffff')
                     try:
                         menu_bar.config(background='#000000', foreground='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                        try:
+                            view_menu.config(selectcolor='#ffffff')
+                        except Exception:
+                            pass
                     except Exception:
                         pass
                     # If using the custom in-window menu, style its frame/menubuttons too
@@ -2007,7 +2011,7 @@ def launch_tool_gui():
                                                 pass
                                         if m:
                                             try:
-                                                m.config(bg='#000000', fg='#ffffff')
+                                                m.config(bg='#000000', fg='#ffffff', selectcolor='#ffffff')
                                             except Exception:
                                                 pass
                                     except Exception:
@@ -2221,6 +2225,10 @@ def launch_tool_gui():
                             menu_bar.config(background='#d0d0d0', foreground='black', activebackground='#ffffff', activeforeground='black')
                         except Exception:
                             pass
+                        try:
+                            view_menu.config(selectcolor='#000000')
+                        except Exception:
+                            pass
                     except Exception:
                         pass
 
@@ -2242,7 +2250,7 @@ def launch_tool_gui():
                                                 pass
                                         if m:
                                             try:
-                                                m.config(bg='white', fg='black')
+                                                m.config(bg='white', fg='black', selectcolor='#000000')
                                             except Exception:
                                                 pass
                                     except Exception:
@@ -2514,11 +2522,12 @@ def launch_tool_gui():
                 if itype == 'command':
                     m.add_command(label=ilabel, command=icmd)
                 elif itype == 'check':
-                    # icon: pass variable as part of icmd tuple if provided
+                    # icmd can be callable or tuple (command, variable)
                     var = None
+                    cmd = icmd
                     if isinstance(icmd, tuple) and len(icmd) > 1:
-                        var = icmd[1]
-                    m.add_checkbutton(label=ilabel, command=(icmd if callable(icmd) else None), variable=var)
+                        cmd, var = icmd[0], icmd[1]
+                    m.add_checkbutton(label=ilabel, command=(cmd if callable(cmd) else None), variable=var)
                 elif itype == 'cascade':
                     m.add_cascade(label=ilabel, menu=icmd)
             # show popup on click
@@ -2529,7 +2538,7 @@ def launch_tool_gui():
         # Build View and Help menus using existing menu definitions
         # View: copy items from view_menu
         view_items = [
-            ('command', 'Dark Mode', lambda: view_menu.invoke(0))
+            ('check', 'Dark Mode', (_toggle_dark, dark_mode_var))
         ]
         # Help: use existing functions
         help_items = [
