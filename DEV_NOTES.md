@@ -286,3 +286,34 @@ Next steps (optional)
 1. Do a controlled repo-wide sweep to parent all messagebox calls used inside Toplevels and standardize on `ensure_*_on_top()` helper usage. I can generate a patch and a summary of changes for review.
 2. Run a linter (flake8/ruff/mypy) and fix the remaining diagnostics; I can apply low-risk fixes automatically.
 3. Add unit tests for `dwh_session` behaviors to verify cleanup clears in-memory credentials only when `[dwh]` section is absent in `libs/config.ini`.
+
+---
+
+### 🧪 Entry #9: Abort & Prompt Robustness (2026-02-19)
+
+Summary: This session hardened the abort flow across the Excel/CSV loader and the launcher so user and DWH loads can be cancelled without blocking the GUI or leaving created/staging tables behind.
+
+Findings
+
+- Background threads can block indefinitely when waiting for a main-thread prompt; previously this stalled abort flows and left partial state in the database.
+- Forcibly closing a worker's DB connection (to interrupt a blocking DB call) commonly causes oracledb to raise DPY-1001 (`not connected`) in later worker operations — this is expected and should not be logged as ERROR in abort flows.
+- Race between primary cleanup (using the worker's cursor) and fallback cleanup (opening a fresh connection) caused confusing duplicate DROP attempts; tracking must be updated when a drop succeeds.
+
+Changes made
+
+- Added `abort_manager.register_prompt_event(ev)` and `abort_manager.cancel_prompt_event()` to allow the launcher to wake workers waiting on prompts.
+- `call_ui()` in `loaders/excel_csv_loader.py` now registers a prompt Event and polls with a short timeout so worker threads can detect aborts while waiting for main-thread dialogs.
+- `HoonyTools.pyw` `abort_process()` now cancels registered prompt events in addition to destroying active prompt windows and attempting to close registered DB connections. Closing DWH connections happens in a background thread so the GUI doesn't block.
+- `libs/abort_manager.cleanup_on_abort()` made idempotent and defensive: logs created_tables, downgrades DPY-1001 to DEBUG when expected, clears created table tracking after attempts, and performs a best-effort fallback drop using saved session credentials when the worker's connection is closed.
+- When a cursor-based DROP succeeds, the table is removed from `created_tables` so the fallback loop does not attempt a duplicate DROP.
+
+Challenges
+
+- Synchronization: `created_tables` is a shared set mutated by worker threads and cleanup logic; a future improvement is to guard it with a `threading.Lock` to avoid subtle races.
+- Prompt/event race: care required to clear the registered Event once the prompt completes, as both the main thread and the worker may try to clear it.
+
+Developer notes / follow-ups
+
+1. Consider adding a small lock around `created_tables` mutations (`register_created_table`, `cleanup_on_abort`, and fallback loop) to eliminate race windows.
+2. Sweep remaining DPY codes (e.g., DPY-4026) and normalize expected-driver errors via `abort_manager.is_expected_disconnect()` or a new helper to centralize downgrade decisions.
+3. Add more instrumentation to fallback cleanup: log which credentials were used, and detailed per-table drop results to aid post-mortem in rare failures.

@@ -4,6 +4,42 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🚀 v1.4.0 — Abort & Prompt Robustness Improvements (2026-02-19)
+
+This release improves the Excel/CSV loader and launcher Abort flow so UI remains responsive and cleanup is robust for both user and shared DWH logins.
+
+### Added
+
+- `abort_manager.register_prompt_event()` / `abort_manager.cancel_prompt_event()` to allow background workers waiting on main-thread prompts to be unblocked when the user clicks Abort.
+
+### Changed
+
+- UI prompt scheduling redesigned: `call_ui(...)` now registers a prompt Event when called from a background thread and polls the result so workers can be woken by Abort. This prevents worker threads from becoming permanently blocked while waiting for main-thread dialogs.
+- The launcher `abort_process()` now also cancels any registered prompt Event in addition to destroying active prompt windows and attempting to close registered DB connections.
+- `cleanup_on_abort()` in `libs/abort_manager.py` hardened: idempotent, defensive, and logs created tables at start of cleanup. It now downgrades expected DPY-1001 (driver "not connected") exceptions to DEBUG when seen in abort/worker contexts.
+- The Excel/CSV loader now runs heavy DB work in a background thread and registers the worker connection with `abort_manager` so abort can attempt a best-effort close.
+
+### Fixed
+
+- Prevent noisy ERROR/WARNING logs during normal abort flows by centralizing DPY-1001 handling in `abort_manager.is_expected_disconnect()` and downgrading expected occurrences to DEBUG.
+- Resolved race where fallback cleanup attempted to DROP a table that had already been dropped by the primary cleanup; successfully-dropped tables are now removed from the tracking set to avoid duplicate DROP attempts.
+- Avoid `grab_set()` usage on login/preview dialogs which could prevent Abort from being processed; dialogs are now transient/topmost/focused without modal grabs.
+- Make hidden-root destruction on early login cancel defensive to prevent NameError when `hidden_root` is absent.
+
+### Files touched (high level)
+
+- `libs/abort_manager.py` — added prompt-event helpers, improved cleanup_on_abort, added is_expected_disconnect usage and created_tables tracking hardening
+- `loaders/excel_csv_loader.py` — `call_ui` prompt scheduling changes, background worker launch, per-chunk abort checks, created/staging table registration via `abort_manager`
+- `libs/oracle_db_connector.py` — login prompt scheduling now registers/clears prompt Events and no longer uses `grab_set()`
+- `HoonyTools.pyw` — `abort_process()` cancels prompt Event, defensive `hidden_root` handling
+
+### Notes
+
+- The abort flow now attempts a best-effort fallback cleanup by opening a fresh connection using saved session credentials when the worker connection has been closed to interrupt it. This is best-effort and will log failures when credentials are unavailable or the drop fails.
+- Further improvements recommended: sweep remaining driver error codes for similar downgrade semantics (e.g. DPY-4026) and add per-drop fallback instrumentation for rare failures.
+
+---
+
 ## 🚀 v1.3.7 — Focus & DWH session reliability fixes (2026-02-19)
 
 This patch improves Toplevel/dialog focus and stacking behavior after messageboxes, and makes shared DWH connection registration and cleanup more robust.
