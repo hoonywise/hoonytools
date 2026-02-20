@@ -193,15 +193,29 @@ def get_db_connection(force_shared=False, root=None):
                 not session.dwh_credentials
                 or session.dwh_credentials.get("username", "").lower() != "dwh"
             ):
-                if root:
+                # If a root is provided and we're on a background thread, schedule
+                # the prompt on the main thread and wait for the result using an Event.
+                if root and threading.current_thread() is not threading.main_thread():
                     result_holder = {}
+                    ev = threading.Event()
+
                     def ask_login():
+                        try:
+                            result_holder["creds"] = prompt_credentials(hardcoded_user="dwh", hardcoded_dsn="DWHDB_DB")
+                        finally:
+                            ev.set()
+
+                    try:
+                        logger.info("Scheduling DWH login prompt on main thread via root.after")
+                        root.after(0, ask_login)
+                        # Wait for the main thread to complete prompting
+                        ev.wait()
+                        logger.info("DWH login prompt completed; checking credentials result")
+                    except Exception:
+                        # Fallback to direct call if scheduling failed
+                        logger.warning("Scheduling DWH login prompt failed; falling back to direct prompt")
                         result_holder["creds"] = prompt_credentials(hardcoded_user="dwh", hardcoded_dsn="DWHDB_DB")
-                    root.after(0, ask_login)
-                    login_window = tk.Toplevel(root)
-                    login_window.withdraw()  # we just need to wait on something
-                    login_window.after(100, login_window.destroy)
-                    login_window.wait_window()
+
                     creds_temp = result_holder.get("creds")
                 else:
                     creds_temp = prompt_credentials(hardcoded_user="dwh", hardcoded_dsn="DWHDB_DB")
@@ -258,11 +272,35 @@ def get_db_connection(force_shared=False, root=None):
 
         else:
             if not session.user_credentials:
-                if threading.current_thread() is not threading.main_thread():
-                    show_error_safe("Thread Error", "❌ Cannot prompt for login from a background thread.")
-                    return None
-                session.user_credentials = prompt_credentials()
-                session.stored_credentials = session.user_credentials
+                # If a root is provided and we're in a background thread, schedule
+                # the prompt on the main thread and wait for the result.
+                if root and threading.current_thread() is not threading.main_thread():
+                    result_holder = {}
+                    ev = threading.Event()
+
+                    def ask_user_login():
+                        try:
+                            result_holder["creds"] = prompt_credentials()
+                        finally:
+                            ev.set()
+
+                    try:
+                        logger.info("Scheduling user login prompt on main thread via root.after")
+                        root.after(0, ask_user_login)
+                        ev.wait()
+                        logger.info("User login prompt completed; checking credentials result")
+                    except Exception:
+                        logger.warning("Scheduling user login prompt failed; falling back to direct prompt")
+                        result_holder["creds"] = prompt_credentials()
+
+                    session.user_credentials = result_holder.get("creds")
+                    session.stored_credentials = session.user_credentials
+                else:
+                    if threading.current_thread() is not threading.main_thread():
+                        show_error_safe("Thread Error", "❌ Cannot prompt for login from a background thread.")
+                        return None
+                    session.user_credentials = prompt_credentials()
+                    session.stored_credentials = session.user_credentials
 
             if not session.user_credentials:
                 logger.warning("❌ Oracle login was not completed.")

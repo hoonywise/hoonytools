@@ -257,12 +257,44 @@ def abort_process():
         except Exception:
             pass
 
+        # Best-effort close of the worker connection to interrupt blocking DB operations
+        try:
+            try:
+                abort_manager.close_registered_connection()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
         # Monitor abort flag and re-enable UI when cleared by workers
         def _monitor_abort():
             import time
             try:
-                while abort_manager.should_abort:
-                    time.sleep(0.2)
+                # Wait until either the abort flag is cleared by the worker (reset)
+                # or cleanup_on_abort has completed (cleanup_done). Add a safety
+                # timeout so the launcher does not remain disabled indefinitely
+                # if the worker thread gets stuck.
+                max_wait = 30.0  # seconds
+                waited = 0.0
+                step = 0.2
+                while True:
+                    try:
+                        should = getattr(abort_manager, 'should_abort', False)
+                        done = getattr(abort_manager, 'cleanup_done', False)
+                    except Exception:
+                        should = False
+                        done = False
+                    if not should or done:
+                        break
+                    if waited >= max_wait:
+                        logger.warning("Abort monitor timed out waiting for worker cleanup; forcing reset and re-enabling UI")
+                        try:
+                            abort_manager.reset()
+                        except Exception:
+                            pass
+                        break
+                    time.sleep(step)
+                    waited += step
             except Exception:
                 pass
 
@@ -306,6 +338,7 @@ def run_selected():
     global should_abort
     should_abort = False
     tool_name = selected_tool.get()
+    logger.info(f"Run button pressed for tool: {tool_name}")
     log_text.delete(1.0, tk.END)
     status_light.config(text="⏳")     
 
@@ -322,16 +355,36 @@ def run_selected():
         finally:
             status_light.config(text="🟢")
 
-    if tool_name == "✅ Excel/CSV Loader":
+    # Run the Excel/CSV loader in a background thread so the main GUI remains responsive.
+    if tool_name == "☑ Excel/CSV Loader":
         def threaded_excel():
+            logger.info("Starting Excel/CSV loader thread")
             try:
-                TOOLS[tool_name]()
+                logger.info(f"threaded_excel: about to invoke loader callable for {tool_name}")
+                try:
+                    TOOLS[tool_name](root)
+                except TypeError:
+                    TOOLS[tool_name]()
+                logger.info("threaded_excel: loader callable returned")
             except Exception as e:
                 logger.exception(f"❌ Error running {tool_name}: {e}")
             finally:
-                status_light.config(text="🟢")
+                try:
+                    status_light.config(text="🟢")
+                except Exception:
+                    pass
 
         threading.Thread(target=threaded_excel, daemon=True).start()
+        return
+
+    # If selected tool is missing or None, inform the user
+    if tool_name not in TOOLS or TOOLS.get(tool_name) is None:
+        try:
+            from tkinter import messagebox
+            messagebox.showwarning("Tool Unavailable", f"Selected tool is not available: {tool_name}")
+        except Exception:
+            logger.warning(f"Selected tool is not available: {tool_name}")
+        status_light.config(text="🟢")
         return
 
     
@@ -956,12 +1009,8 @@ def launch_tool_gui():
     except Exception:
         pass
 
-    # Keyboard shortcut: Ctrl+C to request abort (acts like pressing Abort)
-    try:
-        root.bind_all('<Control-c>', lambda e: abort_process())
-        root.bind_all('<Control-C>', lambda e: abort_process())
-    except Exception:
-        pass
+    # Removed global Ctrl+C abort binding to avoid interfering with clipboard copy.
+    # Keyboard shortcuts should not override platform copy behavior.
 
     # Divider between toolbar and content
     tk.Frame(right_pane, height=1, bg="#ccc").pack(fill="x", padx=10, pady=(8, 12))
