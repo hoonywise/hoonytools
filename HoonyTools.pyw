@@ -53,6 +53,12 @@ def apply_dark_theme(root, accent="white"):
             style.theme_use("clam")
         except Exception:
             pass
+
+    # Create the initial combobox so it's present at startup (light mode by default)
+    try:
+        _recreate_tool_menu(use_pane_style=False)
+    except Exception:
+        pass
         try:
             style.configure("Treeview", background=panel, fieldbackground=panel, foreground=fg, rowheight=20)
             style.map("Treeview", background=[("selected", sel)], foreground=[("selected", "white")])
@@ -1224,17 +1230,16 @@ def launch_tool_gui():
     # Give the toolbar some extra top padding so it visually lines up with the log
     toolbar_inner.configure(pady=6)
 
+    # Layout will use grid inside toolbar_inner to ensure deterministic
+    # placement: label (col0), combobox (col1), buttons (col2).
     tk.Label(
         toolbar_inner,
         text="Select Tool:",
         font=("Arial", 12, "bold")
-    ).pack(side="left", padx=(0, 10))
+    ).grid(row=0, column=0, padx=(0, 10))
 
     # Tool selector and buttons
     selected_tool = tk.StringVar()
-    tool_menu = ttk.Combobox(toolbar_inner, textvariable=selected_tool, values=list(TOOLS.keys()), font=("Arial", 11), state="readonly", width=22)
-    tool_menu.pack(side="left")
-    tool_menu.current(0)
 
     # Helper to recreate the toolbar combobox under a specified style so
     # theme changes are honored across backends (some ttk widgets only
@@ -1255,63 +1260,310 @@ def launch_tool_gui():
                 cur_idx = 0
 
         try:
+            try:
+                logger.info("DESTROYING existing tool_menu (if any)")
+            except Exception:
+                pass
             tool_menu.destroy()
         except Exception:
             pass
 
-        style_name = 'Pane.TCombobox' if use_pane_style else 'TCombobox'
-        try:
-            tool_menu = ttk.Combobox(parent, textvariable=selected_tool, values=values, font=("Arial", 11), state="readonly", width=22, style=style_name)
-            tool_menu.pack(side="left")
-            # Bind to attempts to open the popup so we can style the native
-            # popdown Listbox (best-effort; backend dependent).
-            try:
-                # Record known toplevels before popup appears so we can detect
-                # newly created popup windows and style them specifically.
+        # If ttk.Combobox is unreliable on this platform, use a small
+        # custom combobox implementation that uses a Toplevel + Listbox
+        # popup. This guarantees consistent popup behavior and styling.
+        class _CustomCombobox:
+            def __init__(self, master, textvariable, values, width=22, font=None, state='readonly', style=None):
+                self.master = master
+                self.var = textvariable
+                self.values = list(values)
+                self._dark = False
+                self.frame = tk.Frame(master)
+                # Use a normal Entry so background/foreground changes apply
+                # reliably across platforms. Prevent typing by blocking key events.
+                self.entry = tk.Entry(self.frame, textvariable=self.var, width=width, font=font, state='normal', relief='sunken')
+                # Prevent user edits (readonly behavior)
                 try:
-                    root._known_combobox_popups = set(str(w) for w in root.winfo_children() if isinstance(w, tk.Toplevel))
-                except Exception:
-                    root._known_combobox_popups = set()
-                tool_menu.bind('<Button-1>', lambda e: root.after(80, lambda: _style_combobox_popup(tool_menu, dark_mode_var.get())))
-                tool_menu.bind('<Key-Down>', lambda e: root.after(80, lambda: _style_combobox_popup(tool_menu, dark_mode_var.get())))
-            except Exception:
-                pass
-            try:
-                if cur_idx is not None and 0 <= cur_idx < len(values):
-                    tool_menu.current(cur_idx)
-                else:
-                    tool_menu.current(0)
-            except Exception:
-                try:
-                    tool_menu.current(0)
+                    self.entry.bind('<Key>', lambda e: 'break')
                 except Exception:
                     pass
+                self.entry.pack(side='left')
+                # Use a neutral grey arrow button background so the arrow remains
+                # visually consistent in both themes. Keep it non-focused.
+                self.btn = tk.Button(self.frame, text='\u25BC', width=2, command=self._on_button, takefocus=False, relief='raised', bd=1)
+                try:
+                    self.btn.config(bg='#c0c0c0', fg='black')
+                except Exception:
+                    pass
+                self.btn.pack(side='left')
+                self._popup = None
+                self._bindings = {}
+
+            def grid(self, **kw):
+                return self.frame.grid(**kw)
+
+            def pack(self, **kw):
+                return self.frame.pack(**kw)
+
+            def destroy(self):
+                try:
+                    if self._popup and getattr(self._popup, 'winfo_exists', lambda: False)():
+                        try:
+                            self._popup.destroy()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                try:
+                    self.frame.destroy()
+                except Exception:
+                    pass
+
+            def bind(self, sequence, func, add=None):
+                # Bind to the entry widget; store handler for possible removal
+                try:
+                    self.entry.bind(sequence, func, add=add if add else None)
+                except Exception:
+                    try:
+                        self.frame.bind(sequence, func, add=add if add else None)
+                    except Exception:
+                        pass
+
+            def current(self, idx):
+                try:
+                    if idx is None:
+                        return
+                    v = self.values[idx]
+                    self.var.set(v)
+                except Exception:
+                    pass
+
+            def get(self):
+                return self.var.get()
+
+            def cget(self, key):
+                if key == 'style':
+                    return None
+                try:
+                    return self.entry.cget(key)
+                except Exception:
+                    return None
+
+            def configure(self, **kw):
+                try:
+                    self.entry.configure(**kw)
+                except Exception:
+                    pass
+
+            def _on_button(self):
+                # show popup
+                if self._popup and getattr(self._popup, 'winfo_exists', lambda: False)():
+                    try:
+                        self._popup.destroy()
+                    except Exception:
+                        pass
+                    return
+                try:
+                    x = self.frame.winfo_rootx()
+                    y = self.frame.winfo_rooty() + self.frame.winfo_height()
+                    self._popup = tk.Toplevel(self.frame)
+                    self._popup.wm_overrideredirect(True)
+                    self._popup.wm_geometry(f"+{x}+{y}")
+                    lb = tk.Listbox(self._popup, exportselection=False)
+                    for v in self.values:
+                        lb.insert('end', v)
+                    lb.pack()
+                    try:
+                        # Apply popup colors consistent with entry colors
+                        if getattr(self, '_dark', False):
+                            lb.config(bg='#000000', fg='#ffffff', selectbackground='#444444')
+                        else:
+                            lb.config(bg='white', fg='black', selectbackground='#2a6bd6')
+                    except Exception:
+                        pass
+                    def on_select(evt=None):
+                        try:
+                            sel = lb.curselection()
+                            if sel:
+                                val = lb.get(sel[0])
+                                self.var.set(val)
+                                # generate virtual event
+                                try:
+                                    self.frame.event_generate('<<ComboboxSelected>>')
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        try:
+                            self._popup.destroy()
+                        except Exception:
+                            pass
+                    lb.bind('<Double-Button-1>', lambda e: on_select())
+                    lb.bind('<Return>', lambda e: on_select())
+                    # Single click release should also confirm selection
+                    lb.bind('<ButtonRelease-1>', lambda e: on_select())
+                    lb.bind('<<ListboxSelect>>', lambda e: None)
+                    # click outside closes popup
+                    def on_focus_out(ev=None):
+                        try:
+                            if self._popup and getattr(self._popup, 'winfo_exists', lambda: False)():
+                                self._popup.destroy()
+                        except Exception:
+                            pass
+                    self._popup.bind('<FocusOut>', on_focus_out)
+                    # give focus to popup so clicks register
+                    try:
+                        self._popup.focus_force()
+                        try:
+                            lb.focus_set()
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
+            # helper to set dark/light colors
+            def set_colors(self, dark=False):
+                try:
+                    self._dark = bool(dark)
+                    if self._dark:
+                        # Entry background, text and caret color
+                        try:
+                            self.entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', disabledbackground='#000000')
+                        except Exception:
+                            pass
+                        # Keep arrow button neutral grey so it remains visible on both themes
+                        try:
+                            self.btn.config(bg='#c0c0c0', fg='black')
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            self.entry.config(bg='white', fg='black', insertbackground='black', disabledbackground='white')
+                        except Exception:
+                            pass
+                        try:
+                            self.btn.config(bg='#c0c0c0', fg='black')
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+        # end _CustomCombobox
+
+        style_name = 'Pane.TCombobox' if use_pane_style else 'TCombobox'
+        try:
+            # helper: clear visual selection and move focus after use so the
+            # toolbar combobox doesn't keep a highlighted selection.
+            def _clear_combobox_selection(w):
+                try:
+                    try:
+                        w.selection_clear()
+                    except Exception:
+                        pass
+                    try:
+                        w.icursor('end')
+                    except Exception:
+                        pass
+                    try:
+                        if 'run_btn' in globals() and run_btn:
+                            run_btn.focus_set()
+                        else:
+                            root.focus_force()
+                    except Exception:
+                        try:
+                            root.focus_force()
+                        except Exception:
+                            pass
+                    # Small state flip can clear lingering native selection highlights
+                    try:
+                        prev_state = None
+                        try:
+                            prev_state = w.cget('state')
+                        except Exception:
+                            prev_state = None
+                        try:
+                            w.configure(state='disabled')
+                            root.update_idletasks()
+                        except Exception:
+                            pass
+                        try:
+                            if prev_state is not None:
+                                w.configure(state=prev_state)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
+            # Use custom combobox for reliable popup behavior
+            try:
+                tool_menu = _CustomCombobox(parent, textvariable=selected_tool, values=values, width=22, font=("Arial", 11))
+                try:
+                    tool_menu.grid(row=0, column=1)
+                except Exception:
+                    tool_menu.pack(side='left')
+                try:
+                    logger.info("CREATED toolbar custom combobox (tool_menu)")
+                except Exception:
+                    pass
+                # bind selection event to clear selection visual
+                try:
+                    parent_ref = tool_menu.frame
+                    parent_ref.bind('<<ComboboxSelected>>', lambda e: _clear_combobox_selection(tool_menu.entry), add='+')
+                except Exception:
+                    pass
+                try:
+                    if cur_idx is not None and 0 <= cur_idx < len(values):
+                        tool_menu.current(cur_idx)
+                    else:
+                        tool_menu.current(0)
+                except Exception:
+                    pass
+            except Exception:
+                pass
         except Exception:
             # fallback: create without explicit style
             try:
-                tool_menu = ttk.Combobox(parent, textvariable=selected_tool, values=values, font=("Arial", 11), state="readonly", width=22)
-                tool_menu.pack(side="left")
                 try:
+                    tool_menu = _CustomCombobox(parent, textvariable=selected_tool, values=values, width=22, font=("Arial", 11))
                     try:
-                        root._known_combobox_popups = set(str(w) for w in root.winfo_children() if isinstance(w, tk.Toplevel))
+                        tool_menu.grid(row=0, column=1)
                     except Exception:
-                        root._known_combobox_popups = set()
-                    tool_menu.bind('<Button-1>', lambda e: root.after(80, lambda: _style_combobox_popup(tool_menu, dark_mode_var.get())))
-                    tool_menu.bind('<Key-Down>', lambda e: root.after(80, lambda: _style_combobox_popup(tool_menu, dark_mode_var.get())))
-                except Exception:
-                    pass
-                try:
-                    tool_menu.current(cur_idx or 0)
-                except Exception:
+                        tool_menu.pack(side='left')
                     try:
-                        tool_menu.current(0)
+                        if cur_idx is not None:
+                            tool_menu.current(cur_idx)
+                        else:
+                            tool_menu.current(0)
                     except Exception:
                         pass
+                except Exception:
+                    pass
             except Exception:
                 pass
 
+    # Ensure a toolbar combobox exists at startup. Some backends only apply
+    # style at widget creation time, and earlier code sometimes recreated
+    # the combobox only when toggling themes. Create it here once so the
+    # control is present immediately after the toolbar is built.
+    try:
+        _recreate_tool_menu(use_pane_style=False)
+        try:
+            logger.info("Initial toolbar combobox created at startup")
+        except Exception:
+            pass
+    except Exception:
+        try:
+            logger.exception("Initial toolbar combobox creation failed")
+        except Exception:
+            pass
+
     btn_frame = tk.Frame(toolbar_inner)
-    btn_frame.pack(side="left", padx=12)
+    # Use grid to place the button frame in column 2 so we avoid mixing
+    # pack and grid in the same parent (toolbar_inner uses grid for children).
+    btn_frame.grid(row=0, column=2, padx=12)
 
     # Keep references to these controls so abort handler can disable/enable them
     run_btn = tk.Button(btn_frame, text="Run", width=10, command=lambda: run_selected())
@@ -1517,6 +1769,32 @@ def launch_tool_gui():
     except Exception:
         pane_orig = {}
 
+    # Helper: safe tree info (avoid calling widget cget('background') which
+    # may raise on some ttk backends). Prefer style.lookup values.
+    def _tree_info(tv):
+        try:
+            sty = None
+            try:
+                sty = tv.cget('style')
+            except Exception:
+                sty = None
+            st = ttk.Style()
+            bg = None
+            fg = None
+            try:
+                if sty:
+                    bg = st.lookup(sty, 'fieldbackground') or st.lookup(sty, 'background')
+                    fg = st.lookup(sty, 'foreground')
+                if not bg:
+                    bg = st.lookup('Treeview', 'fieldbackground') or st.lookup('Treeview', 'background')
+                if not fg:
+                    fg = st.lookup('Treeview', 'foreground')
+            except Exception:
+                pass
+            return f"style={sty} bg={bg} fg={fg}"
+        except Exception as e:
+            return f"error:{e}"
+
     def set_panes_dark():
         nonlocal user_tree, dwh_tree
         # Record original theme/style/lookups the first time so we can
@@ -1661,6 +1939,15 @@ def launch_tool_gui():
                 # only honor style at creation time will show the dark colors.
                 try:
                     _recreate_tool_menu(use_pane_style=True)
+                    # If our custom combobox is used, ensure it applies dark colors
+                    try:
+                        if 'tool_menu' in globals() and hasattr(tool_menu, 'set_colors'):
+                            try:
+                                tool_menu.set_colors(dark=True)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                 except Exception:
                     try:
                         tool_menu.configure(style='Pane.TCombobox')
@@ -1808,6 +2095,11 @@ def launch_tool_gui():
                                         # Move focus away from the combobox to avoid the
                                         # focused color state remaining visible on some backends.
                                         try:
+                                            if 'tool_menu' in globals() and hasattr(tool_menu, 'set_colors'):
+                                                try:
+                                                    tool_menu.set_colors(dark=False)
+                                                except Exception:
+                                                    pass
                                             if 'run_btn' in globals() and run_btn:
                                                 run_btn.focus_set()
                                             else:
@@ -1978,7 +2270,7 @@ def launch_tool_gui():
         try:
             s = []
             try:
-                s.append(f"user_tree.style={user_tree.cget('style')} bg={user_tree.cget('background')} fg={user_tree.cget('foreground')}")
+                s.append(f"user_tree {_tree_info(user_tree)}")
                 items = list(user_tree.get_children())
                 s.append(f"user_tree.items={len(items)}")
                 if items:
@@ -1986,7 +2278,7 @@ def launch_tool_gui():
             except Exception as e:
                 s.append(f"user_tree error: {e}")
             try:
-                s.append(f"dwh_tree.style={dwh_tree.cget('style')} bg={dwh_tree.cget('background')} fg={dwh_tree.cget('foreground')}")
+                s.append(f"dwh_tree {_tree_info(dwh_tree)}")
                 items2 = list(dwh_tree.get_children())
                 s.append(f"dwh_tree.items={len(items2)}")
                 if items2:
