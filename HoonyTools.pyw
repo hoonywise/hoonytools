@@ -1261,7 +1261,7 @@ def launch_tool_gui():
 
         try:
             try:
-                logger.info("DESTROYING existing tool_menu (if any)")
+                logger.debug("DESTROYING existing tool_menu (if any)")
             except Exception:
                 pass
             tool_menu.destroy()
@@ -1505,7 +1505,7 @@ def launch_tool_gui():
                 except Exception:
                     tool_menu.pack(side='left')
                 try:
-                    logger.info("CREATED toolbar custom combobox (tool_menu)")
+                    logger.debug("CREATED toolbar custom combobox (tool_menu)")
                 except Exception:
                     pass
                 # bind selection event to clear selection visual
