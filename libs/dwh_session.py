@@ -96,11 +96,16 @@ def register_connection(root, conn):
                     logger.debug('Failed to register dwh connection on root', exc_info=True)
         else:
             try:
-                lst.append(conn)
+                # avoid duplicate registrations of the exact same connection object
+                if conn not in lst:
+                    lst.append(conn)
             except Exception:
-                # try to replace attribute
+                # try to replace attribute with deduped list
                 try:
-                    setattr(root, '_dwh_conns', list(lst) + [conn])
+                    new_list = list(lst)
+                    if conn not in new_list:
+                        new_list.append(conn)
+                    setattr(root, '_dwh_conns', new_list)
                 except Exception:
                     logger.debug('Failed to append dwh connection to root list', exc_info=True)
     except Exception:

@@ -282,6 +282,19 @@ def get_db_connection(force_shared=False, root=None):
             mode=oracledb.DEFAULT_AUTH
         )
         logger.info(f"✅ Connected to {creds['dsn']} as {creds['username']}")
+        # Auto-register shared DWH connections so callers don't need to.
+        # Import lazily to avoid circular imports with libs.dwh_session.
+        try:
+            if force_shared and root is not None:
+                try:
+                    from libs import dwh_session
+                    dwh_session.register_connection(root, conn)
+                except Exception:
+                    logger.debug("Failed to auto-register DWH connection", exc_info=True)
+        except Exception:
+            # defensive: any failure here must not prevent returning the connection
+            logger.debug("Unexpected error during DWH auto-registration", exc_info=True)
+
         return conn
 
     except Exception as e:

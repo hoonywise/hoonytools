@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 import logging
 from libs.oracle_db_connector import get_db_connection
+from libs import dwh_session
 import ctypes
 from libs.paths import ASSETS_PATH
 import re
@@ -208,6 +209,10 @@ def run_mv_refresh_gui(on_finish=None):
                 return
             setattr(root, '_dwh_conn', dconn)
             try:
+                dwh_session.register_connection(root, dconn)
+            except Exception:
+                logger.debug('Failed to register dwh connection', exc_info=True)
+            try:
                 dwh_status_label.config(text=f"(connected as {dconn.username})" if hasattr(dconn, 'username') else '(connected)')
             except Exception:
                 dwh_status_label.config(text='(connected)')
@@ -392,6 +397,10 @@ def run_mv_refresh_gui(on_finish=None):
                         return
                     setattr(root, '_dwh_conn', dconn)
                     try:
+                        dwh_session.register_connection(root, dconn)
+                    except Exception:
+                        logger.debug('Failed to register dwh connection', exc_info=True)
+                    try:
                         dwh_status_label.config(text=f"(connected as {dconn.username})" if hasattr(dconn, 'username') else '(connected)')
                     except Exception:
                         dwh_status_label.config(text='(connected)')
@@ -429,6 +438,10 @@ def run_mv_refresh_gui(on_finish=None):
                     messagebox.showwarning("DWH Login", "DWH login cancelled or failed.")
                     return
                 setattr(root, '_dwh_conn', dconn)
+                try:
+                    dwh_session.register_connection(root, dconn)
+                except Exception:
+                    logger.debug('Failed to register dwh connection', exc_info=True)
                 try:
                     dwh_status_label.config(text=f"(connected as {dconn.username})" if hasattr(dconn, 'username') else '(connected)')
                 except Exception:
