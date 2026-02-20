@@ -186,6 +186,11 @@ def cleanup_on_abort(conn, cursor):
                     try:
                         cursor.execute(f'DROP TABLE {drop_name} PURGE')
                         logger.info(f"🗑️ Dropped table from abort cleanup: {drop_name}")
+                        try:
+                            # Remove from tracking so fallback does not retry already-dropped tables
+                            created_tables.discard(table)
+                        except Exception:
+                            pass
                     except Exception as e:
                         # DPY-1001 is expected when the connection/driver has been closed
                         if is_expected_disconnect(e):
