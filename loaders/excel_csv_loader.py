@@ -762,6 +762,32 @@ def format_sql_for_display(sql: str) -> str:
 def show_sql_preview(parent, title, summary, sql):
     from tkinter import Toplevel, Text, Scrollbar, RIGHT, Y, BOTH, END, Label, Button, Frame, HORIZONTAL, X
     from tkinter import filedialog, messagebox
+
+    # -- Dark mode detection (same pattern as sql_view_loader / sql_mv_loader) --
+    _is_dark = False
+    try:
+        import tkinter.ttk as _ttk
+        _st = _ttk.Style()
+        _bg_check = _st.lookup('Pane.Treeview', 'background') or _st.lookup('Treeview', 'background')
+        if isinstance(_bg_check, str) and _bg_check.strip():
+            _b = _bg_check.strip().lower()
+            if _b in ('#000000', '#000') or 'black' in _b:
+                _is_dark = True
+    except Exception:
+        pass
+
+    # Color palette -- pane-only: only the SQL text area changes, frame/buttons stay default
+    if _is_dark:
+        _txt_bg = '#000000'
+        _txt_fg = '#e6e6e6'
+        _sel_bg = '#2a6bd6'
+        _ins_bg = '#ffffff'
+    else:
+        _txt_bg = 'white'
+        _txt_fg = 'black'
+        _sel_bg = '#2a6bd6'
+        _ins_bg = 'black'
+
     pv = Toplevel(parent) if parent is not None else Toplevel()
     try:
         pv.transient(parent)
@@ -783,14 +809,19 @@ def show_sql_preview(parent, title, summary, sql):
         pv.deiconify()
     except Exception:
         pass
+
+    # -- Build widgets (pane-only dark: only Text widget is themed) --
     Label(pv, text=f"{summary}", font=("Arial", 10, "bold")).pack(pady=6)
+
     txt_frame = Frame(pv)
     txt_frame.pack(fill=BOTH, expand=True, padx=8, pady=6)
     vsb = Scrollbar(txt_frame, orient='vertical')
     vsb.pack(side=RIGHT, fill=Y)
     hsb = Scrollbar(txt_frame, orient=HORIZONTAL)
     hsb.pack(side='bottom', fill=X)
-    txt = Text(txt_frame, wrap='none', yscrollcommand=vsb.set, xscrollcommand=hsb.set, font=("Courier New", 10))
+    txt = Text(txt_frame, wrap='none', yscrollcommand=vsb.set, xscrollcommand=hsb.set,
+               font=("Courier New", 10), bg=_txt_bg, fg=_txt_fg,
+               insertbackground=_ins_bg, selectbackground=_sel_bg, selectforeground='#ffffff')
     txt.pack(fill=BOTH, expand=True)
     vsb.config(command=txt.yview)
     hsb.config(command=txt.xview)
@@ -855,6 +886,50 @@ def show_sql_preview(parent, title, summary, sql):
     Button(btns, text="Copy SQL", width=12, command=_do_copy).pack(side="left", padx=6)
     Button(btns, text="Save to .sql", width=12, command=_do_save).pack(side="left", padx=6)
     Button(btns, text="Cancel", width=10, command=_do_cancel).pack(side="left", padx=6)
+
+    # -- Theme callback for live toggle while preview is open (pane-only: only Text widget) --
+    def _apply_preview_theme(enable_dark):
+        try:
+            if enable_dark:
+                tbg, tfg, ibg = '#000000', '#e6e6e6', '#ffffff'
+            else:
+                tbg, tfg, ibg = 'white', 'black', 'black'
+            try:
+                txt.config(state='normal')
+                txt.config(bg=tbg, fg=tfg, insertbackground=ibg, selectbackground='#2a6bd6', selectforeground='#ffffff')
+                txt.config(state='disabled')
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    _cb_registered = [False]
+    try:
+        if parent and hasattr(parent, 'register_theme_callback'):
+            parent.register_theme_callback(_apply_preview_theme)
+            _cb_registered[0] = True
+        elif parent and hasattr(parent, 'master') and hasattr(parent.master, 'register_theme_callback'):
+            parent.master.register_theme_callback(_apply_preview_theme)
+            _cb_registered[0] = True
+    except Exception:
+        pass
+
+    def _on_destroy(event):
+        if event.widget is not pv:
+            return
+        try:
+            if _cb_registered[0]:
+                if parent and hasattr(parent, 'unregister_theme_callback'):
+                    parent.unregister_theme_callback(_apply_preview_theme)
+                elif parent and hasattr(parent, 'master') and hasattr(parent.master, 'unregister_theme_callback'):
+                    parent.master.unregister_theme_callback(_apply_preview_theme)
+        except Exception:
+            pass
+
+    try:
+        pv.bind('<Destroy>', _on_destroy)
+    except Exception:
+        pass
     # Avoid using grab_set(); it often fails when other apps hold the input grab.
     # Instead make the window topmost briefly and focus it so the user sees it,
     # then wait for the window to be closed. This is more reliable across OSes.
