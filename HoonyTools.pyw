@@ -16,6 +16,95 @@ import webbrowser
 
 APP_VERSION = "1.4.0"
 
+
+# Theme helpers
+DARK_THEME = {
+    "bg": "#000000",
+    "panel": "#0b0b0b",
+    "border": "#222222",
+    "fg": "#e6e6e6",
+    "accent_green": "#39ff14",
+    "muted": "#7a7a7a",
+    "selection_bg": "#2a6bd6",
+}
+
+
+def apply_dark_theme(root, accent="white"):
+    try:
+        from tkinter import ttk as _ttk
+    except Exception:
+        _ttk = None
+
+    bg = DARK_THEME["bg"]
+    panel = DARK_THEME["panel"]
+    border = DARK_THEME["border"]
+    fg = DARK_THEME["fg"] if accent == "white" else DARK_THEME["accent_green"]
+    muted = DARK_THEME["muted"]
+    sel = DARK_THEME["selection_bg"]
+
+    try:
+        root.configure(bg=bg)
+    except Exception:
+        pass
+
+    if _ttk:
+        style = _ttk.Style()
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+        try:
+            style.configure("Treeview", background=panel, fieldbackground=panel, foreground=fg, rowheight=20)
+            style.map("Treeview", background=[("selected", sel)], foreground=[("selected", "white")])
+            style.configure("TCombobox", fieldbackground=panel, background=panel, foreground=fg)
+            style.configure("TButton", background=panel, foreground=fg)
+            style.map("TButton", background=[("active", border)])
+        except Exception:
+            pass
+
+    try:
+        root.option_add('*Menu.background', panel)
+        root.option_add('*Menu.foreground', fg)
+        root.option_add('*Menu.activeBackground', border)
+        root.option_add('*Menu.activeForeground', fg)
+        root.option_add('*Label.background', bg)
+        root.option_add('*Label.foreground', fg)
+        root.option_add('*Frame.background', bg)
+        root.option_add('*Button.background', panel)
+        root.option_add('*Button.foreground', fg)
+    except Exception:
+        pass
+
+    try:
+        root._dark_theme = {"bg": bg, "panel": panel, "border": border, "fg": fg, "muted": muted, "sel": sel}
+    except Exception:
+        pass
+
+
+def apply_light_theme(root):
+    # Restore light-ish defaults; not exhaustive but improves readability
+    try:
+        root.configure(bg="#f0f0f0")
+    except Exception:
+        pass
+    try:
+        root.option_add('*Menu.background', '#d0d0d0')
+        root.option_add('*Menu.foreground', 'black')
+        root.option_add('*Menu.activeBackground', '#ffffff')
+        root.option_add('*Menu.activeForeground', 'black')
+        root.option_add('*Label.background', '#f0f0f0')
+        root.option_add('*Label.foreground', '#444444')
+        root.option_add('*Frame.background', '#f0f0f0')
+        root.option_add('*Button.background', '#f0f0f0')
+        root.option_add('*Button.foreground', 'black')
+    except Exception:
+        pass
+    try:
+        if hasattr(root, '_dark_theme'):
+            delattr(root, '_dark_theme')
+    except Exception:
+        pass
+
 # Safely climb until we find the project root folder
 project_name = "HoonyTools"
 path = Path(__file__).resolve()
@@ -635,7 +724,7 @@ def launch_tool_gui():
         verse_frame,
         text=get_random_verse(),
         font=("Arial", 9, "italic"),
-        fg="#444444",
+        fg=getattr(root, "_dark_theme", {}).get("muted", "#444444"),
         anchor="center",
         justify="center",
         wraplength=1000
@@ -650,7 +739,7 @@ def launch_tool_gui():
     rotate_verse()    
         
     # Horizontal divider below verse
-    tk.Frame(root, height=1, bg="#ccc").pack(fill="x", padx=10, pady=(5, 10))    
+    tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10, pady=(5, 10))    
 
     # ✅ Set GUI icon (.ico for taskbar)
     icon_ico_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
@@ -697,7 +786,7 @@ def launch_tool_gui():
         top_bar.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
         refresh_btn = tk.Button(top_bar, text="Refresh", width=10)
         refresh_btn.pack(side="left", padx=(0, 8))
-        status_lbl = tk.Label(top_bar, text="", font=("Arial", 8), fg="#444444")
+        status_lbl = tk.Label(top_bar, text="", font=("Arial", 8), fg=getattr(parent.master, "_dark_theme", {}).get("muted", "#444444"))
         status_lbl.pack(side="left")
 
         # Content area (treeview + scrollbar) sits below the top bar and expands
@@ -729,8 +818,8 @@ def launch_tool_gui():
 
     # Create external count labels aligned to the right of each object frame
     # Use grid placement so they don't affect the inner frame widths
-    user_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg="#444444")
-    dwh_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg="#444444")
+    user_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
+    dwh_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
     # start with a placeholder placement; we'll position these next to the LabelFrame titles
     user_count_label.place(x=0, y=0)
     dwh_count_label.place(x=0, y=0)
@@ -1063,14 +1152,23 @@ def launch_tool_gui():
     # Keyboard shortcuts should not override platform copy behavior.
 
     # Divider between toolbar and content
-    tk.Frame(right_pane, height=1, bg="#ccc").pack(fill="x", padx=10, pady=(8, 12))
+    tk.Frame(right_pane, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10, pady=(8, 12))
 
     # Place the log area in the right pane (narrower because left pane uses space)
     log_text = scrolledtext.ScrolledText(right_pane, width=80, height=25)
     log_text.pack(padx=10, pady=(0, 5), fill="both", expand=True)
+    try:
+        # Default to light log colors; only change when user enables pane dark mode
+        if getattr(root, '_dark_theme', None):
+            lt = getattr(root, "_dark_theme", {})
+            log_text.config(bg=lt.get("panel", "#0b0b0b"), fg=lt.get("fg", "#e6e6e6"), insertbackground=lt.get("fg", "#e6e6e6"), selectbackground=lt.get("border", "#222222"))
+        else:
+            log_text.config(bg='white', fg='black', insertbackground='black')
+    except Exception:
+        pass
     
     # === Status Bar (under verse) ===
-    tk.Frame(root, height=1, bg="#ccc").pack(fill="x", padx=10)
+    tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10)
     status_bar = tk.Frame(root)
     status_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
 
@@ -1203,23 +1301,197 @@ def launch_tool_gui():
             f"HoonyTools v{APP_VERSION}\n\nCreated by hoonywise\n\nFor enterprise use, contact hoonywise@proton.me"
         )
 
-    # Add menu bar with "Help > About"
-    menu_bar = tk.Menu(
-        root,
-        bg="#d0d0d0",                # darker gray for menu bar
-        fg="black",
-        activebackground="#ffffff",  # white hover for dropdown
-        activeforeground="black"
-    )
-    
-    help_menu = tk.Menu(
-        menu_bar,
-        tearoff=0,
-        bg="#ffffff",                # white dropdown
-        fg="black",
-        activebackground="#d0d0d0",  # light gray hover
-        activeforeground="black"
-    )
+    # Add menu bar with "View" toggles and "Help > About"
+    menu_bar = tk.Menu(root)
+    view_menu = tk.Menu(menu_bar, tearoff=0)
+
+    # Pane-only dark toggle: only affects the two object treeviews and the log pane
+    try:
+        style = ttk.Style()
+    except Exception:
+        style = None
+
+    # store originals so we can restore
+    try:
+        pane_orig = getattr(root, '_pane_orig', {})
+    except Exception:
+        pane_orig = {}
+
+    def set_panes_dark():
+        # Treeviews: apply a per-widget style that sets the interior background to black
+        try:
+            if style:
+                # Save original widget style names so we can restore later
+                try:
+                    if not pane_orig.get('user_tree_style'):
+                        pane_orig['user_tree_style'] = user_tree.cget('style') if user_tree else ''
+                except Exception:
+                    pass
+                try:
+                    if not pane_orig.get('dwh_tree_style'):
+                        pane_orig['dwh_tree_style'] = dwh_tree.cget('style') if dwh_tree else ''
+                except Exception:
+                    pass
+
+                # Create/overwrite a Pane style that affects the tree and its heading
+                style.configure('Pane.Treeview', background='#000000', fieldbackground='#000000', foreground='#ffffff')
+                try:
+                    style.configure('Pane.Treeview.Heading', background='#000000', foreground='#ffffff')
+                except Exception:
+                    # Some ttk backends ignore Heading style namespace; try generic
+                    try:
+                        style.configure('Treeview.Heading', background='#000000', foreground='#ffffff')
+                    except Exception:
+                        pass
+            try:
+                # store master (content_area) bg
+                try:
+                    if not pane_orig.get('user_master_bg'):
+                        pane_orig['user_master_bg'] = user_tree.master.cget('bg')
+                except Exception:
+                    pass
+                try:
+                    if not pane_orig.get('dwh_master_bg'):
+                        pane_orig['dwh_master_bg'] = dwh_tree.master.cget('bg')
+                except Exception:
+                    pass
+
+                # store original widget bg/fg so we can restore later
+                try:
+                    if not pane_orig.get('user_tree_widget'):
+                        pane_orig['user_tree_widget'] = (user_tree.cget('background'), user_tree.cget('foreground'))
+                except Exception:
+                    pass
+                try:
+                    if not pane_orig.get('dwh_tree_widget'):
+                        pane_orig['dwh_tree_widget'] = (dwh_tree.cget('background'), dwh_tree.cget('foreground'))
+                except Exception:
+                    pass
+
+                # Apply style and widget-level colors to fully darken the area
+                try:
+                    user_tree.configure(style='Pane.Treeview', background='#000000', foreground='#ffffff', fieldbackground='#000000', selectbackground='#444444')
+                except Exception:
+                    try:
+                        user_tree.configure(background='#000000', foreground='#ffffff')
+                    except Exception:
+                        pass
+                try:
+                    user_tree.master.config(bg='#000000')
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            try:
+                try:
+                    dwh_tree.configure(style='Pane.Treeview', background='#000000', foreground='#ffffff', fieldbackground='#000000', selectbackground='#444444')
+                except Exception:
+                    try:
+                        dwh_tree.configure(background='#000000', foreground='#ffffff')
+                    except Exception:
+                        pass
+                try:
+                    dwh_tree.master.config(bg='#000000')
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        # Log text: remember originals and set dark colors
+        try:
+            if 'log_text' in globals():
+                if not pane_orig.get('log'):
+                    pane_orig['log'] = (log_text.cget('bg'), log_text.cget('fg'), log_text.cget('insertbackground'))
+                log_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+        except Exception:
+            pass
+
+        try:
+            root._pane_orig = pane_orig
+        except Exception:
+            pass
+
+    def set_panes_light():
+        try:
+            # restore treeviews to default style
+            try:
+                orig = getattr(root, '_pane_orig', {}).get('user_tree_style', '')
+                user_tree.configure(style=orig if orig is not None else '')
+                # restore widget bg/fg
+                try:
+                    uw = getattr(root, '_pane_orig', {}).get('user_tree_widget', None)
+                    if uw:
+                        user_tree.configure(background=uw[0], foreground=uw[1])
+                except Exception:
+                    pass
+                # restore master bg
+                try:
+                    umbg = getattr(root, '_pane_orig', {}).get('user_master_bg', None)
+                    if umbg is not None:
+                        user_tree.master.config(bg=umbg)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            try:
+                orig2 = getattr(root, '_pane_orig', {}).get('dwh_tree_style', '')
+                dwh_tree.configure(style=orig2 if orig2 is not None else '')
+                try:
+                    dw = getattr(root, '_pane_orig', {}).get('dwh_tree_widget', None)
+                    if dw:
+                        dwh_tree.configure(background=dw[0], foreground=dw[1])
+                except Exception:
+                    pass
+                try:
+                    dmbg = getattr(root, '_pane_orig', {}).get('dwh_master_bg', None)
+                    if dmbg is not None:
+                        dwh_tree.master.config(bg=dmbg)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        try:
+            po = getattr(root, '_pane_orig', None)
+            if po and po.get('log'):
+                bg, fg, ins = po.get('log')
+                try:
+                    # restore to the saved original or fallback to default light colors
+                    log_text.config(bg=bg or 'white', fg=fg or 'black', insertbackground=ins or 'black', selectbackground=None)
+                except Exception:
+                    try:
+                        log_text.config(bg='white', fg='black', insertbackground='black', selectbackground=None)
+                    except Exception:
+                        pass
+            else:
+                # ensure log resets to white if we have no saved original
+                try:
+                    log_text.config(bg='white', fg='black', insertbackground='black', selectbackground=None)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # Dark mode toggle variable (pane-only). Default off.
+    dark_mode_var = tk.BooleanVar(value=False)
+
+    def _toggle_dark():
+        try:
+            if dark_mode_var.get():
+                set_panes_dark()
+            else:
+                set_panes_light()
+        except Exception:
+            pass
+
+    view_menu.add_checkbutton(label="Dark Mode", variable=dark_mode_var, command=_toggle_dark)
+    menu_bar.add_cascade(label="View", menu=view_menu)
+
+    help_menu = tk.Menu(menu_bar, tearoff=0)
     
     help_menu.add_command(label="About", command=show_about_popup)
     help_menu.add_command(
@@ -1228,7 +1500,7 @@ def launch_tool_gui():
     )
     menu_bar.add_cascade(label="Help", menu=help_menu, underline=0)
     root.config(menu=menu_bar)    
-    tk.Frame(root, height=1, bg="#b0b0b0").pack(fill="x")
+    tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#b0b0b0")).pack(fill="x")
         
     root.mainloop()
 
