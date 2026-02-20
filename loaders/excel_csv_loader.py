@@ -48,6 +48,10 @@ def call_ui(ui_root, func, *args, **kwargs):
         pass
 
     q = _queue.Queue()
+    # If called from a background thread, register a prompt Event so the
+    # launcher abort handler can wake this worker if the user clicks Abort
+    # while a main-thread prompt is being shown.
+    ev = None
 
     def _run():
         try:
@@ -60,7 +64,17 @@ def call_ui(ui_root, func, *args, **kwargs):
         # ui_root may be None if caller didn't provide a root; try to schedule
         # on the provided ui_root if possible, otherwise run directly.
         if ui_root is not None and hasattr(ui_root, 'after'):
-            ui_root.after(0, _run)
+            # register a prompt event so abort can cancel this wait
+            try:
+                ev = threading.Event()
+                abort_manager.register_prompt_event(ev)
+            except Exception:
+                ev = None
+            try:
+                ui_root.after(0, _run)
+            except Exception:
+                # scheduling failed, run the function directly
+                _run()
         else:
             # no valid ui_root to schedule on; run directly (best-effort)
             _run()
@@ -68,10 +82,30 @@ def call_ui(ui_root, func, *args, **kwargs):
         # scheduling failed, run the function directly
         _run()
 
-    ok, payload = q.get()
-    if ok:
-        return payload
-    raise payload
+    # Wait for result but poll so we can respond to abort requests.
+    try:
+        from queue import Empty
+        while True:
+            try:
+                ok, payload = q.get(timeout=0.2)
+                break
+            except Empty:
+                # If abort was requested, stop waiting and raise to caller
+                try:
+                    if getattr(abort_manager, 'should_abort', False):
+                        raise RuntimeError("UI prompt cancelled due to abort")
+                except Exception:
+                    pass
+                continue
+        if ok:
+            return payload
+        raise payload
+    finally:
+        # Clear any registered prompt event
+        try:
+            abort_manager.register_prompt_event(None)
+        except Exception:
+            pass
 
 def prompt_schema_choice(parent=None):
     result: Dict[str, Any] = {"choice": None}

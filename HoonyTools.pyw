@@ -246,12 +246,52 @@ def abort_process():
         except Exception:
             pass
 
-        # Attempt to close any registered DWH connections on this root to help unblock DB calls
+        # Attempt to close any registered DWH connections on this root to help
+        # unblock DB calls. Close them in a background thread so the main GUI
+        # does not freeze if the close operation blocks or is slow.
         try:
             from libs import dwh_session
+            import threading as _thr
+            def _close_dwh():
+                try:
+                    if 'root' in globals():
+                        dwh_session.close_dwh_connection(root)
+                except Exception:
+                    logger.debug('Failed to close DWH connection in background', exc_info=True)
+            _thr.Thread(target=_close_dwh, daemon=True).start()
+        except Exception:
+            pass
+
+        # Attempt to close any active login/prompt windows that were parented
+        # to the launcher root (for example DWH login Toplevel). Destroying
+        # these windows will release any grabs and prevent the main GUI from
+        # remaining unusable after abort.
+        try:
+            # Also signal any worker waiting on a prompt Event to wake immediately
+            try:
+                abort_manager.cancel_prompt_event()
+            except Exception:
+                pass
             if 'root' in globals():
                 try:
-                    dwh_session.close_dwh_connection(root)
+                    win = getattr(root, '_active_prompt_window', None)
+                    if win is not None:
+                        try:
+                            try:
+                                win.grab_release()
+                            except Exception:
+                                pass
+                            win.destroy()
+                        except Exception:
+                            try:
+                                # As a fallback, withdraw the window
+                                win.withdraw()
+                            except Exception:
+                                pass
+                        try:
+                            delattr(root, '_active_prompt_window')
+                        except Exception:
+                            pass
                 except Exception:
                     pass
         except Exception:

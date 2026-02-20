@@ -5,6 +5,7 @@ from tkinter import Tk, simpledialog, messagebox
 import threading
 from libs import session
 import queue
+from libs import abort_manager
 from configparser import ConfigParser
 from libs.paths import PROJECT_PATH as BASE_PATH
 
@@ -32,7 +33,7 @@ def show_error_safe(title, message):
     else:
         _error_queue.put((title, message))
 
-def _show_login_dialog(hardcoded_user=None, hardcoded_dsn="DWHDB_DB"):
+def _show_login_dialog(hardcoded_user=None, hardcoded_dsn="DWHDB_DB", parent=None):
     import ctypes
     from libs.paths import ASSETS_PATH
     import tkinter as tk
@@ -43,7 +44,11 @@ def _show_login_dialog(hardcoded_user=None, hardcoded_dsn="DWHDB_DB"):
     config.read(config_path)    
 
     # ❌ DO NOT create hidden_root — let launcher_gui own the icon
-    login_window = Toplevel()
+    # Parent the dialog when possible so it appears above the launcher/root
+    try:
+        login_window = Toplevel(parent) if parent is not None else Toplevel()
+    except Exception:
+        login_window = Toplevel()
     login_window.title("Oracle Login")
     login_window.resizable(False, False)
 
@@ -64,8 +69,40 @@ def _show_login_dialog(hardcoded_user=None, hardcoded_dsn="DWHDB_DB"):
     y = int((screen_height / 2) - (150 / 2))
     login_window.geometry(f"+{x}+{y}")
 
-    login_window.grab_set()
-    login_window.focus_force()
+    # Register active prompt on parent so abort handlers can close it if needed
+    try:
+        if parent is not None:
+            try:
+                setattr(parent, '_active_prompt_window', login_window)
+                logger.debug(f"Registered active prompt window on parent={parent}")
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # Avoid using grab_set() for the login dialog. Grabs can prevent the
+    # launcher main window from responding to Abort clicks on some platforms.
+    # Instead, make the dialog transient, bring it to the front, and focus it.
+    try:
+        if parent is not None:
+            try:
+                login_window.transient(parent)
+            except Exception:
+                pass
+        try:
+            login_window.attributes('-topmost', True)
+        except Exception:
+            pass
+        try:
+            login_window.deiconify(); login_window.lift(); login_window.update(); login_window.focus_force()
+        except Exception:
+            pass
+        try:
+            # remove topmost after ensuring it's visible
+            login_window.after(150, lambda: login_window.attributes('-topmost', False))
+        except Exception:
+            pass
+    except Exception:
+        pass
 
     frame = tk.Frame(login_window, padx=20, pady=10)
     frame.pack()
@@ -155,11 +192,31 @@ def _show_login_dialog(hardcoded_user=None, hardcoded_dsn="DWHDB_DB"):
                 config.write(f)
 
             login_window.destroy()
+            try:
+                if parent is not None and hasattr(parent, '_active_prompt_window'):
+                    try:
+                        delattr(parent, '_active_prompt_window')
+                        logger.debug(f"Cleared active prompt window attribute on parent={parent}")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         else:
             messagebox.showerror("Error", "Username, password, and DSN are all required.")
 
     def cancel():
-        login_window.destroy()
+        try:
+            login_window.destroy()
+        finally:
+            try:
+                if parent is not None and hasattr(parent, '_active_prompt_window'):
+                    try:
+                        delattr(parent, '_active_prompt_window')
+                        logger.debug(f"Cleared active prompt window attribute on parent={parent}")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
     btn_frame = tk.Frame(frame, pady=10)
     btn_frame.grid(row=4, columnspan=2)
@@ -169,10 +226,10 @@ def _show_login_dialog(hardcoded_user=None, hardcoded_dsn="DWHDB_DB"):
     login_window.wait_window()
     return result if result else None
 
-def prompt_credentials(hardcoded_user=None, hardcoded_dsn="DWHDB_DB"):
+def prompt_credentials(hardcoded_user=None, hardcoded_dsn="DWHDB_DB", parent=None):
     
     if threading.current_thread() is threading.main_thread():
-        return _show_login_dialog(hardcoded_user, hardcoded_dsn)
+        return _show_login_dialog(hardcoded_user, hardcoded_dsn, parent=parent)
 
     show_error_safe("Thread Error", "❌ Login prompt must be called from the main thread.")
     return None
@@ -201,16 +258,52 @@ def get_db_connection(force_shared=False, root=None):
 
                     def ask_login():
                         try:
-                            result_holder["creds"] = prompt_credentials(hardcoded_user="dwh", hardcoded_dsn="DWHDB_DB")
+                            # Parent the prompt to the launcher's root so abort handler
+                            # can find and close it if needed.
+                            result_holder["creds"] = prompt_credentials(hardcoded_user="dwh", hardcoded_dsn="DWHDB_DB", parent=root)
                         finally:
-                            ev.set()
+                            try:
+                                ev.set()
+                            finally:
+                                try:
+                                    abort_manager.register_prompt_event(None)
+                                except Exception:
+                                    pass
 
                     try:
                         logger.info("Scheduling DWH login prompt on main thread via root.after")
+                        # Register the Event so abort handlers can wake the worker
+                        try:
+                            abort_manager.register_prompt_event(ev)
+                        except Exception:
+                            pass
                         root.after(0, ask_login)
-                        # Wait for the main thread to complete prompting
-                        ev.wait()
-                        logger.info("DWH login prompt completed; checking credentials result")
+                        # Wait for the main thread to complete prompting, but don't block
+                        # forever: poll the Event with a short timeout so Abort can
+                        # interrupt the wait.
+                        import time as _time
+                        waited = 0.0
+                        timeout = 30.0
+                        interval = 0.2
+                        from libs import abort_manager as _am
+                        while not ev.wait(interval):
+                            if getattr(_am, 'should_abort', False):
+                                logger.info("Abort requested while waiting for DWH login prompt; cancelling prompt wait")
+                                # ensure any main-thread prompt is cancelled by clearing registration
+                                try:
+                                    _am.cancel_prompt_event()
+                                except Exception:
+                                    pass
+                                break
+                            waited += interval
+                            if waited >= timeout:
+                                logger.warning("Timed out waiting for DWH login prompt; cancelling")
+                                break
+                        logger.info("DWH login prompt completed or cancelled; checking credentials result")
+                        try:
+                            abort_manager.register_prompt_event(None)
+                        except Exception:
+                            pass
                     except Exception:
                         # Fallback to direct call if scheduling failed
                         logger.warning("Scheduling DWH login prompt failed; falling back to direct prompt")
@@ -282,16 +375,51 @@ def get_db_connection(force_shared=False, root=None):
                         try:
                             result_holder["creds"] = prompt_credentials()
                         finally:
-                            ev.set()
+                            try:
+                                ev.set()
+                            finally:
+                                try:
+                                    abort_manager.register_prompt_event(None)
+                                except Exception:
+                                    pass
 
                     try:
                         logger.info("Scheduling user login prompt on main thread via root.after")
+                        try:
+                            abort_manager.register_prompt_event(ev)
+                        except Exception:
+                            pass
                         root.after(0, ask_user_login)
-                        ev.wait()
-                        logger.info("User login prompt completed; checking credentials result")
+                        # Poll the Event like above so Abort can interrupt waiting.
+                        import time as _time
+                        waited = 0.0
+                        timeout = 30.0
+                        interval = 0.2
+                        from libs import abort_manager as _am
+                        while not ev.wait(interval):
+                            if getattr(_am, 'should_abort', False):
+                                logger.info("Abort requested while waiting for user login prompt; cancelling prompt wait")
+                                try:
+                                    _am.cancel_prompt_event()
+                                except Exception:
+                                    pass
+                                break
+                            waited += interval
+                            if waited >= timeout:
+                                logger.warning("Timed out waiting for user login prompt; cancelling")
+                                break
+                        logger.info("User login prompt completed or cancelled; checking credentials result")
+                        try:
+                            abort_manager.register_prompt_event(None)
+                        except Exception:
+                            pass
                     except Exception:
                         logger.warning("Scheduling user login prompt failed; falling back to direct prompt")
-                        result_holder["creds"] = prompt_credentials()
+                        # Fallback: try to prompt on main thread directly, parent when possible
+                        try:
+                            result_holder["creds"] = prompt_credentials(parent=root)
+                        except Exception:
+                            result_holder["creds"] = prompt_credentials()
 
                     session.user_credentials = result_holder.get("creds")
                     session.stored_credentials = session.user_credentials

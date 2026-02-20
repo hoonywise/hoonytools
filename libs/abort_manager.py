@@ -2,9 +2,12 @@ should_abort = False
 created_tables = set()
 current_connection = None
 cleanup_done = False
+prompt_event = None
 
 import logging
 import threading
+import oracledb
+from libs import session
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +32,34 @@ def is_expected_disconnect(exc: Exception) -> bool:
 def set_abort(value=True):
     global should_abort
     should_abort = value
+
+def register_prompt_event(ev):
+    """Register an Event that a background worker is waiting on for a
+    main-thread prompt. This allows the launcher abort handler to set the
+    Event so the worker wakes immediately. Pass None to clear the
+    registration."""
+    global prompt_event
+    try:
+        prompt_event = ev
+    except Exception:
+        prompt_event = None
+
+
+def cancel_prompt_event():
+    """If a prompt Event is registered, set it so any waiting worker will
+    unblock, and clear the registration."""
+    global prompt_event
+    try:
+        if prompt_event is not None:
+            try:
+                prompt_event.set()
+            except Exception as e:
+                logger.debug(f"Failed to set prompt event during cancel: {e}")
+    finally:
+        try:
+            prompt_event = None
+        except Exception:
+            prompt_event = None
 
 def reset():
     global should_abort, created_tables, cleanup_done, current_connection
@@ -99,6 +130,10 @@ def cleanup_on_abort(conn, cursor):
 
     try:
         logger.warning("⏹️ Aborting operation. Rolling back and cleaning up...")
+        try:
+            logger.debug(f"cleanup_on_abort: created_tables={created_tables}")
+        except Exception:
+            pass
 
         # Defensive rollback: connection may already be closed/unavailable
         if conn:
@@ -118,7 +153,13 @@ def cleanup_on_abort(conn, cursor):
                 if row:
                     schema = row[0]
             except Exception as e:
-                logger.warning(f"⚠️ Could not determine schema via cursor: {e}")
+                # Downgrade DPY-1001 "not connected" to debug when it is
+                # expected during an abort/cleanup or when seen on a
+                # background/worker thread.
+                if is_expected_disconnect(e):
+                    logger.debug(f"Could not determine schema via cursor (expected during abort): {e}")
+                else:
+                    logger.warning(f"⚠️ Could not determine schema via cursor: {e}")
 
         # Fallback to connection username if available
         if not schema and conn:
@@ -156,6 +197,72 @@ def cleanup_on_abort(conn, cursor):
         else:
             if created_tables and not cursor:
                 logger.debug("Skipping table drops: no cursor available during abort cleanup")
+
+        # If there are remaining created_tables that we couldn't drop because
+        # the provided cursor/connection was unavailable, try a best-effort
+        # fallback: open a fresh connection using saved session credentials
+        # (prefer DWH creds when the tables appear to be in DWH) and drop
+        # fully-qualified names. This helps when the worker's connection was
+        # closed to interrupt DB calls and the original cursor is unusable.
+        try:
+            if created_tables:
+                # Determine whether any created table looks like DWH.<TABLE>
+                needs_dwh = any(isinstance(t, str) and t.upper().startswith('DWH.') for t in created_tables)
+                creds = None
+                # Prefer DWH credentials for DWH-targeted drops
+                try:
+                    if needs_dwh and getattr(session, 'dwh_credentials', None):
+                        creds = session.dwh_credentials
+                    elif getattr(session, 'user_credentials', None):
+                        creds = session.user_credentials
+                except Exception:
+                    creds = None
+
+                if creds:
+                    try:
+                        logger.debug(f"Attempting fallback cleanup connection to drop remaining tables: {created_tables}")
+                        try:
+                            # use oracledb directly to avoid UI prompts
+                            fb_conn = oracledb.connect(user=creds.get('username'), password=creds.get('password'), dsn=creds.get('dsn'))
+                        except Exception as e:
+                            logger.debug(f"Could not open fallback connection for abort cleanup: {e}")
+                            fb_conn = None
+                        if fb_conn:
+                            fb_cur = None
+                            try:
+                                fb_cur = fb_conn.cursor()
+                                for table in list(created_tables):
+                                    try:
+                                        # table may already be fully-qualified (SCHEMA.TABLE)
+                                        fb_cur.execute(f"DROP TABLE {table} PURGE")
+                                        logger.info(f"🗑️ Dropped table from abort cleanup (fallback): {table}")
+                                        try:
+                                            created_tables.discard(table)
+                                        except Exception:
+                                            pass
+                                    except Exception as e:
+                                        if is_expected_disconnect(e):
+                                            logger.debug(f"Could not drop {table} during fallback cleanup (expected): {e}")
+                                        else:
+                                            logger.warning(f"⚠️ Could not drop {table} during fallback cleanup: {e}")
+                                try:
+                                    fb_conn.commit()
+                                except Exception:
+                                    pass
+                            finally:
+                                try:
+                                    if fb_cur:
+                                        fb_cur.close()
+                                except Exception:
+                                    pass
+                                try:
+                                    fb_conn.close()
+                                except Exception:
+                                    pass
+                    except Exception as e:
+                        logger.debug(f"Fallback abort cleanup attempt failed: {e}")
+        except Exception:
+            pass
     finally:
         # Best-effort close and mark cleanup as done. Swallow errors so cleanup
         # remains safe when called multiple times.
