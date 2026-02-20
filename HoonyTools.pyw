@@ -531,7 +531,15 @@ def run_selected():
             # can update its status light. Treat SQL View and SQL Materialized View loaders
             # the same way.
             if tool_name in ("☑ SQL View Loader", "☑ SQL Materialized View Loader"):
-                TOOLS[tool_name](on_finish=lambda: status_light.config(text="🟢"))
+                # Pass launcher root as parent so loaders can register theme callbacks
+                try:
+                    TOOLS[tool_name](root, on_finish=lambda: status_light.config(text="🟢"))
+                except TypeError:
+                    # fallback for older signatures
+                    try:
+                        TOOLS[tool_name](on_finish=lambda: status_light.config(text="🟢"))
+                    except Exception:
+                        TOOLS[tool_name]()
             else:
                 try:
                     # Prefer passing launcher root to tools when supported so dialogs are parented correctly

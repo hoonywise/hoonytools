@@ -12,7 +12,13 @@ logger = logging.getLogger(__name__)
 # reference to Tk's default root if present (use getattr to avoid static-analysis issues)
 _tk_default_root = getattr(tk, '_default_root', None)
 
-def run_sql_view_loader(on_finish=None):
+def run_sql_view_loader(parent=None, on_finish=None):
+    # Backwards-compatible parameter handling: the launcher may pass a parent
+    # window (root) as the first argument. If a non-callable is passed, treat
+    # it as parent and clear on_finish.
+    if on_finish is not None and not callable(on_finish):
+        parent = on_finish
+        on_finish = None
     # Theme support for pane-only dark mode (polling fallback)
     try:
         import tkinter.ttk as _ttk
@@ -154,27 +160,33 @@ def run_sql_view_loader(on_finish=None):
         if on_finish:
             on_finish()
 
-    builder_window = tk.Toplevel()
+    # Detect initial dark mode BEFORE creating widgets to avoid a white flash
+    try:
+        _initial_dark = _detect_dark_from_style()
+    except Exception:
+        _initial_dark = False
+
+    # Create Toplevel with optional parent so the window can be modal
+    builder_window = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
     builder_window.title("SQL View Loader")
     builder_window.geometry("800x600")
-    builder_window.grab_set()
 
-    # Start theme polling so panes follow launcher's pane-only dark mode
+    # If launched from the main launcher, make the window transient and modal
+    grabbed = False
     try:
-        # apply initial
-        try:
-            if _detect_dark_from_style():
-                _apply_theme(True)
-            else:
-                _apply_theme(False)
-        except Exception:
-            pass
-        try:
-            builder_window.after(600, _poll_theme)
-        except Exception:
-            pass
-        # stop polling when window closed
-        builder_window.bind('<Destroy>', _stop_polling)
+        if parent is not None:
+            try:
+                builder_window.transient(parent)
+                builder_window.update_idletasks()
+                builder_window.deiconify()
+                builder_window.lift()
+            except Exception:
+                pass
+            try:
+                builder_window.grab_set()
+                grabbed = True
+            except Exception:
+                grabbed = False
     except Exception:
         pass
 
@@ -197,17 +209,32 @@ def run_sql_view_loader(on_finish=None):
 
     tk.Label(builder_window, text="Enter SQL to turn into a view:", font=("Arial", 11, "bold")).pack(pady=(10, 5))
 
-    sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10))
+    # Create SQL text with initial theme to avoid visible white -> black flip
+    try:
+        if _initial_dark:
+            sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10), bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#444444')
+        else:
+            sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10), bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
+    except Exception:
+        sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10))
     sql_text.pack(padx=10, pady=(0, 10))
 
     control_frame = tk.Frame(builder_window)
     control_frame.pack(pady=5)
 
     tk.Label(control_frame, text="View Name:").grid(row=0, column=0, padx=(0, 5))
-    view_name_entry = tk.Entry(control_frame, width=40)
+    # Create the view name entry with initial theme to avoid flash
+    try:
+        if _initial_dark:
+            view_name_entry = tk.Entry(control_frame, width=40, bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+        else:
+            view_name_entry = tk.Entry(control_frame, width=40)
+    except Exception:
+        view_name_entry = tk.Entry(control_frame, width=40)
     view_name_entry.grid(row=0, column=1, padx=(0, 20))
 
     dwh_var = tk.BooleanVar()
+    # Keep checkbox/frames in default (light) chrome; avoid changing their bg so chrome stays consistent
     dwh_checkbox = tk.Checkbutton(control_frame, text="Load to DWH schema (shared login)", variable=dwh_var)
     dwh_checkbox.grid(row=0, column=2)
 
@@ -224,4 +251,76 @@ def run_sql_view_loader(on_finish=None):
     x = (builder_window.winfo_screenwidth() // 2) - (width // 2)
     y = (builder_window.winfo_screenheight() // 2) - (height // 2)
     builder_window.geometry(f"{width}x{height}+{x}+{y}")
-    builder_window.mainloop()
+
+    # Register theme callback with parent when available; otherwise fall back to polling
+    def _theme_cb(enable_dark: bool):
+        try:
+            _apply_theme(bool(enable_dark))
+        except Exception:
+            pass
+
+    try:
+        if parent is not None and hasattr(parent, 'register_theme_callback'):
+            try:
+                parent.register_theme_callback(_theme_cb)
+                # ensure we unregister when this window is destroyed
+                def _on_destroy(event=None):
+                    try:
+                        if parent and hasattr(parent, 'unregister_theme_callback'):
+                            parent.unregister_theme_callback(_theme_cb)
+                    except Exception:
+                        pass
+                try:
+                    builder_window.bind('<Destroy>', _on_destroy)
+                except Exception:
+                    pass
+                # Apply current style immediately
+                try:
+                    _apply_theme(_detect_dark_from_style())
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        else:
+            # Polling fallback: start polling to pick up subsequent theme changes
+            try:
+                builder_window.after(600, _poll_theme)
+            except Exception:
+                pass
+            try:
+                builder_window.bind('<Destroy>', _stop_polling)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Run modal or standalone mainloop depending on whether a parent was provided
+    try:
+        if parent is not None:
+            try:
+                builder_window.wait_window()
+            except Exception:
+                pass
+        else:
+            try:
+                builder_window.mainloop()
+            except KeyboardInterrupt:
+                try:
+                    if grabbed:
+                        try:
+                            builder_window.grab_release()
+                        except Exception:
+                            pass
+                    builder_window.destroy()
+                except Exception:
+                    pass
+    finally:
+        # Ensure we release modal grab if we set it
+        try:
+            if grabbed:
+                try:
+                    builder_window.grab_release()
+                except Exception:
+                    pass
+        except Exception:
+            pass
