@@ -4,7 +4,6 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
-
 ## 🚀 v1.3.6 — Fix: Ensure DWH connection always closed on early exits (2026-02-19)
 
 This patch fixes a connection leak in the SQL Materialized View Loader when the "Load to DWH" (shared login) option is used but the user cancels or errors out during the materialized-view-log creation flow.
