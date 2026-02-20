@@ -3,10 +3,14 @@ from tkinter import messagebox, scrolledtext
 import logging
 from libs.oracle_db_connector import get_db_connection
 from libs import session
+from libs import dwh_session
 import ctypes
 from libs.paths import ASSETS_PATH
 
 logger = logging.getLogger(__name__)
+
+# reference to Tk's default root if present (use getattr to avoid static-analysis issues)
+_tk_default_root = getattr(tk, '_default_root', None)
 
 def run_sql_view_loader(on_finish=None):
     def on_submit():
@@ -15,18 +19,34 @@ def run_sql_view_loader(on_finish=None):
         use_dwh = dwh_var.get()
 
         if not view_name:
-            messagebox.showerror("Missing View Name", "❌ Please enter a view name.")
+            messagebox.showerror("Missing View Name", "❌ Please enter a view name.", parent=builder_window)
+            try:
+                ensure_builder_on_top()
+            except Exception:
+                pass
             return
 
         if not sql_query:
-            messagebox.showerror("Missing SQL", "❌ Please paste a SQL query.")
+            messagebox.showerror("Missing SQL", "❌ Please paste a SQL query.", parent=builder_window)
+            try:
+                ensure_builder_on_top()
+            except Exception:
+                pass
             return
 
         # Choose credentials source
         conn = get_db_connection(force_shared=True) if use_dwh else get_db_connection()
         if not conn:
             return
+        if use_dwh:
+            # register against the global default root so cleanup can clear in-memory creds
+            try:
+                dwh_session.register_connection(_tk_default_root, conn)
+            except Exception:
+                # best-effort; don't block view creation on registration failure
+                logger.debug('Failed to register dwh connection', exc_info=True)
 
+        cursor = None
         try:
             cursor = conn.cursor()
             ddl = f"CREATE OR REPLACE VIEW {view_name} AS {sql_query}"
@@ -39,13 +59,24 @@ def run_sql_view_loader(on_finish=None):
             conn.commit()
             logger.info(f"✅ View '{view_name}' created and granted SELECT to PUBLIC.")
 
-            messagebox.showinfo("Success", f"✅ View '{view_name}' created successfully.")
+            messagebox.showinfo("Success", f"✅ View '{view_name}' created successfully.", parent=builder_window)
             builder_window.destroy()
             if on_finish:
                 on_finish()            
         except Exception as e:
             logger.error(f"❌ Error creating view: {e}")
-            messagebox.showerror("Error", f"❌ Failed to create view:\n{e}")
+            try:
+                messagebox.showerror("Error", f"❌ Failed to create view:\n{e}", parent=builder_window)
+            except Exception:
+                # fallback if parenting fails
+                try:
+                    messagebox.showerror("Error", f"❌ Failed to create view:\n{e}")
+                except Exception:
+                    pass
+            try:
+                ensure_builder_on_top()
+            except Exception:
+                pass
         finally:
             try:
                 if cursor:
@@ -56,6 +87,10 @@ def run_sql_view_loader(on_finish=None):
             try:
                 if conn:
                     conn.close()
+                    try:
+                        dwh_session.cleanup(_tk_default_root)
+                    except Exception:
+                        logger.debug('DWH cleanup failed', exc_info=True)
             except Exception as e:
                 logger.warning(f"⚠️ Failed to close connection: {e}")
 
@@ -76,6 +111,15 @@ def run_sql_view_loader(on_finish=None):
         builder_window.iconbitmap(default=icon_path)
     except Exception as e:
         logger.warning(f"⚠️ Failed to set taskbar icon: {e}")
+
+    def ensure_builder_on_top():
+        try:
+            builder_window.lift()
+            builder_window.attributes('-topmost', True)
+            # clear topmost shortly after to avoid stealing focus permanently
+            builder_window.after(120, lambda: builder_window.attributes('-topmost', False))
+        except Exception:
+            pass
 
     tk.Label(builder_window, text="Enter SQL to turn into a view:", font=("Arial", 11, "bold")).pack(pady=(10, 5))
 

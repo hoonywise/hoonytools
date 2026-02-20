@@ -6,6 +6,7 @@ import logging
 from tkinter import Toplevel, Label, Checkbutton, IntVar, Button, messagebox, simpledialog, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, Y, BOTH
 from tkinter import _default_root
 from libs.oracle_db_connector import get_db_connection
+from libs import dwh_session
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,17 @@ def center_window(window, width, height):
     x = int((screen_width / 2) - (width / 2))
     y = int((screen_height / 2) - (height / 2))
     window.geometry(f"{width}x{height}+{x}+{y}")
+
+# Helper to briefly make the main/root window topmost so dialogs don't get hidden
+def ensure_root_on_top(root=_default_root):
+    try:
+        if not root:
+            return
+        root.lift()
+        root.attributes('-topmost', True)
+        root.after(120, lambda: root.attributes('-topmost', False))
+    except Exception:
+        pass
 
 def prompt_schema_choice():
     result = {"choice": None}
@@ -132,6 +144,14 @@ def drop_user_tables():
     from tkinter import _default_root
     conn = get_db_connection(force_shared=(schema_choice == "dwh"), root=_default_root)
 
+    # Register the connection with the central DWH session manager so it can
+    # be cleaned up if the app/window requests it later.
+    try:
+        if schema_choice == 'dwh' and conn:
+            dwh_session.register_connection(_default_root, conn)
+    except Exception:
+        logger.debug('Failed to register dwh connection', exc_info=True)
+
     if not conn:
         logger.error("❌ Failed to connect.")
         return
@@ -149,7 +169,17 @@ def drop_user_tables():
     rows = cursor.fetchall()
 
     if not rows:
-        messagebox.showinfo("No Objects", f"No tables, views or materialized views found in schema {schema}")
+        try:
+            messagebox.showinfo("No Objects", f"No tables, views or materialized views found in schema {schema}", parent=_default_root)
+        except Exception:
+            try:
+                messagebox.showinfo("No Objects", f"No tables, views or materialized views found in schema {schema}")
+            except Exception:
+                pass
+        try:
+            ensure_root_on_top()
+        except Exception:
+            pass
         return
 
     # Prepare display strings for the GUI and a mapping back to name/type
@@ -206,10 +236,24 @@ def drop_user_tables():
 
     selected = select_tables_gui(display_list, f"Select objects to drop from schema: {schema}")
     if not selected:
-        messagebox.showinfo("Cancelled", "No objects selected.")
+        try:
+            messagebox.showinfo("Cancelled", "No objects selected.", parent=_default_root)
+        except Exception:
+            try:
+                messagebox.showinfo("Cancelled", "No objects selected.")
+            except Exception:
+                pass
+        try:
+            ensure_root_on_top()
+        except Exception:
+            pass
         return
 
-    if not messagebox.askyesno("Confirm", f"Drop {len(selected)} object(s) from schema {schema}?"):
+    try:
+        confirmed = messagebox.askyesno("Confirm", f"Drop {len(selected)} object(s) from schema {schema}?", parent=_default_root)
+    except Exception:
+        confirmed = messagebox.askyesno("Confirm", f"Drop {len(selected)} object(s) from schema {schema}?")
+    if not confirmed:
         return
 
     for disp in selected:
@@ -269,11 +313,31 @@ def drop_user_tables():
     conn.commit()
     cursor.close()
     conn.close()
-    messagebox.showinfo("Done", "✅ Cleanup complete.")
+    try:
+        # Ensure in-memory DWH credentials are cleared when appropriate
+        dwh_session.cleanup(_default_root)
+    except Exception:
+        logger.debug('DWH cleanup failed', exc_info=True)
+    try:
+        messagebox.showinfo("Done", "✅ Cleanup complete.", parent=_default_root)
+    except Exception:
+        try:
+            messagebox.showinfo("Done", "✅ Cleanup complete.")
+        except Exception:
+            pass
+    try:
+        ensure_root_on_top()
+    except Exception:
+        pass
     logger.info("✅ Cleanup complete.")
 
 def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     conn = get_db_connection(force_shared=True, root=_default_root)
+    try:
+        if conn:
+            dwh_session.register_connection(_default_root, conn)
+    except Exception:
+        logger.debug('Failed to register dwh connection', exc_info=True)
     if not conn:
         logger.error("❌ Failed to connect to DWH.")
         return
@@ -284,12 +348,32 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     tables = [row[0] for row in cursor.fetchall()]
 
     if not tables:
-        messagebox.showinfo("No Tables", f"No matching tables found in schema {schema}")
+        try:
+            messagebox.showinfo("No Tables", f"No matching tables found in schema {schema}", parent=(parent_window if parent_window is not None else _default_root))
+        except Exception:
+            try:
+                messagebox.showinfo("No Tables", f"No matching tables found in schema {schema}")
+            except Exception:
+                pass
+        try:
+            ensure_root_on_top(parent_window if parent_window is not None else _default_root)
+        except Exception:
+            pass
         return
 
     selected = select_tables_gui(tables, f"Select {schema} tables to delete rows from:")
     if not selected:
-        messagebox.showinfo("Cancelled", "No tables selected.")
+        try:
+            messagebox.showinfo("Cancelled", "No tables selected.", parent=(parent_window if parent_window is not None else _default_root))
+        except Exception:
+            try:
+                messagebox.showinfo("Cancelled", "No tables selected.")
+            except Exception:
+                pass
+        try:
+            ensure_root_on_top(parent_window if parent_window is not None else _default_root)
+        except Exception:
+            pass
         return
 
     # Thread-safe input dialog with optional parent window
@@ -341,10 +425,25 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     value = ask_string_threadsafe(f"Enter {label}", prompt_label, parent=parent_window)
 
     if not value:
-        messagebox.showwarning("Missing Input", f"{label} is required.")
+        try:
+            parent = parent_window if parent_window is not None else _default_root
+            messagebox.showwarning("Missing Input", f"{label} is required.", parent=parent)
+        except Exception:
+            try:
+                messagebox.showwarning("Missing Input", f"{label} is required.")
+            except Exception:
+                pass
+        try:
+            ensure_root_on_top(parent if parent is not None else _default_root)
+        except Exception:
+            pass
         return
 
-    if not messagebox.askyesno("Confirm", f"Delete rows from {len(selected)} tables where {label} = '{value}'?"):
+    try:
+        confirmed = messagebox.askyesno("Confirm", f"Delete rows from {len(selected)} tables where {label} = '{value}'?", parent=(parent_window if parent_window is not None else _default_root))
+    except Exception:
+        confirmed = messagebox.askyesno("Confirm", f"Delete rows from {len(selected)} tables where {label} = '{value}'?")
+    if not confirmed:
         return
 
     for table in selected:
@@ -358,5 +457,19 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     conn.commit()
     cursor.close()
     conn.close()
-    messagebox.showinfo("Done", f"✅ Deleted rows where {label} = {value}")
+    try:
+        dwh_session.cleanup(_default_root)
+    except Exception:
+        logger.debug('DWH cleanup failed', exc_info=True)
+    try:
+        messagebox.showinfo("Done", f"✅ Deleted rows where {label} = {value}", parent=(parent_window if parent_window is not None else _default_root))
+    except Exception:
+        try:
+            messagebox.showinfo("Done", f"✅ Deleted rows where {label} = {value}")
+        except Exception:
+            pass
+    try:
+        ensure_root_on_top(parent_window if parent_window is not None else _default_root)
+    except Exception:
+        pass
     logger.info("✅ Row deletion complete.")
