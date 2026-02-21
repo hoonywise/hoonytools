@@ -140,7 +140,7 @@ def run_mv_refresh_gui(on_finish=None):
     # List to track all buttons for dark mode styling
     _all_buttons = []
 
-    # User MVs pane (LabelFrame with dynamic header and count)
+    # Schema 1 MVs pane (LabelFrame with dynamic header and count)
     user_frame = tk.LabelFrame(left, padx=6, pady=6)
     user_frame.pack(fill="both", pady=(0, 8), expand=True)
 
@@ -167,7 +167,7 @@ def run_mv_refresh_gui(on_finish=None):
     mview_listbox_user = tk.Listbox(user_frame, width=40, height=14, selectmode=tk.EXTENDED, exportselection=False)
     mview_listbox_user.pack(fill="both", expand=True)
 
-    # DWH MVs pane (LabelFrame with dynamic header and count, lazy login)
+    # Schema 2 MVs pane (LabelFrame with dynamic header and count, lazy login)
     dwh_frame = tk.LabelFrame(left, padx=6, pady=6)
     dwh_frame.pack(fill="both", expand=True)
 
@@ -208,7 +208,7 @@ def run_mv_refresh_gui(on_finish=None):
             label_w = user_count_label.winfo_reqwidth()
             user_count_label.place(x=frame_x + frame_w - label_w - right_padding, y=uy)
 
-            # DWH frame count label
+            # Schema 2 frame count label
             dy = dwh_frame.winfo_y()
             frame2_x = dwh_frame.winfo_x()
             frame2_w = dwh_frame.winfo_width()
@@ -419,7 +419,13 @@ def run_mv_refresh_gui(on_finish=None):
         except Exception as e:
             logger.exception(f"Failed to load materialized views: {e}")
 
-    def load_dwh_mviews(dwh_conn, owner='DWH', selected_name=None):
+    def load_dwh_mviews(dwh_conn, owner=None, selected_name=None):
+        # Get owner from connection if not provided
+        if not owner:
+            owner = dwh_conn.username.upper() if hasattr(dwh_conn, 'username') else None
+        if not owner:
+            logger.warning("Could not determine owner for schema2 mviews")
+            return
         try:
             cur = dwh_conn.cursor()
             # attempt to retrieve same columns as user view
@@ -466,7 +472,7 @@ def run_mv_refresh_gui(on_finish=None):
             except Exception:
                 pass
         except Exception as e:
-            logger.exception(f"Failed to load DWH materialized views: {e}")
+            logger.exception(f"Failed to load schema2 materialized views: {e}")
             mview_listbox_dwh.delete(0, tk.END)
             mview_listbox_dwh.insert(tk.END, "(no access or error)")
             try:
@@ -475,12 +481,12 @@ def run_mv_refresh_gui(on_finish=None):
                 pass
 
     def refresh_dwh_mviews():
-        # Prompt for DWH login only when user asks to refresh DWH list
+        # Prompt for schema2 login only when user asks to refresh schema2 list
         dconn = getattr(root, '_dwh_conn', None)
         if not dconn:
             dconn = get_db_connection(schema='schema2', root=root)
             if not dconn:
-                _safe_messagebox('showwarning', "DWH Login", "DWH login cancelled or failed.", dlg=root)
+                _safe_messagebox('showwarning', "Schema 2 Login", "Schema 2 login cancelled or failed.", dlg=root)
                 return
             setattr(root, '_dwh_conn', dconn)
             try:
@@ -498,11 +504,12 @@ def run_mv_refresh_gui(on_finish=None):
                     update_dwh_header()
                 except Exception:
                     pass
-        # load using owner DWH
+        # load using actual owner from connection
         try:
-            load_dwh_mviews(dconn, 'DWH')
+            dwh_owner = dconn.username.upper() if hasattr(dconn, 'username') else None
+            load_dwh_mviews(dconn, dwh_owner)
         except Exception as e:
-            logger.exception(f"Failed refreshing DWH mviews: {e}")
+            logger.exception(f"Failed refreshing schema2 mviews: {e}")
 
     # Bring this window back on top after modal dialogs (messagebox) so the
     # smaller MV window does not get hidden behind the main app window.
@@ -546,11 +553,11 @@ def run_mv_refresh_gui(on_finish=None):
             info_text.delete('1.0', tk.END)
             summary_lines = []
             if user_count and dwh_count:
-                summary_lines.append(f"{user_count} User MV(s) + {dwh_count} DWH MV(s) selected")
+                summary_lines.append(f"{user_count} Schema 1 MV(s) + {dwh_count} Schema 2 MV(s) selected")
             elif user_count:
-                summary_lines.append(f"{user_count} User MV(s) selected")
+                summary_lines.append(f"{user_count} Schema 1 MV(s) selected")
             else:
-                summary_lines.append(f"{dwh_count} DWH MV(s) selected")
+                summary_lines.append(f"{dwh_count} Schema 2 MV(s) selected")
             summary_lines.append("")
             summary_lines.append("Click 'Refresh MV' to refresh all selected materialized views.")
             info_text.insert(tk.END, '\n'.join(summary_lines))
@@ -558,13 +565,13 @@ def run_mv_refresh_gui(on_finish=None):
             sql_text.delete('1.0', tk.END)
             mv_lines = []
             if user_count:
-                mv_lines.append("User MVs:")
+                mv_lines.append("Schema 1 MVs:")
                 for i in user_sel:
                     mv_lines.append(f"  - {mview_listbox_user.get(i)}")
             if dwh_count:
                 if mv_lines:
                     mv_lines.append("")
-                mv_lines.append("DWH MVs:")
+                mv_lines.append("Schema 2 MVs:")
                 for i in dwh_sel:
                     mv_lines.append(f"  - {mview_listbox_dwh.get(i)}")
             sql_text.insert(tk.END, '\n'.join(mv_lines))
@@ -617,7 +624,7 @@ def run_mv_refresh_gui(on_finish=None):
             owner = None
             row_data = row
         else:
-            owner = row[0] if len(row) > 0 else 'DWH'
+            owner = row[0] if len(row) > 0 else None
             row_data = row[1:]
         # defensive extraction because REFRESH_MODE may not be available in older DBs
         build = row_data[1] if len(row_data) > 1 else ''
@@ -657,7 +664,7 @@ def run_mv_refresh_gui(on_finish=None):
             # Fallback: if regex detection failed, try USER_DEPENDENCIES / ALL_DEPENDENCIES to find referenced tables
             if not bases:
                 try:
-                    # Use the active connection where possible (DWH vs user)
+                    # Use the active connection where possible (schema2 vs schema1)
                     cur = active_conn.cursor() if active_conn else conn.cursor()
                     try:
                         # If connected as the owning schema, USER_DEPENDENCIES is preferred
@@ -766,7 +773,7 @@ def run_mv_refresh_gui(on_finish=None):
         success = []
         failures = []
 
-        # Refresh User MVs
+        # Refresh Schema 1 MVs
         try:
             if user_mvs:
                 cur = conn.cursor()
@@ -781,13 +788,13 @@ def run_mv_refresh_gui(on_finish=None):
         except Exception as e:
             logger.exception("Error refreshing user MVs: %s", e)
 
-        # Refresh DWH MVs
+        # Refresh Schema 2 MVs
         dconn = getattr(root, '_dwh_conn', None)
         if dwh_mvs:
             if not dconn:
                 dconn = get_db_connection(schema='schema2', root=root)
                 if not dconn:
-                    failures.extend([(mv, 'DWH login failed') for mv in dwh_mvs])
+                    failures.extend([(mv, 'Schema 2 login failed') for mv in dwh_mvs])
                     dwh_mvs = []
                 else:
                     setattr(root, '_dwh_conn', dconn)
@@ -818,7 +825,7 @@ def run_mv_refresh_gui(on_finish=None):
                             failures.append((mv_display, str(e)))
                     cur.close()
             except Exception as e:
-                logger.exception("Error refreshing DWH MVs: %s", e)
+                logger.exception("Error refreshing Schema 2 MVs: %s", e)
 
         # Brief summary in top-right (info_text)
         info_text.delete('1.0', tk.END)
@@ -847,7 +854,8 @@ def run_mv_refresh_gui(on_finish=None):
         try:
             dconn = getattr(root, '_dwh_conn', None)
             if dconn:
-                load_dwh_mviews(dconn, 'DWH')
+                dwh_owner = dconn.username.upper() if hasattr(dconn, 'username') else None
+                load_dwh_mviews(dconn, dwh_owner)
         except Exception:
             pass
 
@@ -864,12 +872,12 @@ def run_mv_refresh_gui(on_finish=None):
             mv_query = row[6] if row and len(row) > 6 else (row[5] if row and len(row) > 5 else '')
             active_cursor = conn.cursor()
         else:
-            # ensure DWH conn
+            # ensure schema2 conn
             dconn = getattr(root, '_dwh_conn', None)
             if not dconn:
                 dconn = get_db_connection(schema='schema2', root=root)
                 if not dconn:
-                    _safe_messagebox('showwarning', "DWH Login", "DWH login cancelled or failed.", dlg=root)
+                    _safe_messagebox('showwarning', "Schema 2 Login", "Schema 2 login cancelled or failed.", dlg=root)
                     return
                 setattr(root, '_dwh_conn', dconn)
                 try:
@@ -1217,7 +1225,7 @@ def run_mv_refresh_gui(on_finish=None):
 
     # initial load of user and dwh mviews (auto-refresh both panes)
     load_user_mviews()
-    # Attempt to load DWH list if saved credentials exist or lazy login is desired
+    # Attempt to load schema2 list if saved credentials exist or lazy login is desired
     try:
         # If session has saved credentials for schema2, attempt to establish connection silently
         creds2 = session.get_credentials('schema2')
@@ -1234,7 +1242,8 @@ def run_mv_refresh_gui(on_finish=None):
                         username = dconn.username if hasattr(dconn, 'username') else None
                         if username:
                             session.set_label('schema2', username)
-                        load_dwh_mviews(dconn, 'DWH')
+                        dwh_owner = dconn.username.upper() if hasattr(dconn, 'username') else None
+                        load_dwh_mviews(dconn, dwh_owner)
                     except Exception:
                         try:
                             update_dwh_header()
