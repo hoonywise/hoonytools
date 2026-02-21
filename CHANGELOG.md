@@ -4,6 +4,74 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🎨 v2.2.0 — Comprehensive Dialog Theming & Splash Screen Controls (2026-02-21)
+
+This release implements comprehensive theme support across all tool dialogs, adds splash screen controls, and fixes several theming and settings-related bugs.
+
+### Added
+
+- **Comprehensive Dialog Theming**: All tool dialogs now support full theme system with live updates:
+  - `apply_theme_to_dialog(win)` - Apply theme immediately after creating a Toplevel dialog
+  - `apply_theme_to_existing_widgets(win)` - Update all widgets when theme changes live
+  - Widgets created after `apply_theme_to_dialog()` automatically inherit theme colors via Tk option database
+  - Semantic colors (red/green status labels) are automatically preserved during theme updates
+
+- **Splash Screen Settings** (Settings → Appearance):
+  - "Show splash screen on startup" checkbox - disable to skip splash and launch GUI immediately
+  - Opacity slider (0-100%) - control maximum opacity of splash screen
+  - Settings persist in `config.ini` under `[Appearance]` section
+  - Opacity slider is grayed out when splash is disabled (visual feedback)
+
+- **Entry Widget Disabled State Theming**: Added `disabledBackground` and `disabledForeground` support in `configure_root_options()` and `apply_theme_to_entry()` for proper theming of disabled Entry widgets (e.g., threshold field in PK Designator)
+
+### Changed
+
+- **Theme Callback System**: All tool dialogs now use `gui_utils.register_theme_callback()` for live theme updates instead of polling or parent-based callbacks
+
+- **Settings Cancel Button**: Now properly restores original values when Cancel is pressed:
+  - Restores theme preset to original selection
+  - Restores splash screen enabled state
+  - Restores splash opacity value
+  - Fixes bug where category switching cleared original values (preserved in `entry_refs`)
+
+- **Splash Screen Fade-In Bug Fixed**: Splash screen now reaches full target opacity instead of stopping at 95% due to floating-point comparison issue
+
+### Removed
+
+- **Debug Button in MV Loader**: Removed "Show debug info" button from Existing MV Log dialog (was a development remnant)
+
+- **Old Theming Code**: Removed from all tool dialogs:
+  - `_detect_dark_from_style()` functions
+  - `_apply_dark_mode_to_buttons()` functions
+  - `_apply_entry_theme()` functions
+  - `_all_buttons` lists and manual button styling
+  - Polling-based theme detection (`_poll_theme()`)
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `libs/gui_utils.py` | Added Entry disabled state options, fixed `insertbackground` color |
+| `libs/settings.py` | Added Splash Screen settings (checkbox + opacity slider), Cancel restoration logic, preserved original values across category switches |
+| `HoonyTools.pyw` | Splash screen reads `splash_enabled` and `splash_opacity` from config, fixed fade-in to reach target opacity |
+| `loaders/sql_mv_loader.py` | Full dialog theming, removed debug button and diagnostic code |
+| `loaders/sql_view_loader.py` | Full dialog theming with live updates |
+| `loaders/excel_csv_loader.py` | Full dialog theming for 8 dialogs |
+| `tools/mv_refresh_gui.py` | Full dialog theming with live updates |
+| `tools/pk_designate_gui.py` | Full dialog theming, fixed threshold Entry theming |
+| `tools/index_gui.py` | Full dialog theming with live updates |
+| `tools/object_cleanup_gui.py` | Full dialog theming for 4 dialogs |
+
+### Default Settings (Fresh Install)
+
+| Setting | Default Value |
+|---------|---------------|
+| Splash Screen | Enabled |
+| Splash Opacity | 100% |
+| Theme | System Light |
+
+---
+
 ## 🎨 v2.1.8 — Theme System with Full Chrome Theming & Custom Colors (2026-02-21)
 
 This release introduces a comprehensive theme system with 7 preset themes, **full chrome theming**, and **custom color support**. The entire UI (buttons, labels, frames, menus, borders) can now be themed. Users can customize any of the 22 color keys via the new Customize Colors dialog.

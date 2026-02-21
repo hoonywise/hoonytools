@@ -384,19 +384,34 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
     splash_frame = tk.LabelFrame(container, text="Splash Screen", padx=10, pady=10)
     splash_frame.pack(fill='x', pady=(0, 10))
     
+    # Load splash settings from config
+    cfg = _load_config()
+    try:
+        splash_enabled = cfg.getboolean('Appearance', 'splash_enabled')
+    except Exception:
+        splash_enabled = True  # Default enabled
+    try:
+        current_opacity = cfg.getfloat('Appearance', 'splash_opacity')
+    except Exception:
+        current_opacity = 1.0
+    
+    # Splash enabled checkbox
+    splash_enabled_var = tk.BooleanVar(value=splash_enabled)
+    entry_refs['splash_enabled_var'] = splash_enabled_var
+    
+    splash_checkbox = tk.Checkbutton(
+        splash_frame,
+        text="Show splash screen on startup",
+        variable=splash_enabled_var
+    )
+    splash_checkbox.pack(anchor='w', pady=(0, 8))
+    
     # Splash opacity row
     opacity_row = tk.Frame(splash_frame)
     opacity_row.pack(fill='x', pady=5)
     
     opacity_label = tk.Label(opacity_row, text="Opacity:")
     opacity_label.pack(side='left', padx=(0, 10))
-    
-    # Load current splash opacity from config (default 1.0)
-    cfg = _load_config()
-    try:
-        current_opacity = cfg.getfloat('Appearance', 'splash_opacity')
-    except Exception:
-        current_opacity = 1.0
     
     # Opacity slider (Scale widget)
     opacity_var = tk.DoubleVar(value=current_opacity)
@@ -418,6 +433,41 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
     opacity_pct_label = tk.Label(opacity_row, text=f"{int(current_opacity * 100)}%", width=5)
     opacity_pct_label.pack(side='left')
     
+    # Splash opacity description
+    opacity_desc_label = tk.Label(
+        splash_frame,
+        text="Controls the maximum opacity of the startup splash screen.",
+        fg='gray'
+    )
+    opacity_desc_label.pack(anchor='w', pady=(5, 0))
+    
+    def _update_opacity_widgets_state():
+        """Enable/disable opacity widgets based on splash enabled state."""
+        enabled = splash_enabled_var.get()
+        state = 'normal' if enabled else 'disabled'
+        try:
+            opacity_slider.config(state=state)
+            opacity_label.config(state=state)
+            opacity_pct_label.config(state=state)
+            opacity_desc_label.config(state=state)
+        except Exception:
+            pass
+    
+    def _on_splash_enabled_change():
+        """Save splash enabled state to config and update widget states."""
+        try:
+            enabled = splash_enabled_var.get()
+            cfg = _load_config()
+            if not cfg.has_section('Appearance'):
+                cfg.add_section('Appearance')
+            cfg.set('Appearance', 'splash_enabled', str(enabled))
+            _save_config(cfg)
+            _update_opacity_widgets_state()
+        except Exception:
+            pass
+    
+    splash_checkbox.config(command=_on_splash_enabled_change)
+    
     def _on_opacity_change(value):
         """Update percentage label and save to config immediately."""
         try:
@@ -434,21 +484,18 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
     
     opacity_slider.config(command=_on_opacity_change)
     
-    # Splash opacity description
-    opacity_desc_label = tk.Label(
-        splash_frame,
-        text="Controls the maximum opacity of the startup splash screen.",
-        fg='gray'
-    )
-    opacity_desc_label.pack(anchor='w', pady=(5, 0))
+    # Apply initial state
+    _update_opacity_widgets_state()
     
     # Store splash widgets for theme callback
     entry_refs['_appearance_splash_frame'] = splash_frame
+    entry_refs['_appearance_splash_checkbox'] = splash_checkbox
     entry_refs['_appearance_opacity_row'] = opacity_row
     entry_refs['_appearance_opacity_label'] = opacity_label
     entry_refs['_appearance_opacity_slider'] = opacity_slider
     entry_refs['_appearance_opacity_pct_label'] = opacity_pct_label
     entry_refs['_appearance_opacity_desc_label'] = opacity_desc_label
+    entry_refs['_update_opacity_widgets_state'] = _update_opacity_widgets_state
 
     # Store widgets for theme callback
     entry_refs['_appearance_container'] = container
@@ -490,6 +537,10 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
         # Splash screen section theming
         try:
             gui_utils.apply_theme_to_labelframe(splash_frame)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_checkbox(splash_checkbox)
         except Exception:
             pass
         try:
@@ -995,6 +1046,21 @@ def show_settings(parent=None):
     # Store parent reference so panel builders can access it
     entry_refs['_parent'] = parent
 
+    # Store original values for Cancel restoration
+    from libs import gui_utils
+    entry_refs['_original_theme'] = gui_utils.get_current_theme()
+    
+    # Load original splash settings from config
+    _orig_cfg = _load_config()
+    try:
+        entry_refs['_original_splash_enabled'] = _orig_cfg.getboolean('Appearance', 'splash_enabled')
+    except Exception:
+        entry_refs['_original_splash_enabled'] = True
+    try:
+        entry_refs['_original_splash_opacity'] = _orig_cfg.getfloat('Appearance', 'splash_opacity')
+    except Exception:
+        entry_refs['_original_splash_opacity'] = 1.0
+
     # Track current content frame for category switching
     current_content = {'frame': None}
 
@@ -1307,6 +1373,20 @@ def show_settings(parent=None):
                 win.destroy()
 
     def _on_cancel():
+        # Restore original theme if it was changed
+        from libs import gui_utils
+        original_theme = entry_refs.get('_original_theme')
+        if original_theme:
+            gui_utils.set_theme(original_theme, save=True)
+        
+        # Restore original splash settings
+        cfg = _load_config()
+        if not cfg.has_section('Appearance'):
+            cfg.add_section('Appearance')
+        cfg.set('Appearance', 'splash_enabled', str(entry_refs.get('_original_splash_enabled', True)))
+        cfg.set('Appearance', 'splash_opacity', str(entry_refs.get('_original_splash_opacity', 1.0)))
+        _save_config(cfg)
+        
         win.destroy()
 
     def _on_apply():
@@ -1339,11 +1419,14 @@ def show_settings(parent=None):
             if widget != button_frame:
                 widget.destroy()
 
-        # Clear entry refs for fresh build, but preserve system references
+        # Clear entry refs for fresh build, but preserve system references and original values
         preserved = {
             '_parent': entry_refs.get('_parent'),
             '_status_label': entry_refs.get('_status_label'),
             '_win': entry_refs.get('_win'),
+            '_original_theme': entry_refs.get('_original_theme'),
+            '_original_splash_enabled': entry_refs.get('_original_splash_enabled'),
+            '_original_splash_opacity': entry_refs.get('_original_splash_opacity'),
         }
         entry_refs.clear()
         entry_refs.update(preserved)

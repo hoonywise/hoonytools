@@ -16,7 +16,7 @@ import webbrowser
 from configparser import ConfigParser
 from libs import gui_utils
 
-APP_VERSION = "2.1.8"
+APP_VERSION = "2.2.0"
 
 
 # Theme helpers
@@ -2500,7 +2500,23 @@ def launch_tool_gui():
 
 if __name__ == "__main__":
     try:
-        show_splash()
+        # Check if splash screen is enabled
+        splash_enabled = True
+        try:
+            from configparser import ConfigParser
+            from pathlib import Path
+            config_path = Path(__file__).parent / "libs" / "config.ini"
+            cfg = ConfigParser()
+            cfg.read(config_path)
+            splash_enabled = cfg.getboolean('Appearance', 'splash_enabled')
+        except Exception:
+            splash_enabled = True  # Default enabled if config not found
+        
+        # Show splash only if enabled
+        if splash_enabled:
+            show_splash()
+        
+        # Launch GUI immediately (no delay if splash disabled)
         launch_tool_gui()
     except KeyboardInterrupt:
         # Allow graceful exit when user force-quits (Ctrl+C or similar)

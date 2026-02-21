@@ -1725,3 +1725,190 @@ get_colors_for_preset(preset_key)  # Get colors for any preset without changing 
 - `HoonyTools.pyw` — New unified `apply_full_theme()`, removed View menu
 - `loaders/sql_mv_loader.py` — Full chrome theming for MV Builder dialog
 - `tools/mv_refresh_gui.py` — Uses `gui_utils` theme API
+
+---
+
+### 🎨 Entry #23: Comprehensive Dialog Theming & Splash Screen Controls (v2.2.0)
+
+This session delivered comprehensive theme support across all tool dialogs, splash screen configuration controls in Settings, and fixed the Settings Cancel button to properly restore original values.
+
+#### Goals Accomplished
+
+1. **All tool dialogs now have comprehensive theming** using `gui_utils.apply_theme_to_dialog()` and `apply_theme_to_existing_widgets()`
+2. **Splash screen controls** added to Settings → Appearance (enable/disable toggle + opacity slider)
+3. **Settings Cancel button** now properly restores original theme, splash_enabled, and splash_opacity values
+4. **Entry disabled state theming** fixed for proper display of disabled fields
+5. **Splash fade-in bug** fixed - now reaches target opacity correctly
+6. **Debug button removed** from MV Loader's Existing MV Log dialog
+
+#### Key Discoveries
+
+**1. Entry Disabled State Theming**
+
+Tkinter Entry widgets have separate `disabledBackground` and `disabledForeground` options that must be set explicitly for proper theming:
+
+```python
+# In gui_utils.configure_root_options()
+root.option_add('*Entry.disabledBackground', entry_bg)
+root.option_add('*Entry.disabledForeground', entry_fg)
+
+# In gui_utils.apply_theme_to_entry()
+widget.config(disabledbackground=entry_bg, disabledforeground=entry_fg)
+```
+
+Without these, disabled Entry widgets show system default colors even when the rest of the dialog is themed.
+
+**2. Splash Screen Fade-In Bug**
+
+Original code in `HoonyTools.pyw`:
+```python
+def _fade_in():
+    alpha = splash.attributes('-alpha')
+    if alpha < 1.0:  # BUG: When alpha reaches 1.0, condition is False
+        alpha += 0.05
+        splash.attributes('-alpha', alpha)
+        splash.after(30, _fade_in)
+```
+
+The final `splash.attributes('-alpha', 1.0)` was never called because the condition `alpha < 1.0` becomes False when alpha reaches 1.0. Fixed by using `<=` and checking against `target_opacity`:
+
+```python
+def _fade_in():
+    alpha = splash.attributes('-alpha')
+    if alpha < target_opacity:
+        alpha = min(alpha + 0.05, target_opacity)
+        splash.attributes('-alpha', alpha)
+        splash.after(30, _fade_in)
+```
+
+**3. Settings Cancel Restoration Bug**
+
+When switching categories in Settings dialog, `_on_category_select()` clears `entry_refs` but only preserves `_parent`, `_status_label`, `_win`. The original values (`_original_theme`, `_original_splash_enabled`, `_original_splash_opacity`) were being lost.
+
+**Before (broken):**
+```python
+preserved = {
+    '_parent': entry_refs.get('_parent'),
+    '_status_label': entry_refs.get('_status_label'),
+    '_win': entry_refs.get('_win'),
+}
+entry_refs.clear()
+entry_refs.update(preserved)
+```
+
+**After (fixed):**
+```python
+preserved = {
+    '_parent': entry_refs.get('_parent'),
+    '_status_label': entry_refs.get('_status_label'),
+    '_win': entry_refs.get('_win'),
+    '_original_theme': entry_refs.get('_original_theme'),
+    '_original_splash_enabled': entry_refs.get('_original_splash_enabled'),
+    '_original_splash_opacity': entry_refs.get('_original_splash_opacity'),
+}
+entry_refs.clear()
+entry_refs.update(preserved)
+```
+
+**4. Checkbox Function Name**
+
+The function is `gui_utils.apply_theme_to_checkbox()` (not `apply_theme_to_checkbutton`). This applies to both `tk.Checkbutton` and `tk.Radiobutton` widgets.
+
+**5. Default Values for Fresh Install**
+
+When no `config.ini` exists:
+- `splash_enabled` defaults to `True`
+- `splash_opacity` defaults to `1.0`
+- `theme` preset defaults to `system_light`
+
+#### Theme Application Pattern
+
+**For new dialogs (apply BEFORE adding widgets):**
+```python
+win = tk.Toplevel(parent)
+gui_utils.apply_theme_to_dialog(win)  # Apply immediately after creation
+# Now add widgets...
+```
+
+**For live theme updates via callbacks:**
+```python
+def _apply_theme(is_dark_unused):
+    gui_utils.apply_theme_to_existing_widgets(win)
+
+gui_utils.register_theme_callback(_apply_theme)
+win.bind('<Destroy>', lambda e: gui_utils.unregister_theme_callback(_apply_theme) if e.widget == win else None)
+```
+
+**Preserving semantic colors:**
+
+`apply_theme_to_existing_widgets()` automatically detects and preserves non-default foreground colors. For example, red/green status labels keep their semantic colors:
+
+```python
+# This label keeps its red color even after theme change
+status_label.config(fg='red')  # Set before or after theme application
+```
+
+The function checks if `widget.cget('fg')` differs from the system default before overwriting.
+
+#### Splash Screen Settings Implementation
+
+**Config.ini structure:**
+```ini
+[Appearance]
+preset = charcoal
+splash_enabled = true
+splash_opacity = 0.85
+```
+
+**Settings UI (in Appearance panel):**
+- Checkbox: "Show splash screen on startup"
+- Slider: Opacity (0-100%), disabled when checkbox unchecked
+- Changes save immediately on toggle/slide
+
+**HoonyTools.pyw splash logic:**
+```python
+splash_enabled = cfg.getboolean('Appearance', 'splash_enabled', fallback=True)
+target_opacity = cfg.getfloat('Appearance', 'splash_opacity', fallback=1.0)
+
+if splash_enabled:
+    _show_splash(target_opacity)
+```
+
+#### Files Modified
+
+| File | Changes |
+|------|---------|
+| `libs/gui_utils.py` | Added `disabledBackground`/`disabledForeground` to `configure_root_options()` and `apply_theme_to_entry()` |
+| `libs/settings.py` | Splash screen controls UI, preserved original values in `_on_category_select()`, Cancel restores original theme/splash values |
+| `HoonyTools.pyw` | Splash reads `splash_enabled`/`splash_opacity` from config, fixed fade-in to use `target_opacity` |
+| `loaders/sql_mv_loader.py` | 3 dialogs themed with `apply_theme_to_dialog()`, removed debug button from Existing MV Log dialog |
+| `loaders/sql_view_loader.py` | 1 dialog themed |
+| `loaders/excel_csv_loader.py` | 8 dialogs themed |
+| `tools/mv_refresh_gui.py` | 2 dialogs themed |
+| `tools/pk_designate_gui.py` | 2 dialogs themed, Entry disabled state now themes correctly |
+| `tools/index_gui.py` | 1 dialog themed |
+| `tools/object_cleanup_gui.py` | 4 dialogs themed |
+| `CHANGELOG.md` | Updated with v2.2.0 release notes |
+
+#### Testing Checklist
+
+1. **Theme persistence**: Select Charcoal theme, close Settings, reopen — should still be Charcoal
+2. **Dialog theming**: Open any tool dialog — entire dialog should match current theme
+3. **Live theme update**: Open a tool dialog, change theme in Settings — dialog should update immediately
+4. **Semantic colors preserved**: Red/green status labels should keep their colors after theme change
+5. **Disabled Entry theming**: PK Designator threshold field (disabled) should match theme
+6. **Splash toggle**: Disable splash in Settings, restart app — no splash screen
+7. **Splash opacity**: Set opacity to 50%, restart app — splash should be semi-transparent
+8. **Settings Cancel**: Change theme, click Cancel — original theme should restore
+9. **Settings Cancel after tab switch**: Change theme, switch to Connections tab, click Cancel — original theme should still restore
+10. **Fresh install defaults**: Delete `config.ini`, launch app — splash enabled at 100% opacity, System Light theme
+
+#### Architecture Notes
+
+- **`apply_theme_to_dialog(win)`**: Call immediately after `Toplevel()` creation, BEFORE adding widgets. Sets window background and configures ttk styles.
+
+- **`apply_theme_to_existing_widgets(win)`**: Recursively walks widget tree and applies appropriate theme to each widget based on its class. Safe to call multiple times.
+
+- **Theme callback registration**: Use `register_theme_callback(fn)` for live updates. Callback receives `is_dark` boolean (for backward compatibility) but should use `get_color()` for actual colors.
+
+- **Splash settings are global**: Not per-theme. Stored in `[Appearance]` section alongside `preset` but independent of theme colors.
