@@ -664,11 +664,12 @@ def launch_tool_gui():
     verse_text.bind('<Enter>', _show_verse_scrollbar)
     verse_text.bind('<Leave>', _hide_verse_scrollbar)
 
-    # Register for dark mode styling (only the inner text area, not the frame/border)
+    # Register widgets for theme styling
     globals()['verse_labelframe'] = verse_labelframe
     globals()['verse_text'] = verse_text
     globals()['verse_scrollbar'] = verse_scrollbar
     globals()['verse_inner'] = verse_inner
+    globals()['verse_btn_bar'] = verse_btn_bar
 
     # Auto-rotate verse every ~78 seconds (adds to history like clicking Next)
     def rotate_verse():
@@ -694,6 +695,11 @@ def launch_tool_gui():
     # Right pane for existing UI (tools, log, status)
     right_pane = tk.Frame(content_frame)
     right_pane.pack(side="left", fill="both", expand=True)
+
+    # Register content frames for theme styling
+    globals()['content_frame'] = content_frame
+    globals()['left_pane'] = left_pane
+    globals()['right_pane'] = right_pane
 
     # âœ… Set GUI icon (.ico for taskbar)
     icon_ico_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
@@ -890,6 +896,12 @@ def launch_tool_gui():
     # start with a placeholder placement; we'll position these next to the LabelFrame titles
     schema1_count_label.place(x=0, y=0)
     schema2_count_label.place(x=0, y=0)
+
+    # Register schema frames and count labels for theme styling
+    globals()['schema1_frame'] = schema1_frame
+    globals()['schema2_frame'] = schema2_frame
+    globals()['schema1_count_label'] = schema1_count_label
+    globals()['schema2_count_label'] = schema2_count_label
 
     # hide the internal status labels created inside each frame to avoid them resizing the frame
     try:
@@ -1736,7 +1748,9 @@ def launch_tool_gui():
         pass
 
     # Divider above log area
-    tk.Frame(right_pane, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10, pady=(8, 12))
+    log_separator = tk.Frame(right_pane, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc"))
+    log_separator.pack(fill="x", padx=10, pady=(8, 12))
+    globals()['log_separator'] = log_separator
 
     # Place the log area in the right pane (narrower because left pane uses space)
     log_text = scrolledtext.ScrolledText(right_pane, width=80, height=25)
@@ -1752,9 +1766,14 @@ def launch_tool_gui():
         pass
     
     # === Status Bar (status light only - login status removed) ===
-    tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10)
+    status_separator = tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc"))
+    status_separator.pack(fill="x", padx=10)
     status_bar = tk.Frame(root)
     status_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
+    
+    # Register status bar for theme styling
+    globals()['status_bar'] = status_bar
+    globals()['status_separator'] = status_separator
 
     # Status indicator using a canvas circle for better visibility
     status_canvas = tk.Canvas(status_bar, width=16, height=16, highlightthickness=0)
@@ -2122,6 +2141,97 @@ def launch_tool_gui():
         except Exception:
             pass
         
+        # Style verse section frames
+        try:
+            if 'verse_outer_frame' in globals():
+                gui_utils.apply_theme_to_window(globals()['verse_outer_frame'])
+        except Exception:
+            pass
+        try:
+            if 'verse_labelframe' in globals():
+                gui_utils.apply_theme_to_labelframe(globals()['verse_labelframe'])
+        except Exception:
+            pass
+        try:
+            if 'verse_btn_bar' in globals():
+                gui_utils.apply_theme_to_window(globals()['verse_btn_bar'])
+        except Exception:
+            pass
+        
+        # Style main content frames
+        try:
+            if 'content_frame' in globals():
+                gui_utils.apply_theme_to_window(globals()['content_frame'])
+        except Exception:
+            pass
+        try:
+            if 'left_pane' in globals():
+                gui_utils.apply_theme_to_window(globals()['left_pane'])
+        except Exception:
+            pass
+        try:
+            if 'right_pane' in globals():
+                gui_utils.apply_theme_to_window(globals()['right_pane'])
+        except Exception:
+            pass
+        
+        # Style schema LabelFrames and their child widgets
+        for schema_frame_name in ['schema1_frame', 'schema2_frame']:
+            try:
+                if schema_frame_name in globals():
+                    sf = globals()[schema_frame_name]
+                    gui_utils.apply_theme_to_labelframe(sf)
+                    # Theme all child widgets inside the LabelFrame
+                    for child in sf.winfo_children():
+                        try:
+                            child_class = child.winfo_class()
+                            if child_class == 'Frame':
+                                gui_utils.apply_theme_to_window(child)
+                                # Also theme grandchildren (buttons, labels in the frame)
+                                for grandchild in child.winfo_children():
+                                    try:
+                                        gc_class = grandchild.winfo_class()
+                                        if gc_class == 'Button':
+                                            gui_utils.apply_theme_to_button(grandchild)
+                                        elif gc_class == 'Label':
+                                            gui_utils.apply_theme_to_label(grandchild)
+                                    except Exception:
+                                        pass
+                            elif child_class == 'Label':
+                                gui_utils.apply_theme_to_label(child)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        
+        # Style count labels
+        try:
+            if 'schema1_count_label' in globals():
+                gui_utils.apply_theme_to_label(globals()['schema1_count_label'])
+        except Exception:
+            pass
+        try:
+            if 'schema2_count_label' in globals():
+                gui_utils.apply_theme_to_label(globals()['schema2_count_label'])
+        except Exception:
+            pass
+        
+        # Style status bar
+        try:
+            if 'status_bar' in globals():
+                gui_utils.apply_theme_to_window(globals()['status_bar'])
+        except Exception:
+            pass
+        
+        # Style separator lines with border color
+        border_color = gui_utils.get_color('border_bg')
+        for sep_name in ['log_separator', 'status_separator', 'menu_separator']:
+            try:
+                if sep_name in globals():
+                    globals()[sep_name].config(bg=border_color)
+            except Exception:
+                pass
+        
         # Store reference for potential use by child dialogs
         try:
             root._pane_orig = pane_orig
@@ -2326,7 +2436,9 @@ def launch_tool_gui():
     # We replaced the native menu with a custom in-window menu. Keep the
     # menu_bar structure around for compatibility but do not reattach it as
     # the root menubar (native menubars ignore styling on some platforms).
-    tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#b0b0b0")).pack(fill="x")
+    menu_separator = tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#b0b0b0"))
+    menu_separator.pack(fill="x")
+    globals()['menu_separator'] = menu_separator
 
     # Bind Ctrl+Alt+S to open Settings
     try:

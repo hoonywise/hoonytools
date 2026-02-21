@@ -223,34 +223,54 @@ def _build_connections_panel(parent_frame, entry_refs, button_frame):
         s2_pass_entry.insert(0, cfg.get('schema2', 'password', fallback=''))
         s2_dsn_entry.insert(0, cfg.get('schema2', 'dsn', fallback=''))
 
-    # Collect entry fields that need theme styling (only the input fields, not labels/frames)
+    # Collect all widgets for theme styling
     entries = [s1_user_entry, s1_pass_entry, s1_dsn_entry, s2_user_entry, s2_pass_entry, s2_dsn_entry]
+    labels = [s1_user_label, s1_pass_label, s1_dsn_label, s2_user_label, s2_pass_label, s2_dsn_label]
+    labelframes = [schema1_frame, schema2_frame]
+    checkboxes = [s1_show_check, s2_show_check]
 
     # Store widgets for theme callback
     entry_refs['_conn_entries'] = entries
+    entry_refs['_conn_labels'] = labels
+    entry_refs['_conn_labelframes'] = labelframes
+    entry_refs['_conn_checkboxes'] = checkboxes
+    entry_refs['_conn_container'] = container
 
-    # Apply initial theme based on current dark mode state
-    parent = entry_refs.get('_parent')
-    is_dark = False
-    if parent and hasattr(parent, '_dark_mode_var'):
+    def _apply_connections_theme(is_dark_unused=None):
+        """Apply current theme to all connection panel widgets."""
+        from libs import gui_utils
+        
+        # Apply to container frame
         try:
-            is_dark = parent._dark_mode_var.get()
+            gui_utils.apply_theme_to_window(container)
         except Exception:
             pass
-
-    def _apply_connections_theme(dark):
-        """Apply dark or light theme to connection panel entry fields only."""
-        if dark:
-            entry_bg = '#000000'
-            entry_fg = '#ffffff'
-        else:
-            entry_bg = 'white'
-            entry_fg = 'black'
-
-        # Apply to entry fields only
+        
+        # Apply to LabelFrames
+        for lf in labelframes:
+            try:
+                gui_utils.apply_theme_to_labelframe(lf)
+            except Exception:
+                pass
+        
+        # Apply to labels
+        for label in labels:
+            try:
+                gui_utils.apply_theme_to_label(label)
+            except Exception:
+                pass
+        
+        # Apply to entry fields
         for entry in entries:
             try:
-                entry.config(bg=entry_bg, fg=entry_fg, insertbackground=entry_fg)
+                gui_utils.apply_theme_to_entry(entry)
+            except Exception:
+                pass
+        
+        # Apply to checkboxes
+        for cb in checkboxes:
+            try:
+                gui_utils.apply_theme_to_checkbox(cb)
             except Exception:
                 pass
 
@@ -258,7 +278,7 @@ def _build_connections_panel(parent_frame, entry_refs, button_frame):
     entry_refs['_conn_apply_theme'] = _apply_connections_theme
 
     # Apply initial theme
-    _apply_connections_theme(is_dark)
+    _apply_connections_theme()
 
     # Pack button frame at bottom with right alignment
     button_frame.pack(side='bottom', fill='x', padx=10, pady=(10, 10))
@@ -365,6 +385,52 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
         fg='gray'
     )
     desc_label.pack(anchor='w', pady=(10, 0))
+    
+    # Get reference to the "Theme Preset:" label (it was created anonymously)
+    theme_preset_label = theme_row.winfo_children()[0]  # First child is the label
+
+    # Store widgets for theme callback
+    entry_refs['_appearance_container'] = container
+    entry_refs['_appearance_theme_frame'] = theme_frame
+    entry_refs['_appearance_theme_row'] = theme_row
+    entry_refs['_appearance_desc_label'] = desc_label
+    entry_refs['_appearance_customize_btn'] = customize_btn
+    entry_refs['_appearance_preset_label'] = theme_preset_label
+    
+    def _apply_appearance_theme():
+        """Apply current theme to all appearance panel widgets."""
+        from libs import gui_utils
+        
+        try:
+            gui_utils.apply_theme_to_window(container)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_labelframe(theme_frame)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_window(theme_row)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_label(theme_preset_label)
+        except Exception:
+            pass
+        try:
+            # desc_label keeps gray fg for muted appearance
+            desc_label.config(bg=gui_utils.get_color('labelframe_bg'))
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(customize_btn)
+        except Exception:
+            pass
+    
+    entry_refs['_appearance_apply_theme'] = _apply_appearance_theme
+    
+    # Apply initial theme
+    _apply_appearance_theme()
 
     # Pack button frame at bottom with right alignment
     button_frame.pack(side='bottom', fill='x', padx=10, pady=(10, 10))
@@ -1252,9 +1318,23 @@ def show_settings(parent=None):
         conn_apply_theme = entry_refs.get('_conn_apply_theme')
         if conn_apply_theme:
             try:
-                conn_apply_theme(gui_utils.is_dark_theme())
+                conn_apply_theme()
             except Exception:
                 pass
+        
+        # Apply theme to appearance panel if it exists
+        appearance_apply_theme = entry_refs.get('_appearance_apply_theme')
+        if appearance_apply_theme:
+            try:
+                appearance_apply_theme()
+            except Exception:
+                pass
+        
+        # Apply theme to button frame
+        try:
+            button_frame.config(bg=gui_utils.get_color('window_bg'))
+        except Exception:
+            pass
 
     # Register with gui_utils theme callback system
     from libs import gui_utils
