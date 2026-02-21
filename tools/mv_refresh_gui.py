@@ -10,6 +10,17 @@ import ctypes
 from libs.paths import ASSETS_PATH
 import re
 
+# Dark mode support
+try:
+    from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, DARK_BTN_BG, DARK_BTN_ACTIVE_BG, DARK_INSERT_BG
+except Exception:
+    def is_dark_mode_active(): return False
+    DARK_BG = '#000000'
+    DARK_FG = '#ffffff'
+    DARK_BTN_BG = '#333333'
+    DARK_BTN_ACTIVE_BG = '#222222'
+    DARK_INSERT_BG = '#ffffff'
+
 logger = logging.getLogger(__name__)
 
 
@@ -948,9 +959,24 @@ def run_mv_refresh_gui(on_finish=None):
                                     ans = _safe_messagebox('askyesno', "Existing MV Log Detected", f"A materialized view log already exists on {table_name}.\nDrop and recreate?", dlg=root)
                                     return 'drop' if ans else None
 
-                                tk.Label(dlg, text=f"A materialized view log already exists on {table_name}.").pack(padx=12, pady=(8,4), anchor='w')
+                                # Detect dark mode and track widgets for styling
+                                _is_dark = is_dark_mode_active()
+                                _dlg_labels = []
+                                _dlg_frames = []
+                                
+                                # Apply dark mode to dialog window
+                                if _is_dark:
+                                    dlg.config(bg=DARK_BG)
+
+                                lbl_title = tk.Label(dlg, text=f"A materialized view log already exists on {table_name}.")
+                                lbl_title.pack(padx=12, pady=(8,4), anchor='w')
+                                _dlg_labels.append(lbl_title)
+                                
                                 deps = meta_info.get('deps') or []
-                                tk.Label(dlg, text=f"{len(deps)} material view(s) that may be dependent:").pack(padx=12, anchor='w')
+                                lbl_deps = tk.Label(dlg, text=f"{len(deps)} material view(s) that may be dependent:")
+                                lbl_deps.pack(padx=12, anchor='w')
+                                _dlg_labels.append(lbl_deps)
+                                
                                 from tkinter import scrolledtext as _sc
                                 deps_box = _sc.ScrolledText(dlg, width=60, height=6)
                                 deps_box.pack(padx=12, pady=(0,6))
@@ -960,22 +986,42 @@ def run_mv_refresh_gui(on_finish=None):
                                 else:
                                     deps_box.insert('1.0', '(none detected)')
                                 deps_box.config(state='disabled')
+                                
+                                # Apply dark mode to deps_box
+                                if _is_dark:
+                                    deps_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
 
-                                tk.Label(dlg, text="Existing log columns:").pack(padx=12, anchor='w')
+                                lbl_cols = tk.Label(dlg, text="Existing log columns:")
+                                lbl_cols.pack(padx=12, anchor='w')
+                                _dlg_labels.append(lbl_cols)
+                                
                                 cols = meta_info.get('cols') or []
                                 cols_frame = tk.Frame(dlg)
                                 cols_frame.pack(padx=12, pady=(0,6), anchor='w')
+                                _dlg_frames.append(cols_frame)
+                                
                                 if cols:
                                     for c in cols:
-                                        tk.Label(cols_frame, text=f"- {c}").pack(anchor='w')
+                                        lbl_col = tk.Label(cols_frame, text=f"- {c}")
+                                        lbl_col.pack(anchor='w')
+                                        _dlg_labels.append(lbl_col)
                                 else:
-                                    tk.Label(cols_frame, text="(could not read columns)").pack(anchor='w')
+                                    lbl_no_cols = tk.Label(cols_frame, text="(could not read columns)")
+                                    lbl_no_cols.pack(anchor='w')
+                                    _dlg_labels.append(lbl_no_cols)
 
-                                tk.Label(dlg, text="DDL Preview:").pack(padx=12, anchor='w')
+                                lbl_ddl = tk.Label(dlg, text="DDL Preview:")
+                                lbl_ddl.pack(padx=12, anchor='w')
+                                _dlg_labels.append(lbl_ddl)
+                                
                                 ddl_box = _sc.ScrolledText(dlg, width=60, height=4)
                                 ddl_box.pack(padx=12, pady=(4,6))
                                 ddl_box.insert('1.0', desired_sql_text)
                                 ddl_box.config(state='disabled')
+                                
+                                # Apply dark mode to ddl_box
+                                if _is_dark:
+                                    ddl_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
 
                                 def show_diag():
                                     try:
@@ -1029,6 +1075,10 @@ def run_mv_refresh_gui(on_finish=None):
                                 ack = tk.BooleanVar(value=False)
                                 ack_cb = tk.Checkbutton(dlg, text=f"I understand this will affect the {len(deps)} listed materialized view(s).", variable=ack)
                                 ack_cb.pack(padx=12, pady=(4,4), anchor='w')
+                                
+                                # Apply dark mode to checkbox
+                                if _is_dark:
+                                    ack_cb.config(bg=DARK_BG, fg=DARK_FG, activebackground=DARK_BG, activeforeground=DARK_FG, selectcolor=DARK_BG)
 
                                 choice_result = None
 
@@ -1048,22 +1098,33 @@ def run_mv_refresh_gui(on_finish=None):
                                     nonlocal choice_result
                                     choice_result = None
                                     dlg.destroy()
+                                    
                                 btnf = tk.Frame(dlg)
                                 btnf.pack(pady=8)
+                                _dlg_frames.append(btnf)
+                                
                                 btn_reuse = tk.Button(btnf, text=f"Reuse Existing Log - {meta_info.get('existing_type','UNKNOWN')}", command=do_reuse, width=26)
                                 btn_cancel_dlg = tk.Button(btnf, text="Cancel", command=do_cancel, width=10)
                                 btn_drop = tk.Button(btnf, text="Drop & Recreate", command=do_drop, width=14)
                                 btn_reuse.pack(side='left', padx=(0,6))
                                 btn_cancel_dlg.pack(side='left', padx=6)
                                 btn_drop.pack(side='left', padx=6)
-                                # Apply dark mode styling to dialog buttons
+                                
+                                # Apply dark mode styling to all tracked widgets
                                 _dlg_btns = [btn_debug, btn_reuse, btn_cancel_dlg, btn_drop]
-                                try:
-                                    if _detect_dark_from_style():
-                                        for btn in _dlg_btns:
-                                            btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-                                except Exception:
-                                    pass
+                                if _is_dark:
+                                    for btn in _dlg_btns:
+                                        btn.config(bg=DARK_BTN_BG, fg=DARK_FG, activebackground=DARK_BTN_ACTIVE_BG, activeforeground=DARK_FG)
+                                    for lbl in _dlg_labels:
+                                        try:
+                                            lbl.config(bg=DARK_BG, fg=DARK_FG)
+                                        except Exception:
+                                            pass
+                                    for frm in _dlg_frames:
+                                        try:
+                                            frm.config(bg=DARK_BG)
+                                        except Exception:
+                                            pass
 
                                 dlg.update_idletasks()
                                 dlg.geometry(f"{dlg.winfo_width()}x{dlg.winfo_height()}+{(dlg.winfo_screenwidth()//2)-(dlg.winfo_width()//2)}+{(dlg.winfo_screenheight()//2)-(dlg.winfo_height()//2)}")

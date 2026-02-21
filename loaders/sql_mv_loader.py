@@ -4,6 +4,7 @@ import logging
 import re
 from libs.oracle_db_connector import get_db_connection
 from libs import session
+from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, DARK_BTN_BG, DARK_BTN_ACTIVE_BG, DARK_SELECT_BG, DARK_INSERT_BG
 import ctypes
 from libs.paths import ASSETS_PATH
 from pathlib import Path
@@ -403,23 +404,50 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             # keep defaults if helper fails
             pass
 
-        tk.Label(dlg, text=f"A materialized view log already exists on {table}.", font=("Arial", 10, "bold")).pack(padx=12, pady=(8, 4), anchor='w')
-        tk.Label(dlg, text="Existing log columns:").pack(padx=12, anchor='w')
+        # Detect dark mode once for the entire dialog
+        _is_dark = is_dark_mode_active()
+        _dlg_labels = []  # Track labels for dark mode styling
+        _dlg_frames = []  # Track frames for dark mode styling
+        
+        # Apply dark mode to dialog window
+        if _is_dark:
+            dlg.config(bg=DARK_BG)
+
+        lbl_title = tk.Label(dlg, text=f"A materialized view log already exists on {table}.", font=("Arial", 10, "bold"))
+        lbl_title.pack(padx=12, pady=(8, 4), anchor='w')
+        _dlg_labels.append(lbl_title)
+        
+        lbl_cols = tk.Label(dlg, text="Existing log columns:")
+        lbl_cols.pack(padx=12, anchor='w')
+        _dlg_labels.append(lbl_cols)
+        
         cols_frame = tk.Frame(dlg)
         cols_frame.pack(padx=12, pady=(0,6), anchor='w')
+        _dlg_frames.append(cols_frame)
+        
         if cols:
             for c in cols:
-                tk.Label(cols_frame, text=f"- {c}").pack(anchor='w')
+                lbl_col = tk.Label(cols_frame, text=f"- {c}")
+                lbl_col.pack(anchor='w')
+                _dlg_labels.append(lbl_col)
         else:
-            tk.Label(cols_frame, text="(could not read columns)").pack(anchor='w')
+            lbl_no_cols = tk.Label(cols_frame, text="(could not read columns)")
+            lbl_no_cols.pack(anchor='w')
+            _dlg_labels.append(lbl_no_cols)
 
-        tk.Label(dlg, text="Material Views that May Be Dependent:").pack(padx=12, anchor='w')
+        lbl_deps_title = tk.Label(dlg, text="Material Views that May Be Dependent:")
+        lbl_deps_title.pack(padx=12, anchor='w')
+        _dlg_labels.append(lbl_deps_title)
+        
         # show count and a scrollable list so long lists are usable
         try:
             logger.info(f"Dependent materialized views for {table}: {deps}")
         except Exception:
             pass
-        tk.Label(dlg, text=f"{len(deps)} material view(s) that may be dependent:").pack(padx=12, anchor='w')
+        
+        lbl_deps_count = tk.Label(dlg, text=f"{len(deps)} material view(s) that may be dependent:")
+        lbl_deps_count.pack(padx=12, anchor='w')
+        _dlg_labels.append(lbl_deps_count)
 
         deps_box = scrolledtext.ScrolledText(dlg, width=80, height=8)
         deps_box.pack(padx=12, pady=(0,6))
@@ -429,6 +457,10 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         else:
             deps_box.insert('1.0', '(none detected)')
         deps_box.config(state='disabled')
+        
+        # Apply dark mode to deps_box
+        if _is_dark:
+            deps_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
 
         def copy_deps():
             try:
@@ -450,6 +482,8 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
 
         btns_deps = tk.Frame(dlg)
         btns_deps.pack(padx=12, anchor='w')
+        _dlg_frames.append(btns_deps)
+        
         # Create buttons with dark mode styling
         _deps_btns = []
         btn_copy = tk.Button(btns_deps, text='Copy list', command=copy_deps, width=10)
@@ -511,21 +545,18 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         btn_debug = tk.Button(btns_deps, text='Show debug info', command=show_diag, width=14)
         btn_debug.pack(side='left', padx=(6,0))
         _deps_btns.append(btn_debug)
+        
         # Apply dark mode styling to dialog buttons
-        try:
-            import tkinter.ttk as _ttk_dlg2
-            st = _ttk_dlg2.Style()
-            bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-            if isinstance(bg, str) and bg.strip().lower() in ('#000000', '#000', 'black'):
-                for btn in _deps_btns:
-                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-        except Exception:
-            pass
+        if _is_dark:
+            for btn in _deps_btns:
+                btn.config(bg=DARK_BTN_BG, fg=DARK_FG, activebackground=DARK_BTN_ACTIVE_BG, activeforeground=DARK_FG)
 
         # acknowledgement checkbox variable (checkbox will be placed next to the confirmation entry)
         ack_var = tk.BooleanVar(value=False)
 
-        tk.Label(dlg, text="Compatibility summary (quick checks):", font=("Arial", 10, "bold")).pack(padx=12, pady=(6,4), anchor='w')
+        lbl_compat = tk.Label(dlg, text="Compatibility summary (quick checks):", font=("Arial", 10, "bold"))
+        lbl_compat.pack(padx=12, pady=(6,4), anchor='w')
+        _dlg_labels.append(lbl_compat)
         # Compatibility checks will be computed from DB metadata
         try:
             mlog_name = f"MLOG$_{table.split('.')[-1].upper()}"
@@ -544,9 +575,15 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         # render checklist
         chkf = tk.Frame(dlg)
         chkf.pack(padx=12, anchor='w')
+        _dlg_frames.append(chkf)
+        
         def label_status(text, ok):
             color = 'green' if ok else 'red'
-            tk.Label(chkf, text=text, fg=color).pack(anchor='w')
+            lbl = tk.Label(chkf, text=text, fg=color)
+            lbl.pack(anchor='w')
+            # For dark mode, set background but keep the colored foreground
+            if _is_dark:
+                lbl.config(bg=DARK_BG)
 
         label_status(f"Requested log type: {req_type}", True)
         label_status(f"Existing log type (heuristic): {existing_type}", existing_type == req_type)
@@ -554,11 +591,18 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         label_status(f"Sequence-like column present: {'Yes' if seq_present else 'No'}", seq_present)
         label_status(f"INCLUDING NEW VALUES present: {'Yes' if includes_new else 'No'}", includes_new)
 
-        tk.Label(dlg, text="The tool will run the following DDL if you choose Drop & Recreate:").pack(padx=12, anchor='w')
+        lbl_ddl = tk.Label(dlg, text="The tool will run the following DDL if you choose Drop & Recreate:")
+        lbl_ddl.pack(padx=12, anchor='w')
+        _dlg_labels.append(lbl_ddl)
+        
         ddl_box = scrolledtext.ScrolledText(dlg, width=80, height=6)
         ddl_box.pack(padx=12, pady=(4,6))
         ddl_box.insert("1.0", desired_sql)
         ddl_box.config(state='disabled')
+        
+        # Apply dark mode to ddl_box
+        if _is_dark:
+            ddl_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
 
         # Note: Run Explain / MV_CAPABILITIES_TABLE support removed to keep the dialog simple.
         # Advanced EXPLAIN functionality was intentionally removed per UX decision.
@@ -586,6 +630,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         # acknowledgement checkbox and Drop button on the same line.
         bottom_bar = tk.Frame(dlg)
         bottom_bar.pack(pady=8, fill='x', padx=12)
+        _dlg_frames.append(bottom_bar)
 
         bottom_bar.grid_columnconfigure(0, weight=1)
         bottom_bar.grid_columnconfigure(1, weight=0)
@@ -593,10 +638,13 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
 
         center_stack = tk.Frame(bottom_bar)
         center_stack.grid(row=0, column=1)
+        _dlg_frames.append(center_stack)
 
         reuse_label = f"Reuse Existing Log - {existing_type}" if existing_type and existing_type != 'UNKNOWN' else "Reuse Existing Log"
         btn_row = tk.Frame(center_stack)
         btn_row.pack(side='top', pady=(0,6))
+        _dlg_frames.append(btn_row)
+        
         # Create buttons with dark mode styling
         _bottom_btns = []
         btn_reuse = tk.Button(btn_row, text=reuse_label, command=do_reuse, width=26)
@@ -610,22 +658,23 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         # Controls row: ack checkbox and drop button on the same line
         controls_row = tk.Frame(center_stack)
         controls_row.pack(side='top', pady=(6,0))
+        _dlg_frames.append(controls_row)
+        
         ack_cb = tk.Checkbutton(controls_row, text=f"I understand this will affect the {len(deps)} listed materialized view(s).", variable=ack_var)
         ack_cb.pack(side='left')
+        # Apply dark mode to checkbox
+        if _is_dark:
+            ack_cb.config(bg=DARK_BG, fg=DARK_FG, activebackground=DARK_BG, activeforeground=DARK_FG, selectcolor=DARK_BG)
+        
         drop_btn = tk.Button(controls_row, text="Drop & Recreate", command=do_drop, width=18)
         drop_btn.pack(side='left', padx=(12,0))
         drop_btn.config(state='disabled')
         _bottom_btns.append(drop_btn)
+        
         # Apply dark mode styling to bottom bar buttons
-        try:
-            import tkinter.ttk as _ttk_dlg3
-            st = _ttk_dlg3.Style()
-            bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-            if isinstance(bg, str) and bg.strip().lower() in ('#000000', '#000', 'black'):
-                for btn in _bottom_btns:
-                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-        except Exception:
-            pass
+        if _is_dark:
+            for btn in _bottom_btns:
+                btn.config(bg=DARK_BTN_BG, fg=DARK_FG, activebackground=DARK_BTN_ACTIVE_BG, activeforeground=DARK_FG)
 
         def can_enable_drop():
             try:
@@ -644,6 +693,19 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             ack_var.trace_add('write', lambda *_: update_buttons())
         except Exception:
             ack_var.trace('w', lambda *_: update_buttons())
+
+        # Apply dark mode styling to all tracked labels and frames
+        if _is_dark:
+            for lbl in _dlg_labels:
+                try:
+                    lbl.config(bg=DARK_BG, fg=DARK_FG)
+                except Exception:
+                    pass
+            for frm in _dlg_frames:
+                try:
+                    frm.config(bg=DARK_BG)
+                except Exception:
+                    pass
 
         dlg.update_idletasks()
         w = dlg.winfo_width(); h = dlg.winfo_height()

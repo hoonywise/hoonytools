@@ -1400,3 +1400,76 @@ This would follow the same pattern as the main GUI's object pane refresh. Howeve
 #### Related Fix
 
 In `libs/settings.py`, the `set_credentials()` calls were moved **outside** the try/except block to ensure credentials are always set to session memory, even if the refresh triggers fail. This prevents the login prompt from appearing when it shouldn't.
+
+---
+
+### 🎨 Entry #15: Dark Mode Pattern for Tkinter Dialogs
+
+#### Summary
+
+When applying dark mode to Tkinter dialogs (Toplevel windows with Labels, Frames, ScrolledText, Buttons, Checkboxes), use the centralized helpers in `libs/gui_utils.py`.
+
+#### Detection
+
+```python
+from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, DARK_BTN_BG, DARK_BTN_ACTIVE_BG, DARK_INSERT_BG
+
+_is_dark = is_dark_mode_active()
+```
+
+The detection checks ttk Style lookup for `Pane.Treeview` or `Treeview` background. Black background (#000000, #000, 'black') indicates dark mode.
+
+#### Pattern for Dialog Dark Mode
+
+1. **Detect once** at dialog creation and store in `_is_dark` flag
+2. **Track widgets** in lists: `_dlg_labels`, `_dlg_frames`, `_dlg_btns`
+3. **Apply to dialog window**: `if _is_dark: dlg.config(bg=DARK_BG)`
+4. **Apply to ScrolledText immediately** after creation:
+   ```python
+   if _is_dark:
+       text_widget.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
+   ```
+5. **Apply to checkboxes** with selectcolor:
+   ```python
+   if _is_dark:
+       ack_cb.config(bg=DARK_BG, fg=DARK_FG, activebackground=DARK_BG, 
+                     activeforeground=DARK_FG, selectcolor=DARK_BG)
+   ```
+6. **Batch apply at end** before `dlg.update_idletasks()`:
+   ```python
+   if _is_dark:
+       for btn in _dlg_btns:
+           btn.config(bg=DARK_BTN_BG, fg=DARK_FG, activebackground=DARK_BTN_ACTIVE_BG, activeforeground=DARK_FG)
+       for lbl in _dlg_labels:
+           lbl.config(bg=DARK_BG, fg=DARK_FG)
+       for frm in _dlg_frames:
+           frm.config(bg=DARK_BG)
+   ```
+
+#### Color Constants
+
+| Constant | Value | Usage |
+|----------|-------|-------|
+| `DARK_BG` | `#000000` | Background for dialogs, frames, labels |
+| `DARK_FG` | `#ffffff` | Foreground text color |
+| `DARK_BTN_BG` | `#333333` | Button background |
+| `DARK_BTN_ACTIVE_BG` | `#222222` | Button hover/active background |
+| `DARK_INSERT_BG` | `#ffffff` | Text cursor (insertbackground) |
+
+#### Special Cases
+
+- **Colored labels** (e.g., status indicators with green/red foreground): Set only `bg=DARK_BG`, preserve the colored `fg`
+- **Fallback import**: Always wrap imports with try/except and provide fallback values:
+  ```python
+  try:
+      from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, ...
+  except Exception:
+      def is_dark_mode_active(): return False
+      DARK_BG = '#000000'
+      # ... other constants
+  ```
+
+#### Files Using This Pattern
+
+- `loaders/sql_mv_loader.py` — "Existing MV Log" dialog
+- `tools/mv_refresh_gui.py` — Compact "Existing MV Log" dialog
