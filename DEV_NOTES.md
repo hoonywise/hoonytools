@@ -1273,3 +1273,79 @@ def load_sql_from_file():
 - **Button placement**: Next to name field creates visual association between "import file" and "set name"
 - **UTF-8 only**: Simplifies implementation; modern SQL files should be UTF-8
 - **System chime on error**: Provides audio feedback when file read fails, especially useful if error dialog appears behind other windows
+
+---
+
+### Entry #21: Auto-Refresh Object Panes After Settings Save (v2.1.5)
+
+When users enter credentials via Settings (File → Settings) and save, the object panes should automatically refresh to show the connected schema's objects. Previously, users had to manually click Refresh after saving credentials.
+
+#### Problem
+
+1. User opens HoonyTools for the first time (no `config.ini`)
+2. User enters Schema 1 and Schema 2 credentials in Settings
+3. User clicks OK or Apply
+4. **Issue**: Schema labels updated, but object panes remained empty until manual Refresh
+5. **Additional issue**: Schema 2's dynamic label wasn't updating at all after Settings save
+
+#### Root Cause Analysis
+
+1. **Label not updating**: `session.set_credentials()` updated `schemas[schema]['label']` but did NOT call `update_label_widget()` to actually refresh the GUI label widget.
+
+2. **No auto-refresh trigger**: Settings had no way to trigger the main GUI's refresh functions after saving credentials.
+
+#### Solution
+
+**Part 1: Auto-update label widgets when credentials are set**
+
+In `libs/session.py`, `set_credentials()` now calls `update_label_widget(schema)` after updating the label:
+
+```python
+def set_credentials(schema, credentials):
+    ...
+    if credentials and credentials.get('user'):
+        schemas[schema]['label'] = credentials['user']
+        update_label_widget(schema)  # <-- Added
+    ...
+```
+
+This ensures the GUI label updates immediately whenever credentials are set from any source.
+
+**Part 2: Trigger refresh from Settings**
+
+1. In `HoonyTools.pyw`, expose refresh callbacks on root:
+```python
+root._refresh_schema1 = refresh_schema1_objects
+root._refresh_schema2 = refresh_schema2_objects
+```
+
+2. In `libs/settings.py`, call these callbacks after saving credentials:
+```python
+if _parent:
+    if hasattr(_parent, '_refresh_schema1') and s1_user_val and s1_pass_val and s1_dsn_val:
+        try:
+            _parent._refresh_schema1()
+        except Exception:
+            pass
+    if hasattr(_parent, '_refresh_schema2') and s2_user_val and s2_pass_val and s2_dsn_val:
+        try:
+            _parent._refresh_schema2()
+        except Exception:
+            pass
+```
+
+Only triggers refresh if complete credentials were provided (all three fields non-empty).
+
+#### Files Modified
+
+| File | Changes |
+|------|---------|
+| `libs/session.py` | `set_credentials()` now calls `update_label_widget(schema)` |
+| `HoonyTools.pyw` | Exposed `_refresh_schema1` and `_refresh_schema2` on root |
+| `libs/settings.py` | Call parent's refresh callbacks after saving credentials |
+
+#### Design Notes
+
+- **Callback pattern**: Using `hasattr()` checks makes this backwards-compatible; Settings won't crash if launched from a different parent window that lacks refresh callbacks.
+- **Conditional refresh**: Only refreshes schemas with complete credentials, avoiding unnecessary connection attempts for empty/partial entries.
+- **Label widget registration**: The `register_label_widget()` / `update_label_widget()` pattern allows any code that sets credentials to automatically update the GUI without needing direct widget references.
