@@ -4,9 +4,35 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
-## 🔧 v2.1.1 — Minor Fixes & Cleanup (2026-02-20)
+## 🔧 v2.1.1 — MV Manager Multi-Select & UX Improvements (2026-02-20)
 
-This patch release includes small UI fixes and code cleanup.
+This patch release enhances the Materialized View Manager with improved multi-select UX, Reset buttons, single-click refresh, and better result display.
+
+### Added
+
+- **Reset Buttons**: Added Reset buttons next to each Refresh button in User and DWH panes. Clicking Reset clears all selections in that pane and clears the right info/sql panes.
+
+- **Multi-Select MV List Display**: When multiple MVs are selected across one or both panes, the bottom-right pane now shows the full list of selected MVs grouped by User/DWH:
+  ```
+  User MVs:
+    - MV_NAME_1
+    - MV_NAME_2
+  
+  DWH MVs:
+    - DWH.MV_NAME_3
+  ```
+
+- **Session Label Widget Registration**: Schema label widgets (`user_schema_label`, `dwh_schema_label`) are now registered with `session.register_label_widget()`, allowing automatic updates when credentials change elsewhere in the app.
+
+### Changed
+
+- **Single-Click Refresh**: Removed the two-click confirmation mechanism for mass refresh. Clicking "Refresh MV" now immediately proceeds with the refresh operation (User MVs first, then DWH MVs).
+
+- **Refresh Results Display**: After refresh completes:
+  - **Top-right pane (info_text)**: Shows brief one-liner summary, e.g., `Refresh complete: 6 succeeded, 0 failed`
+  - **Bottom-right pane (sql_text)**: Shows detailed Succeeded/Failed lists with individual MV names
+
+- **Empty Selection Handling**: When no MVs are selected (e.g., after clicking Reset), the right panes are now cleared.
 
 ### Fixed
 
@@ -20,6 +46,7 @@ This patch release includes small UI fixes and code cleanup.
 
 ### Files Touched
 
+- `tools/mv_refresh_gui.py` — Reset buttons, multi-select display, single-click refresh, result formatting, session registration
 - `libs/oracle_db_connector.py` — Dark mode button styling fix
 - `HoonyTools.pyw` — Splash screen character fix
 - `libs/layout_definitions.py` — **DELETED**

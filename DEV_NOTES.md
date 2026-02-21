@@ -964,3 +964,102 @@ These functions were duplicated across multiple files and could be consolidated 
 
 - `libs/layout_definitions.py` — 457 lines, confirmed safe to delete
 - `libs/setup_config.py` — 55 lines, status unknown after rollback
+
+---
+
+### 🔄 Entry #18: MV Manager Multi-Select UX Improvements (2026-02-20)
+
+Summary: This session focused on improving the multi-select user experience in the Materialized View Manager, including better visual feedback for selections, Reset buttons, single-click refresh, and improved result display formatting.
+
+#### Findings
+
+1. **Tkinter Listbox exportselection behavior**: By default, `exportselection=True` causes selecting in one Listbox to clear selections in another (X11 selection model). Setting `exportselection=False` on both User and DWH listboxes allows selections to persist across both panes simultaneously.
+
+2. **Session label widget registration**: `session.py` provides `register_label_widget(schema, widget)` which stores widget references so session can automatically update them when labels change. Previously the MV Manager updated labels manually via `update_user_header()`/`update_dwh_header()` helpers but didn't register them with session.
+
+3. **Two-click confirmation pattern**: The original `do_refresh()` used a `confirm_pending` flag stored in `root._last_selected` to require users to click "Refresh MV" twice. While intended to prevent accidental mass refreshes, user feedback indicated this was unintuitive and the single-click pattern was preferred.
+
+#### Challenges
+
+1. **Reset button command timing**: Reset buttons are created before `on_select()` is defined in the code. Using `command=lambda: (mview_listbox_user.selection_clear(0, tk.END), on_select(None, source='user'))` works because the lambda captures `on_select` by name (late binding), not by value at definition time.
+
+2. **Right pane clearing**: When selections are cleared (total == 0), the original code just returned early without updating the UI. Added explicit clearing of both `info_text` and `sql_text` to provide visual feedback that nothing is selected.
+
+3. **Result display separation**: The original refresh results dumped everything into `info_text` (top-right). User wanted brief summary at top and detailed list at bottom. Required restructuring the summary generation to split between the two panes.
+
+#### Implementation Details
+
+**Reset Button Pattern**:
+```python
+btn_reset_user = tk.Button(
+    user_btn_frame, 
+    text="Reset", 
+    width=8, 
+    command=lambda: (
+        mview_listbox_user.selection_clear(0, tk.END), 
+        on_select(None, source='user')
+    )
+)
+```
+The lambda tuple executes both operations: clear selection, then trigger on_select to update UI.
+
+**Multi-Select Display Format**:
+```python
+mv_lines = []
+if user_count:
+    mv_lines.append("User MVs:")
+    for i in user_sel:
+        mv_lines.append(f"  - {mview_listbox_user.get(i)}")
+if dwh_count:
+    if mv_lines:
+        mv_lines.append("")  # Blank line separator
+    mv_lines.append("DWH MVs:")
+    for i in dwh_sel:
+        mv_lines.append(f"  - {mview_listbox_dwh.get(i)}")
+sql_text.insert(tk.END, '\n'.join(mv_lines))
+```
+
+**Refresh Result Split**:
+```python
+# Brief summary in top-right
+info_text.delete('1.0', tk.END)
+info_text.insert(tk.END, f"Refresh complete: {len(success)} succeeded, {len(failures)} failed")
+
+# Detailed list in bottom-right  
+sql_text.delete('1.0', tk.END)
+details = []
+if success:
+    details.append("Succeeded:")
+    for mv in success:
+        details.append(f"  - {mv}")
+if failures:
+    if details:
+        details.append("")
+    details.append("Failed:")
+    for mv, err in failures:
+        details.append(f"  - {mv}: {err}")
+sql_text.insert(tk.END, '\n'.join(details))
+```
+
+#### Files Modified
+
+| File | Changes |
+|------|---------|
+| `tools/mv_refresh_gui.py` | Added Reset buttons, session.register_label_widget calls, multi-select list display in sql_text, removed two-click confirmation, split refresh results between info_text and sql_text, added empty selection clearing |
+
+#### Testing Checklist
+
+1. **Reset buttons**: Click Reset in User pane — selections should clear and right panes should empty
+2. **Multi-select display**: Select 3+ MVs across both panes — bottom pane should show grouped list with names
+3. **Single-click refresh**: Select MVs and click Refresh MV once — should proceed immediately without confirmation step
+4. **Result display**: After refresh completes — top pane shows "Refresh complete: X succeeded, Y failed", bottom pane shows detailed Succeeded/Failed lists
+5. **Empty selection**: Click Reset or deselect all — both right panes should be empty
+6. **Ctrl+A still works**: Focus User listbox, press Ctrl+A — all items should select
+7. **Cross-pane selection**: Select items in User, then Ctrl+click items in DWH — both selections should persist
+
+#### UX Rationale
+
+- **Reset vs Clear**: "Reset" was chosen over "Clear" to match common UI terminology for returning to initial state
+- **Grouped list format**: Indented bullet format (`  - MV_NAME`) provides clear visual hierarchy and easy scanning
+- **Blank line separator**: Empty line between User MVs and DWH MVs sections improves readability
+- **Brief top / detailed bottom**: Follows common log viewer pattern where summary is at top and details below
