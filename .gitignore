@@ -35,10 +35,12 @@ build_pkg.bat
 libs/config.ini
 *.env
 libs/*.json
+!libs/en_kjv.json
 
 # OS files
 Thumbs.db
 .DS_Store
+nul
 
 # Jetbrains
 .idea/
