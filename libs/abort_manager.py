@@ -206,17 +206,18 @@ def cleanup_on_abort(conn, cursor):
         # If there are remaining created_tables that we couldn't drop because
         # the provided cursor/connection was unavailable, try a best-effort
         # fallback: open a fresh connection using saved session credentials
-        # (prefer DWH creds when the tables appear to be in DWH) and drop
+        # (prefer schema2 creds when the tables appear to be in schema2) and drop
         # fully-qualified names. This helps when the worker's connection was
         # closed to interrupt DB calls and the original cursor is unusable.
         try:
             if created_tables:
-                # Determine whether any created table looks like DWH.<TABLE>
-                needs_dwh = any(isinstance(t, str) and t.upper().startswith('DWH.') for t in created_tables)
+                # Determine whether any created table looks like SCHEMA2.<TABLE>
+                # (check if table name contains a dot prefix)
+                needs_schema2 = any(isinstance(t, str) and '.' in t for t in created_tables)
                 creds = None
-                # Prefer schema2 credentials for DWH-targeted drops
+                # Prefer schema2 credentials for schema2-targeted drops
                 try:
-                    if needs_dwh:
+                    if needs_schema2:
                         creds = session.get_credentials('schema2')
                     else:
                         creds = session.get_credentials('schema1')

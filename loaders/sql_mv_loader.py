@@ -4,6 +4,7 @@ import logging
 import re
 from libs.oracle_db_connector import get_db_connection
 from libs import session
+from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, DARK_BTN_BG, DARK_BTN_ACTIVE_BG, DARK_SELECT_BG, DARK_INSERT_BG
 import ctypes
 from libs.paths import ASSETS_PATH
 from pathlib import Path
@@ -31,7 +32,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     if on_finish is not None and not callable(on_finish):
         parent = on_finish
         on_finish = None
-    # use_dwh parameter determines whether to use DWH (shared) credentials
+    # use_dwh parameter determines whether to use schema2 (secondary) credentials
     
     # =========================================================================
     # Get credentials FIRST, before showing the tool GUI
@@ -403,10 +404,18 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             # keep defaults if helper fails
             pass
 
-        tk.Label(dlg, text=f"A materialized view log already exists on {table}.", font=("Arial", 10, "bold")).pack(padx=12, pady=(8, 4), anchor='w')
-        tk.Label(dlg, text="Existing log columns:").pack(padx=12, anchor='w')
+        # Detect dark mode once for pane-only styling (ScrolledText widgets)
+        _is_dark = is_dark_mode_active()
+
+        lbl_title = tk.Label(dlg, text=f"A materialized view log already exists on {table}.", font=("Arial", 10, "bold"))
+        lbl_title.pack(padx=12, pady=(8, 4), anchor='w')
+        
+        lbl_cols = tk.Label(dlg, text="Existing log columns:")
+        lbl_cols.pack(padx=12, anchor='w')
+        
         cols_frame = tk.Frame(dlg)
         cols_frame.pack(padx=12, pady=(0,6), anchor='w')
+        
         if cols:
             for c in cols:
                 tk.Label(cols_frame, text=f"- {c}").pack(anchor='w')
@@ -414,11 +423,13 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             tk.Label(cols_frame, text="(could not read columns)").pack(anchor='w')
 
         tk.Label(dlg, text="Material Views that May Be Dependent:").pack(padx=12, anchor='w')
+        
         # show count and a scrollable list so long lists are usable
         try:
             logger.info(f"Dependent materialized views for {table}: {deps}")
         except Exception:
             pass
+        
         tk.Label(dlg, text=f"{len(deps)} material view(s) that may be dependent:").pack(padx=12, anchor='w')
 
         deps_box = scrolledtext.ScrolledText(dlg, width=80, height=8)
@@ -429,6 +440,10 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         else:
             deps_box.insert('1.0', '(none detected)')
         deps_box.config(state='disabled')
+        
+        # Apply dark mode to deps_box
+        if _is_dark:
+            deps_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
 
         def copy_deps():
             try:
@@ -450,13 +465,11 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
 
         btns_deps = tk.Frame(dlg)
         btns_deps.pack(padx=12, anchor='w')
-        # Create buttons with dark mode styling
-        _deps_btns = []
+        
         btn_copy = tk.Button(btns_deps, text='Copy list', command=copy_deps, width=10)
         btn_save = tk.Button(btns_deps, text='Save list', command=save_deps, width=10)
         btn_copy.pack(side='left', padx=(0,6))
         btn_save.pack(side='left')
-        _deps_btns.extend([btn_copy, btn_save])
 
         # Gather low-level diagnostic counts to help debug false positives
         diag = {}
@@ -510,17 +523,6 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
                     pass
         btn_debug = tk.Button(btns_deps, text='Show debug info', command=show_diag, width=14)
         btn_debug.pack(side='left', padx=(6,0))
-        _deps_btns.append(btn_debug)
-        # Apply dark mode styling to dialog buttons
-        try:
-            import tkinter.ttk as _ttk_dlg2
-            st = _ttk_dlg2.Style()
-            bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-            if isinstance(bg, str) and bg.strip().lower() in ('#000000', '#000', 'black'):
-                for btn in _deps_btns:
-                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-        except Exception:
-            pass
 
         # acknowledgement checkbox variable (checkbox will be placed next to the confirmation entry)
         ack_var = tk.BooleanVar(value=False)
@@ -544,6 +546,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         # render checklist
         chkf = tk.Frame(dlg)
         chkf.pack(padx=12, anchor='w')
+        
         def label_status(text, ok):
             color = 'green' if ok else 'red'
             tk.Label(chkf, text=text, fg=color).pack(anchor='w')
@@ -555,10 +558,15 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         label_status(f"INCLUDING NEW VALUES present: {'Yes' if includes_new else 'No'}", includes_new)
 
         tk.Label(dlg, text="The tool will run the following DDL if you choose Drop & Recreate:").pack(padx=12, anchor='w')
+        
         ddl_box = scrolledtext.ScrolledText(dlg, width=80, height=6)
         ddl_box.pack(padx=12, pady=(4,6))
         ddl_box.insert("1.0", desired_sql)
         ddl_box.config(state='disabled')
+        
+        # Apply dark mode to ddl_box
+        if _is_dark:
+            ddl_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
 
         # Note: Run Explain / MV_CAPABILITIES_TABLE support removed to keep the dialog simple.
         # Advanced EXPLAIN functionality was intentionally removed per UX decision.
@@ -597,35 +605,24 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         reuse_label = f"Reuse Existing Log - {existing_type}" if existing_type and existing_type != 'UNKNOWN' else "Reuse Existing Log"
         btn_row = tk.Frame(center_stack)
         btn_row.pack(side='top', pady=(0,6))
-        # Create buttons with dark mode styling
-        _bottom_btns = []
+        
         btn_reuse = tk.Button(btn_row, text=reuse_label, command=do_reuse, width=26)
         btn_cancel_dlg = tk.Button(btn_row, text="Cancel", command=do_cancel, width=10)
         btn_reuse.pack(side='left', padx=(0,6))
         btn_cancel_dlg.pack(side='left')
-        _bottom_btns.extend([btn_reuse, btn_cancel_dlg])
 
         # (Confirmation entry removed — checkbox alone is required to enable Drop)
 
         # Controls row: ack checkbox and drop button on the same line
         controls_row = tk.Frame(center_stack)
         controls_row.pack(side='top', pady=(6,0))
+        
         ack_cb = tk.Checkbutton(controls_row, text=f"I understand this will affect the {len(deps)} listed materialized view(s).", variable=ack_var)
         ack_cb.pack(side='left')
+        
         drop_btn = tk.Button(controls_row, text="Drop & Recreate", command=do_drop, width=18)
         drop_btn.pack(side='left', padx=(12,0))
         drop_btn.config(state='disabled')
-        _bottom_btns.append(drop_btn)
-        # Apply dark mode styling to bottom bar buttons
-        try:
-            import tkinter.ttk as _ttk_dlg3
-            st = _ttk_dlg3.Style()
-            bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-            if isinstance(bg, str) and bg.strip().lower() in ('#000000', '#000', 'black'):
-                for btn in _bottom_btns:
-                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-        except Exception:
-            pass
 
         def can_enable_drop():
             try:

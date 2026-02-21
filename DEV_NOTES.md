@@ -1400,3 +1400,64 @@ This would follow the same pattern as the main GUI's object pane refresh. Howeve
 #### Related Fix
 
 In `libs/settings.py`, the `set_credentials()` calls were moved **outside** the try/except block to ensure credentials are always set to session memory, even if the refresh triggers fail. This prevents the login prompt from appearing when it shouldn't.
+
+---
+
+### 🎨 Entry #15: Dark Mode Pattern for Tkinter Dialogs (Pane-Only)
+
+#### Summary
+
+Dark mode in HoonyTools follows a **pane-only** approach: only ScrolledText widgets (text content panes) get dark background styling. Dialog chrome (window background, labels, frames, buttons, checkboxes) stays in the system default grey.
+
+This matches how the main GUI's object panes work - the treeviews are dark, but the surrounding UI stays standard.
+
+#### Detection
+
+Use the centralized helper in `libs/gui_utils.py`:
+
+```python
+from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, DARK_INSERT_BG
+
+_is_dark = is_dark_mode_active()
+```
+
+The detection checks ttk Style lookup for `Pane.Treeview` or `Treeview` background. Black background (#000000, #000, 'black') indicates dark mode.
+
+#### Pattern for Dialog Dark Mode (Pane-Only)
+
+1. **Detect once** at dialog creation and store in `_is_dark` flag
+2. **Apply ONLY to ScrolledText widgets** immediately after creation:
+   ```python
+   if _is_dark:
+       deps_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
+       ddl_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
+   ```
+3. **Do NOT style**: dialog window, labels, frames, buttons, checkboxes - leave them in default grey
+
+#### What NOT to Do
+
+Do NOT apply dark mode to:
+- `dlg.config(bg=DARK_BG)` — dialog background
+- Label widgets — they stay default
+- Frame widgets — they stay default
+- Button widgets — they stay default
+- Checkbutton widgets — they stay default
+
+#### Color Constants
+
+| Constant | Value | Usage |
+|----------|-------|-------|
+| `DARK_BG` | `#000000` | Background for ScrolledText panes only |
+| `DARK_FG` | `#ffffff` | Foreground text color for panes |
+| `DARK_INSERT_BG` | `#ffffff` | Text cursor (insertbackground) |
+| `DARK_BTN_BG` | `#333333` | Reserved for future use |
+| `DARK_BTN_ACTIVE_BG` | `#222222` | Reserved for future use |
+
+#### Future Customization
+
+The `libs/gui_utils.py` module is kept for future flexibility. If we later decide to style dialog chrome (e.g., dark grey instead of default grey), the helpers and constants are ready to use.
+
+#### Files Using This Pattern
+
+- `loaders/sql_mv_loader.py` — "Existing MV Log" dialog (deps_box, ddl_box)
+- `tools/mv_refresh_gui.py` — Compact "Existing MV Log" dialog (deps_box, ddl_box)

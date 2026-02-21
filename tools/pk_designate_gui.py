@@ -108,8 +108,8 @@ def prompt_schema_choice(parent=None):
     frm.pack(pady=6)
     # Create buttons with dark mode styling
     _schema_btns = []
-    btn_user = Button(frm, text='User Schema', width=12, command=pick_user)
-    btn_dwh = Button(frm, text='DWH Schema', width=12, command=pick_dwh)
+    btn_user = Button(frm, text='Schema 1', width=12, command=pick_user)
+    btn_dwh = Button(frm, text='Schema 2', width=12, command=pick_dwh)
     btn_cancel = Button(frm, text='Cancel', width=10, command=on_close)
     btn_user.pack(side=LEFT, padx=6)
     btn_dwh.pack(side=LEFT, padx=6)
@@ -219,7 +219,7 @@ def main(parent=None, schema_choice=None, on_finish=None):
     except Exception:
         logger.debug('Failed to register connection', exc_info=True)
 
-    owner = 'DWH' if schema_choice == 'dwh' else conn.username.upper()
+    owner = conn.username.upper()
 
     win = _ensure_dialog_parent(parent)
     win.title(f'Designate PRIMARY KEY - {owner}')

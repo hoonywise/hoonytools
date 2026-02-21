@@ -162,8 +162,8 @@ def prompt_schema_choice(parent=None):
     btn_frame = Frame(win)
     btn_frame.pack(pady=5)
 
-    b1 = Button(btn_frame, text="User Schema", width=12, command=select_user)
-    b2 = Button(btn_frame, text="DWH Schema", width=12, command=select_dwh)
+    b1 = Button(btn_frame, text="Schema 1", width=12, command=select_user)
+    b2 = Button(btn_frame, text="Schema 2", width=12, command=select_dwh)
     b3 = Button(btn_frame, text="Cancel", width=12, command=cancel)
 
     b1.pack(side="left", padx=5)
@@ -1383,7 +1383,7 @@ def load_multiple_files(launcher_root=None):
             except Exception:
                 logger.debug('Failed to register connection', exc_info=True)
 
-            schema = "DWH" if schema_choice == "dwh" else conn.username.upper()
+            schema = conn.username.upper()
             logger.info(f"🔐 Connected to schema: {schema}")
             try:
                 logger.info(f"Acquiring cursor from connection (username={getattr(conn, 'username', None)})")
@@ -1748,7 +1748,7 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
     _conn_info = {
         'conn': conn,
         'schema_key': schema_key,
-        'schema': "DWH" if schema_choice == 'dwh' else conn.username.upper()
+        'schema': conn.username.upper()
     }
 
     # --- file entry storage ---
@@ -1779,8 +1779,8 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
     else:
         win = tk.Tk()
 
-    schema_label = schema_choice.upper() if schema_choice == 'dwh' else 'User'
-    win.title(f'Data Loader - {schema_label} Schema')
+    schema_label = 'Schema 2' if schema_choice == 'dwh' else 'Schema 1'
+    win.title(f'Data Loader - {schema_label}')
 
     # --- File list section ---
     file_frame = tk.LabelFrame(win, text='Files to Load', padx=6, pady=6)
@@ -1995,7 +1995,7 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
         _set_main_status('aborting')  # Turn main GUI indicator amber
         abort_btn.config(state='disabled')
 
-        # Close DWH connections in background if applicable
+        # Close schema2 connections in background if applicable
         try:
             if parent:
                 import threading as _thr

@@ -18,7 +18,7 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
     if on_finish is not None and not callable(on_finish):
         parent = on_finish
         on_finish = None
-    # use_dwh parameter determines whether to use DWH (shared) credentials
+    # use_dwh parameter determines whether to use schema2 (secondary) credentials
     
     # =========================================================================
     # Get credentials FIRST, before showing the tool GUI

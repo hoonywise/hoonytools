@@ -10,6 +10,17 @@ import ctypes
 from libs.paths import ASSETS_PATH
 import re
 
+# Dark mode support
+try:
+    from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, DARK_BTN_BG, DARK_BTN_ACTIVE_BG, DARK_INSERT_BG
+except Exception:
+    def is_dark_mode_active(): return False
+    DARK_BG = '#000000'
+    DARK_FG = '#ffffff'
+    DARK_BTN_BG = '#333333'
+    DARK_BTN_ACTIVE_BG = '#222222'
+    DARK_INSERT_BG = '#ffffff'
+
 logger = logging.getLogger(__name__)
 
 
@@ -140,7 +151,7 @@ def run_mv_refresh_gui(on_finish=None):
     # List to track all buttons for dark mode styling
     _all_buttons = []
 
-    # User MVs pane (LabelFrame with dynamic header and count)
+    # Schema 1 MVs pane (LabelFrame with dynamic header and count)
     user_frame = tk.LabelFrame(left, padx=6, pady=6)
     user_frame.pack(fill="both", pady=(0, 8), expand=True)
 
@@ -167,7 +178,7 @@ def run_mv_refresh_gui(on_finish=None):
     mview_listbox_user = tk.Listbox(user_frame, width=40, height=14, selectmode=tk.EXTENDED, exportselection=False)
     mview_listbox_user.pack(fill="both", expand=True)
 
-    # DWH MVs pane (LabelFrame with dynamic header and count, lazy login)
+    # Schema 2 MVs pane (LabelFrame with dynamic header and count, lazy login)
     dwh_frame = tk.LabelFrame(left, padx=6, pady=6)
     dwh_frame.pack(fill="both", expand=True)
 
@@ -208,7 +219,7 @@ def run_mv_refresh_gui(on_finish=None):
             label_w = user_count_label.winfo_reqwidth()
             user_count_label.place(x=frame_x + frame_w - label_w - right_padding, y=uy)
 
-            # DWH frame count label
+            # Schema 2 frame count label
             dy = dwh_frame.winfo_y()
             frame2_x = dwh_frame.winfo_x()
             frame2_w = dwh_frame.winfo_width()
@@ -419,7 +430,13 @@ def run_mv_refresh_gui(on_finish=None):
         except Exception as e:
             logger.exception(f"Failed to load materialized views: {e}")
 
-    def load_dwh_mviews(dwh_conn, owner='DWH', selected_name=None):
+    def load_dwh_mviews(dwh_conn, owner=None, selected_name=None):
+        # Get owner from connection if not provided
+        if not owner:
+            owner = dwh_conn.username.upper() if hasattr(dwh_conn, 'username') else None
+        if not owner:
+            logger.warning("Could not determine owner for schema2 mviews")
+            return
         try:
             cur = dwh_conn.cursor()
             # attempt to retrieve same columns as user view
@@ -466,7 +483,7 @@ def run_mv_refresh_gui(on_finish=None):
             except Exception:
                 pass
         except Exception as e:
-            logger.exception(f"Failed to load DWH materialized views: {e}")
+            logger.exception(f"Failed to load schema2 materialized views: {e}")
             mview_listbox_dwh.delete(0, tk.END)
             mview_listbox_dwh.insert(tk.END, "(no access or error)")
             try:
@@ -475,12 +492,12 @@ def run_mv_refresh_gui(on_finish=None):
                 pass
 
     def refresh_dwh_mviews():
-        # Prompt for DWH login only when user asks to refresh DWH list
+        # Prompt for schema2 login only when user asks to refresh schema2 list
         dconn = getattr(root, '_dwh_conn', None)
         if not dconn:
             dconn = get_db_connection(schema='schema2', root=root)
             if not dconn:
-                _safe_messagebox('showwarning', "DWH Login", "DWH login cancelled or failed.", dlg=root)
+                _safe_messagebox('showwarning', "Schema 2 Login", "Schema 2 login cancelled or failed.", dlg=root)
                 return
             setattr(root, '_dwh_conn', dconn)
             try:
@@ -498,11 +515,12 @@ def run_mv_refresh_gui(on_finish=None):
                     update_dwh_header()
                 except Exception:
                     pass
-        # load using owner DWH
+        # load using actual owner from connection
         try:
-            load_dwh_mviews(dconn, 'DWH')
+            dwh_owner = dconn.username.upper() if hasattr(dconn, 'username') else None
+            load_dwh_mviews(dconn, dwh_owner)
         except Exception as e:
-            logger.exception(f"Failed refreshing DWH mviews: {e}")
+            logger.exception(f"Failed refreshing schema2 mviews: {e}")
 
     # Bring this window back on top after modal dialogs (messagebox) so the
     # smaller MV window does not get hidden behind the main app window.
@@ -546,11 +564,11 @@ def run_mv_refresh_gui(on_finish=None):
             info_text.delete('1.0', tk.END)
             summary_lines = []
             if user_count and dwh_count:
-                summary_lines.append(f"{user_count} User MV(s) + {dwh_count} DWH MV(s) selected")
+                summary_lines.append(f"{user_count} Schema 1 MV(s) + {dwh_count} Schema 2 MV(s) selected")
             elif user_count:
-                summary_lines.append(f"{user_count} User MV(s) selected")
+                summary_lines.append(f"{user_count} Schema 1 MV(s) selected")
             else:
-                summary_lines.append(f"{dwh_count} DWH MV(s) selected")
+                summary_lines.append(f"{dwh_count} Schema 2 MV(s) selected")
             summary_lines.append("")
             summary_lines.append("Click 'Refresh MV' to refresh all selected materialized views.")
             info_text.insert(tk.END, '\n'.join(summary_lines))
@@ -558,13 +576,13 @@ def run_mv_refresh_gui(on_finish=None):
             sql_text.delete('1.0', tk.END)
             mv_lines = []
             if user_count:
-                mv_lines.append("User MVs:")
+                mv_lines.append("Schema 1 MVs:")
                 for i in user_sel:
                     mv_lines.append(f"  - {mview_listbox_user.get(i)}")
             if dwh_count:
                 if mv_lines:
                     mv_lines.append("")
-                mv_lines.append("DWH MVs:")
+                mv_lines.append("Schema 2 MVs:")
                 for i in dwh_sel:
                     mv_lines.append(f"  - {mview_listbox_dwh.get(i)}")
             sql_text.insert(tk.END, '\n'.join(mv_lines))
@@ -617,7 +635,7 @@ def run_mv_refresh_gui(on_finish=None):
             owner = None
             row_data = row
         else:
-            owner = row[0] if len(row) > 0 else 'DWH'
+            owner = row[0] if len(row) > 0 else None
             row_data = row[1:]
         # defensive extraction because REFRESH_MODE may not be available in older DBs
         build = row_data[1] if len(row_data) > 1 else ''
@@ -657,7 +675,7 @@ def run_mv_refresh_gui(on_finish=None):
             # Fallback: if regex detection failed, try USER_DEPENDENCIES / ALL_DEPENDENCIES to find referenced tables
             if not bases:
                 try:
-                    # Use the active connection where possible (DWH vs user)
+                    # Use the active connection where possible (schema2 vs schema1)
                     cur = active_conn.cursor() if active_conn else conn.cursor()
                     try:
                         # If connected as the owning schema, USER_DEPENDENCIES is preferred
@@ -766,7 +784,7 @@ def run_mv_refresh_gui(on_finish=None):
         success = []
         failures = []
 
-        # Refresh User MVs
+        # Refresh Schema 1 MVs
         try:
             if user_mvs:
                 cur = conn.cursor()
@@ -781,13 +799,13 @@ def run_mv_refresh_gui(on_finish=None):
         except Exception as e:
             logger.exception("Error refreshing user MVs: %s", e)
 
-        # Refresh DWH MVs
+        # Refresh Schema 2 MVs
         dconn = getattr(root, '_dwh_conn', None)
         if dwh_mvs:
             if not dconn:
                 dconn = get_db_connection(schema='schema2', root=root)
                 if not dconn:
-                    failures.extend([(mv, 'DWH login failed') for mv in dwh_mvs])
+                    failures.extend([(mv, 'Schema 2 login failed') for mv in dwh_mvs])
                     dwh_mvs = []
                 else:
                     setattr(root, '_dwh_conn', dconn)
@@ -818,7 +836,7 @@ def run_mv_refresh_gui(on_finish=None):
                             failures.append((mv_display, str(e)))
                     cur.close()
             except Exception as e:
-                logger.exception("Error refreshing DWH MVs: %s", e)
+                logger.exception("Error refreshing Schema 2 MVs: %s", e)
 
         # Brief summary in top-right (info_text)
         info_text.delete('1.0', tk.END)
@@ -847,7 +865,8 @@ def run_mv_refresh_gui(on_finish=None):
         try:
             dconn = getattr(root, '_dwh_conn', None)
             if dconn:
-                load_dwh_mviews(dconn, 'DWH')
+                dwh_owner = dconn.username.upper() if hasattr(dconn, 'username') else None
+                load_dwh_mviews(dconn, dwh_owner)
         except Exception:
             pass
 
@@ -864,12 +883,12 @@ def run_mv_refresh_gui(on_finish=None):
             mv_query = row[6] if row and len(row) > 6 else (row[5] if row and len(row) > 5 else '')
             active_cursor = conn.cursor()
         else:
-            # ensure DWH conn
+            # ensure schema2 conn
             dconn = getattr(root, '_dwh_conn', None)
             if not dconn:
                 dconn = get_db_connection(schema='schema2', root=root)
                 if not dconn:
-                    _safe_messagebox('showwarning', "DWH Login", "DWH login cancelled or failed.", dlg=root)
+                    _safe_messagebox('showwarning', "Schema 2 Login", "Schema 2 login cancelled or failed.", dlg=root)
                     return
                 setattr(root, '_dwh_conn', dconn)
                 try:
@@ -940,9 +959,14 @@ def run_mv_refresh_gui(on_finish=None):
                                     ans = _safe_messagebox('askyesno', "Existing MV Log Detected", f"A materialized view log already exists on {table_name}.\nDrop and recreate?", dlg=root)
                                     return 'drop' if ans else None
 
+                                # Detect dark mode for pane-only styling (ScrolledText widgets)
+                                _is_dark = is_dark_mode_active()
+
                                 tk.Label(dlg, text=f"A materialized view log already exists on {table_name}.").pack(padx=12, pady=(8,4), anchor='w')
+                                
                                 deps = meta_info.get('deps') or []
                                 tk.Label(dlg, text=f"{len(deps)} material view(s) that may be dependent:").pack(padx=12, anchor='w')
+                                
                                 from tkinter import scrolledtext as _sc
                                 deps_box = _sc.ScrolledText(dlg, width=60, height=6)
                                 deps_box.pack(padx=12, pady=(0,6))
@@ -952,11 +976,17 @@ def run_mv_refresh_gui(on_finish=None):
                                 else:
                                     deps_box.insert('1.0', '(none detected)')
                                 deps_box.config(state='disabled')
+                                
+                                # Apply dark mode to deps_box (pane-only)
+                                if _is_dark:
+                                    deps_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
 
                                 tk.Label(dlg, text="Existing log columns:").pack(padx=12, anchor='w')
+                                
                                 cols = meta_info.get('cols') or []
                                 cols_frame = tk.Frame(dlg)
                                 cols_frame.pack(padx=12, pady=(0,6), anchor='w')
+                                
                                 if cols:
                                     for c in cols:
                                         tk.Label(cols_frame, text=f"- {c}").pack(anchor='w')
@@ -964,10 +994,15 @@ def run_mv_refresh_gui(on_finish=None):
                                     tk.Label(cols_frame, text="(could not read columns)").pack(anchor='w')
 
                                 tk.Label(dlg, text="DDL Preview:").pack(padx=12, anchor='w')
+                                
                                 ddl_box = _sc.ScrolledText(dlg, width=60, height=4)
                                 ddl_box.pack(padx=12, pady=(4,6))
                                 ddl_box.insert('1.0', desired_sql_text)
                                 ddl_box.config(state='disabled')
+                                
+                                # Apply dark mode to ddl_box (pane-only)
+                                if _is_dark:
+                                    ddl_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
 
                                 def show_diag():
                                     try:
@@ -1040,22 +1075,16 @@ def run_mv_refresh_gui(on_finish=None):
                                     nonlocal choice_result
                                     choice_result = None
                                     dlg.destroy()
+                                    
                                 btnf = tk.Frame(dlg)
                                 btnf.pack(pady=8)
+                                
                                 btn_reuse = tk.Button(btnf, text=f"Reuse Existing Log - {meta_info.get('existing_type','UNKNOWN')}", command=do_reuse, width=26)
                                 btn_cancel_dlg = tk.Button(btnf, text="Cancel", command=do_cancel, width=10)
                                 btn_drop = tk.Button(btnf, text="Drop & Recreate", command=do_drop, width=14)
                                 btn_reuse.pack(side='left', padx=(0,6))
                                 btn_cancel_dlg.pack(side='left', padx=6)
                                 btn_drop.pack(side='left', padx=6)
-                                # Apply dark mode styling to dialog buttons
-                                _dlg_btns = [btn_debug, btn_reuse, btn_cancel_dlg, btn_drop]
-                                try:
-                                    if _detect_dark_from_style():
-                                        for btn in _dlg_btns:
-                                            btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-                                except Exception:
-                                    pass
 
                                 dlg.update_idletasks()
                                 dlg.geometry(f"{dlg.winfo_width()}x{dlg.winfo_height()}+{(dlg.winfo_screenwidth()//2)-(dlg.winfo_width()//2)}+{(dlg.winfo_screenheight()//2)-(dlg.winfo_height()//2)}")
@@ -1217,7 +1246,7 @@ def run_mv_refresh_gui(on_finish=None):
 
     # initial load of user and dwh mviews (auto-refresh both panes)
     load_user_mviews()
-    # Attempt to load DWH list if saved credentials exist or lazy login is desired
+    # Attempt to load schema2 list if saved credentials exist or lazy login is desired
     try:
         # If session has saved credentials for schema2, attempt to establish connection silently
         creds2 = session.get_credentials('schema2')
@@ -1234,7 +1263,8 @@ def run_mv_refresh_gui(on_finish=None):
                         username = dconn.username if hasattr(dconn, 'username') else None
                         if username:
                             session.set_label('schema2', username)
-                        load_dwh_mviews(dconn, 'DWH')
+                        dwh_owner = dconn.username.upper() if hasattr(dconn, 'username') else None
+                        load_dwh_mviews(dconn, dwh_owner)
                     except Exception:
                         try:
                             update_dwh_header()

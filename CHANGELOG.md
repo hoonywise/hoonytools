@@ -4,6 +4,71 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🔧 v2.1.6 — Dual Schema Clean-Up & Dark Mode Improvements (2026-02-21)
+
+This release removes all hardcoded schema references (previously 'DWH' and 'User') and introduces clean dual schema support with consistent "Schema 1" / "Schema 2" terminology. Also adds dark mode support to additional dialogs.
+
+### Changed
+
+- **Schema Terminology**: Updated all UI labels from "User Schema" / "DWH Schema" to "Schema 1" / "Schema 2" across all tools and loaders.
+
+- **Dynamic Schema Detection**: Schema2 object pane and all tools now use `conn.username.upper()` to detect the actual schema owner instead of hardcoded values.
+
+- **Internal Identifiers**: Parameter values `schema_choice='user'` and `schema_choice='dwh'` remain as internal identifiers that map to Schema 1 / Schema 2 respectively.
+
+### Added
+
+- **Shared Dark Mode Helpers** (`libs/gui_utils.py`): New centralized module with:
+  - `is_dark_mode_active()` — Detection function using ttk Style lookup
+  - `apply_dark_mode_to_widget()` — Per-widget styling helper
+  - `style_dialog_for_dark_mode()` — Batch styling for dialog widgets
+  - Color constants: `DARK_BG`, `DARK_FG`, `DARK_BTN_BG`, `DARK_BTN_ACTIVE_BG`, `DARK_INSERT_BG`
+
+- **Dark Mode for "Existing MV Log" Dialog**: Full dark mode support in both `sql_mv_loader.py` and `mv_refresh_gui.py` for the Existing MV Log dialog, including:
+  - Dialog background
+  - All labels and frames
+  - ScrolledText widgets (deps list, DDL preview)
+  - Buttons and checkboxes
+
+### Fixed
+
+- **Schema2 Object Pane Bug**: Fixed `refresh_schema2_objects()` which had hardcoded `["DWH"]` in SQL queries instead of using `conn.username.upper()`.
+
+- **MView Manager Login Prompt**: Fixed login prompt appearing even after credentials were saved in Settings by moving the session import to module level in `settings.py`.
+
+### Removed
+
+- **Obsolete File**: Deleted `libs/setup_config.py` (CLI setup script replaced by GUI settings).
+
+- **Hardcoded References**: Removed all hardcoded 'DWH' and 'User' references from:
+  - `HoonyTools.pyw` — Schema2 queries, index tool launch, drop handler
+  - `tools/mv_refresh_gui.py` — Owner fallbacks, UI messages
+  - `tools/index_gui.py` — Legacy backwards-compat code
+  - `tools/pk_designate_gui.py` — Owner assignment
+  - `tools/object_cleanup_gui.py` — Schema assignment, SQL statements
+  - `loaders/excel_csv_loader.py` — Schema assignment, UI labels
+  - `loaders/sql_view_loader.py`, `sql_mv_loader.py` — Comments
+  - `libs/abort_manager.py` — Comments and variable names
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `HoonyTools.pyw` | Fixed schema2 queries to use conn.username.upper(), updated UI messages |
+| `tools/mv_refresh_gui.py` | Removed 'DWH' fallbacks, updated UI labels, added dark mode to compact dialog |
+| `tools/index_gui.py` | Removed legacy backwards-compat code, updated function signature |
+| `tools/pk_designate_gui.py` | Uses conn.username.upper(), updated button labels |
+| `tools/object_cleanup_gui.py` | Uses conn.username.upper(), updated UI labels |
+| `loaders/excel_csv_loader.py` | Uses conn.username.upper(), updated UI labels |
+| `loaders/sql_view_loader.py` | Updated comment |
+| `loaders/sql_mv_loader.py` | Updated comment, full dark mode for Existing MV Log dialog |
+| `libs/abort_manager.py` | Updated comments and variable names |
+| `libs/settings.py` | Moved session import to module level |
+| `libs/gui_utils.py` | **NEW** — Shared dark mode detection helpers |
+| `README.md` | Removed setup_config.py from folder structure |
+
+---
+
 ## 🔧 v2.1.5 — Auto-Refresh, Tool UX Improvements & View Options (2026-02-21)
 
 This release adds automatic object pane refresh on startup and tool close, fixes MV Loader connection handling for consecutive creations, and introduces several UI/UX improvements across the View Loader, MV Loader, and MV Manager.

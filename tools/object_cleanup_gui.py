@@ -108,8 +108,8 @@ def prompt_schema_choice():
     btn_frame = Frame(win)
     btn_frame.pack(pady=5)
 
-    b1 = Button(btn_frame, text="User Schema", width=12, command=select_user)
-    b2 = Button(btn_frame, text="DWH Schema", width=12, command=select_dwh)
+    b1 = Button(btn_frame, text="Schema 1", width=12, command=select_user)
+    b2 = Button(btn_frame, text="Schema 2", width=12, command=select_dwh)
     b3 = Button(btn_frame, text="Cancel", width=12, command=cancel)
 
     b1.pack(side="left", padx=5)
@@ -217,7 +217,7 @@ def drop_user_tables():
         logger.error("❌ Failed to connect.")
         return
 
-    schema = "DWH" if schema_choice == "dwh" else conn.username.upper()
+    schema = conn.username.upper()
     cursor = conn.cursor()
 
     # Retrieve object names and types, include materialized views
@@ -400,10 +400,10 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     except Exception:
         logger.debug('Failed to register connection', exc_info=True)
     if not conn:
-        logger.error("❌ Failed to connect to DWH.")
+        logger.error("❌ Failed to connect to schema2.")
         return
 
-    schema = "DWH"
+    schema = conn.username.upper()
     cursor = conn.cursor()
     cursor.execute("SELECT table_name FROM all_tables WHERE owner = :owner AND table_name LIKE :filter ORDER BY table_name", [schema, table_filter])
     tables = [row[0] for row in cursor.fetchall()]
@@ -513,8 +513,8 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     for table in selected:
         try:
             column = "ACYR" if table.startswith("SCFF_") else "GI03_TERM_ID"
-            cursor.execute(f'DELETE FROM DWH."{table}" WHERE {column} = :1', [value])
-            logger.info(f"🧹 Deleted from {table} where {column} = {value}")
+            cursor.execute(f'DELETE FROM {schema}."{table}" WHERE {column} = :1', [value])
+            logger.info(f"🧹 Deleted from {schema}.{table} where {column} = {value}")
         except Exception as e:
             logger.warning(f"⚠️ Failed to delete from {table}: {e}")
 
@@ -678,8 +678,8 @@ def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_com
     Drop specified database objects. Called from main GUI Drop buttons.
     
     Args:
-        schema_choice: 'user' or 'dwh' - determines connection type
-        schema_name: The actual schema name (e.g., 'DWH' or user's schema name)
+        schema_choice: 'user' or 'dwh' - determines connection type (schema1 or schema2)
+        schema_name: The actual schema name (e.g., the connected user's username)
         objects: List of dicts with keys: 'name', 'type', 'info' (optional)
         parent_window: Parent Tk window for dialogs
         on_complete: Callback function to run after completion (e.g., refresh)

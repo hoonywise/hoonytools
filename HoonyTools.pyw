@@ -135,7 +135,7 @@ from libs.bible_books import book_lookup
 should_abort = False
 auto_scroll_enabled = True
 is_gui_running = True
-# Guard to prevent scheduling multiple DWH login prompts concurrently
+# Guard to prevent scheduling multiple schema2 login prompts concurrently
 dwh_prompting = False
 
 # Load Bible JSON from libs/en_kjv.json with robust lookup (works in dev and PyInstaller bundles)
@@ -339,7 +339,7 @@ def abort_process():
             pass
 
         # Attempt to close any active login/prompt windows that were parented
-        # to the launcher root (for example DWH login Toplevel). Destroying
+        # to the launcher root (for example schema2 login Toplevel). Destroying
         # these windows will release any grabs and prevent the main GUI from
         # remaining unusable after abort.
         try:
@@ -863,7 +863,7 @@ def launch_tool_gui():
         pre_style = None
 
     # Create the two object panes in the left_pane (stacked, share vertical space)
-    # schema1 = user schema, schema2 = shared/DWH schema
+    # schema1 = primary schema, schema2 = secondary schema
     schema1_frame, schema1_tree, schema1_refresh_btn, schema1_load_btn, schema1_drop_btn, schema1_status, schema1_view_btn, schema1_mv_btn, schema1_pk_btn, schema1_index_btn = _make_objects_frame(left_pane, 'schema1')
     schema2_frame, schema2_tree, schema2_refresh_btn, schema2_load_btn, schema2_drop_btn, schema2_status, schema2_view_btn, schema2_mv_btn, schema2_pk_btn, schema2_index_btn = _make_objects_frame(left_pane, 'schema2')
     
@@ -1218,6 +1218,7 @@ def launch_tool_gui():
                 try:
                     conn = oracledb.connect(user=creds["user"], password=creds["password"], dsn=creds["dsn"])
                     cur = conn.cursor()
+                    owner = conn.username.upper()
                     
                     # Query for tables, views, materialized views with PK info
                     # Exclude TABLEs that are backing tables for materialized views (same name as an MV)
@@ -1246,7 +1247,7 @@ def launch_tool_gui():
                             )
                         )
                         ORDER BY ao.object_type, ao.object_name
-                    """, ["DWH"])
+                    """, [owner])
                     obj_rows = cur.fetchall()
                     
                     # Query for user-created indexes (excluding system and PK-backing indexes)
@@ -1265,7 +1266,7 @@ def launch_tool_gui():
                               AND ac.index_name = ai.index_name
                           )
                         ORDER BY ai.index_name
-                    """, ["DWH"])
+                    """, [owner])
                     idx_rows = cur.fetchall()
                     
                     # Query for primary key constraints (as droppable objects)
@@ -1277,7 +1278,7 @@ def launch_tool_gui():
                         WHERE ac.owner = :owner
                           AND ac.constraint_type = 'P'
                         ORDER BY ac.table_name, ac.constraint_name
-                    """, ["DWH"])
+                    """, [owner])
                     pk_rows = cur.fetchall()
                     
                     # Format rows for display: (name, type, info)
@@ -1308,12 +1309,12 @@ def launch_tool_gui():
                     err_text = str(e)
                     # Treat certain errors as expected environment/tns issues and avoid noisy stacktraces.
                     if ("DPY-4026" in err_text) or ("tnsnames" in err_text.lower()) or isinstance(e, FileNotFoundError):
-                        # Informational: tnsnames/tns error detected; prompt the user to repair DWH login.
-                        logger.info(f"DWH connect encountered tns/tnsnames issue; will prompt user: {err_text}")
-                        # Update status label and schedule a single main-thread prompt to repair DWH creds/config if not already prompting
+                        # Informational: tnsnames/tns error detected; prompt the user to repair schema2 login.
+                        logger.info(f"schema2 connect encountered tns/tnsnames issue; will prompt user: {err_text}")
+                        # Update status label and schedule a single main-thread prompt to repair schema2 creds/config if not already prompting
                         try:
                             try:
-                                root.after(0, lambda: schema2_status.config(text="Prompting for DWH login..."))
+                                root.after(0, lambda: schema2_status.config(text="Prompting for login..."))
                             except Exception:
                                 pass
                             from libs import session as _session
@@ -1345,10 +1346,10 @@ def launch_tool_gui():
                                 except Exception:
                                     dwh_prompting = False
                         except Exception:
-                            logger.warning("Failed to schedule DWH login prompt after tns error.")
+                            logger.warning("Failed to schedule schema2 login prompt after tns error.")
                     else:
                         # Unexpected errors: log stacktrace so we can diagnose
-                        logger.exception(f"Failed to list DWH objects: {e}")
+                        logger.exception(f"Failed to list schema2 objects: {e}")
                 finally:
                     try:
                         if cur:
@@ -1435,7 +1436,7 @@ def launch_tool_gui():
         name, obj_type = _get_selected_object(schema1_tree)
         if not name:
             from tkinter import messagebox
-            messagebox.showwarning('No Selection', 'Please select an object in the User Objects pane first.', parent=root)
+            messagebox.showwarning('No Selection', 'Please select an object in the Schema 1 Objects pane first.', parent=root)
             return
         if obj_type and obj_type.upper() == 'VIEW':
             from tkinter import messagebox
@@ -1469,13 +1470,13 @@ def launch_tool_gui():
             # Only refresh if user successfully logged in (has credentials)
             if session.get_credentials('schema1'):
                 refresh_schema1_objects()
-        index_main(parent=root, schema=owner, object_name=name, object_type=obj_type, on_finish=on_close)
+        index_main(parent=root, schema_key='schema1', object_name=name, object_type=obj_type, on_finish=on_close)
 
     def launch_index_schema2():
         name, obj_type = _get_selected_object(schema2_tree)
         if not name:
             from tkinter import messagebox
-            messagebox.showwarning('No Selection', 'Please select an object in the DWH Objects pane first.', parent=root)
+            messagebox.showwarning('No Selection', 'Please select an object in the Schema 2 Objects pane first.', parent=root)
             return
         if obj_type and obj_type.upper() == 'VIEW':
             from tkinter import messagebox
@@ -1488,7 +1489,7 @@ def launch_tool_gui():
             # Only refresh if user successfully logged in (has credentials)
             if session.get_credentials('schema2'):
                 refresh_schema2_objects()
-        index_main(parent=root, schema='DWH', object_name=name, object_type=obj_type, on_finish=on_close)
+        index_main(parent=root, schema_key='schema2', object_name=name, object_type=obj_type, on_finish=on_close)
 
     schema1_index_btn.config(command=launch_index_schema1)
     schema2_index_btn.config(command=launch_index_schema2)
@@ -1591,18 +1592,41 @@ def launch_tool_gui():
         )
 
     def launch_drop_schema2():
-        """Handle Drop button click for DWH schema."""
+        """Handle Drop button click for schema2."""
         objects = _get_selected_objects(schema2_tree)
         if not objects:
             from tkinter import messagebox
             messagebox.showwarning('No Selection', 'Please select one or more objects to drop.', parent=root)
             return
         
+        # Get schema name from session credentials
+        from libs import session as _sess
+        owner = None
+        creds = _sess.get_credentials('schema2')
+        if creds:
+            owner = creds.get('user', '').upper()
+        if not owner:
+            try:
+                from libs.oracle_db_connector import get_db_connection
+                conn = get_db_connection(schema='schema2', root=root)
+                if conn:
+                    owner = conn.username.upper()
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        if not owner:
+            from tkinter import messagebox
+            messagebox.showerror('Error', 'Could not determine schema2 owner.', parent=root)
+            return
+        
         # Call the drop function with status callback
         from tools.object_cleanup_gui import drop_objects
         drop_objects(
             schema_choice='dwh',
-            schema_name='DWH',
+            schema_name=owner,
             objects=objects,
             parent_window=root,
             on_complete=lambda: refresh_schema2_objects(),

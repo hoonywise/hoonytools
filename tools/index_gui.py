@@ -133,15 +133,15 @@ def _ensure_dialog_parent(parent):
         return root
 
 
-def main(parent=None, schema=None, object_name=None, object_type=None, on_finish=None):
+def main(parent=None, schema_key=None, object_name=None, object_type=None, on_finish=None):
     """Entry point for the Index Manager tool.
 
     Parameters
     ----------
     parent : tk widget or None
         The launcher root window (for parenting the dialog).
-    schema : str
-        The Oracle schema/owner (e.g. 'DWH' or the user's username).
+    schema_key : str
+        'schema1' or 'schema2' - determines which connection to use.
     object_name : str
         The table or materialized view name.
     object_type : str
@@ -149,13 +149,14 @@ def main(parent=None, schema=None, object_name=None, object_type=None, on_finish
     on_finish : callable or None
         Optional callback invoked when the dialog is closed.
     """
-    if not schema or not object_name:
-        _safe_messagebox('showwarning', 'Missing Info', 'Schema and object name are required.', dlg=parent)
+    # Default to schema1 if not provided
+    if not schema_key:
+        schema_key = 'schema1'
+
+    if not object_name:
+        _safe_messagebox('showwarning', 'Missing Info', 'Object name is required.', dlg=parent)
         return
 
-    # Determine connection type based on schema
-    is_dwh = schema.upper() == 'DWH'
-    schema_key = 'schema2' if is_dwh else 'schema1'
     conn = get_db_connection(schema=schema_key, root=parent)
     if not conn:
         logger.error('Failed to get DB connection for index tool')
@@ -168,7 +169,8 @@ def main(parent=None, schema=None, object_name=None, object_type=None, on_finish
     except Exception:
         logger.debug('Failed to register connection', exc_info=True)
 
-    owner = schema.upper()
+    # Get actual owner from connection
+    owner = conn.username.upper()
 
     # --- Build the dialog ---
     win = _ensure_dialog_parent(parent)

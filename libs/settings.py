@@ -11,6 +11,7 @@ import ctypes
 import sys
 
 from libs.paths import PROJECT_PATH as BASE_PATH
+from libs import session
 
 # Constants
 ASSETS_PATH = BASE_PATH
@@ -602,8 +603,6 @@ def show_settings(parent=None):
 
         if _save_config(cfg):
             # Update session memory so login dialog won't appear unnecessarily
-            # Import session outside try block - this is critical and should not fail silently
-            from libs import session
             _parent = entry_refs.get('_parent')
 
             # Schema 1: Update or clear session credentials (critical - no silent failure)
