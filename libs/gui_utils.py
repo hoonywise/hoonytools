@@ -1368,9 +1368,17 @@ def apply_theme_to_entry(widget) -> None:
         widget.config(
             bg=get_color('entry_bg'),
             fg=get_color('entry_fg'),
-            insertbackground=get_color('insert_bg'),
+            insertbackground=get_color('entry_fg'),
             selectbackground=get_color('select_bg'),
         )
+        # Handle disabled state colors (may not be supported on all platforms)
+        try:
+            widget.config(
+                disabledbackground=get_color('entry_bg'),
+                disabledforeground=get_color('entry_fg'),
+            )
+        except Exception:
+            pass  # disabledbackground/foreground may not be supported
     except Exception as e:
         logger.debug(f"Could not apply theme to entry: {e}")
 
@@ -1651,6 +1659,9 @@ def configure_root_options(root) -> None:
         # Entry
         root.option_add('*Entry.background', get_color('entry_bg'))
         root.option_add('*Entry.foreground', get_color('entry_fg'))
+        root.option_add('*Entry.insertBackground', get_color('entry_fg'))
+        root.option_add('*Entry.disabledBackground', get_color('entry_bg'))
+        root.option_add('*Entry.disabledForeground', get_color('entry_fg'))
         
         # Checkbutton
         root.option_add('*Checkbutton.background', get_color('checkbox_bg'))
