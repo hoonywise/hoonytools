@@ -607,3 +607,152 @@ Summary: This session integrated the Object Dropper tool directly into the main 
 1. Consider adding status indicator support to other tools (SQL View Loader, MV Manager, PK Designator).
 2. The `_recreate_tree()` function is getting complex; may benefit from refactoring to use a shared configuration object.
 3. Could add a "Select All of Type" feature (e.g., right-click to select all TABLEs).
+
+---
+
+### 🔄 Entry #15: v2.0.0 — Symmetric Dual-Schema Refactoring (2026-02-20)
+
+Summary: This major release completely restructures HoonyTools' authentication and session management. The app now launches directly to the GUI without a mandatory login prompt, implements symmetric "schema1/schema2" architecture for identical handling of both database connections, and introduces a redesigned UI with a custom menu bar and "Word of God" verse pane.
+
+#### Architecture Changes
+
+**1. Unified Session Management**
+
+- **Merged `libs/session.py` and `libs/dwh_session.py`** into a single unified `libs/session.py` (~337 lines).
+- Session state stored in a `schemas` dict with symmetric structure:
+  ```python
+  schemas = {
+      'schema1': {'credentials': None, 'label': 'Not Connected'},
+      'schema2': {'credentials': None, 'label': 'Not Connected'}
+  }
+  ```
+- Key API functions:
+  - `get_credentials(schema)` — returns credentials dict or None
+  - `set_credentials(schema, creds)` — stores credentials in memory
+  - `register_connection(root, conn, schema)` — tracks connection for cleanup
+  - `close_connections(root, schema=None)` — closes and cleans up connections
+- Credentials dict uses `user` key (not `username`) for the username field.
+
+**2. Simplified Database Connector**
+
+- **Changed parameter from `force_shared=True/False` to `schema='schema1'|'schema2'`**.
+- `get_db_connection(schema='schema1', root=None)` — returns connection or None.
+- Modal login dialog with `grab_set()` to block interaction with parent windows.
+- Thread-safe pattern: connection established on main thread BEFORE spawning worker threads (Tkinter dialogs must run on main thread).
+
+**3. Config.ini Structure**
+
+- Renamed sections from `[user]`/`[dwh]` to `[schema1]`/`[schema2]`:
+  ```ini
+  [schema1]
+  user = hoonywise
+  password = ...
+  dsn = HOONYDB
+
+  [schema2]
+  user = dwh
+  password = ...
+  dsn = HOONYDB
+  ```
+
+#### GUI Changes
+
+**1. Removed Mandatory Login**
+
+- GUI now opens directly without login prompt.
+- Each schema pane has on-demand authentication — credentials requested only when user interacts with that pane.
+
+**2. Removed Toolbar Elements**
+
+- Removed combobox (M.View Manager selector).
+- Removed Run button.
+- Removed Exit button.
+
+**3. Added Custom Menu Bar**
+
+- File menu with "M.View Manager" item.
+- Dark mode support: menu background changes with theme toggle.
+- Menu bar uses `before=verse_outer_frame` pack order to appear at top.
+
+**4. Redesigned Verse Pane**
+
+- LabelFrame titled "Word of God" with Previous/Next buttons.
+- Fixed-height (50px) white content area with word-wrapped text.
+- Auto-hide scrollbar on hover for long verses.
+- Verse history for Previous/Next navigation.
+- Dark mode affects only inner text area (white→black bg, black→white text).
+- Text color: black in light mode, pure white in dark mode.
+
+**Verse Pane Spacing Controls** (line references in hoonytools.pyw):
+- Line 564: `verse_outer_frame.pack(..., padx=10, pady=(top, bottom))` — gap from window edge and above/below verse pane
+- Line 568: `verse_labelframe = tk.LabelFrame(..., padx=6, pady=4)` — padding inside the LabelFrame
+- Line 572: `verse_labelframe.pack(..., padx=(left, right))` — gap between outer frame and bordered pane
+
+**5. Variable Renaming**
+
+- All `user_*` variables renamed to `schema1_*`.
+- All `dwh_*` variables renamed to `schema2_*`.
+- Provides symmetric, schema-agnostic naming throughout codebase.
+
+#### Files Modified
+
+| File | Changes |
+|------|---------|
+| `libs/session.py` | **REWRITTEN** — Unified session management |
+| `libs/oracle_db_connector.py` | **REWRITTEN** — New `schema=` parameter API with modal login |
+| `libs/abort_manager.py` | Updated for new session API |
+| `libs/dwh_session.py` | **DELETED** — Functionality merged into `libs/session.py` |
+| `hoonytools.pyw` | Extensive changes (see GUI Changes above) |
+| `tools/pk_designate_gui.py` | Updated to use new API |
+| `tools/index_gui.py` | Updated to use new API |
+| `tools/object_cleanup_gui.py` | Updated to use new API |
+| `tools/mv_refresh_gui.py` | Updated to use new API |
+| `loaders/sql_view_loader.py` | Credentials prompt before GUI |
+| `loaders/sql_mv_loader.py` | Credentials prompt before GUI |
+| `loaders/excel_csv_loader.py` | Credentials prompt before GUI, connection persists |
+| `CHANGELOG.md` | v2.0.0 entry added |
+
+#### Key Discoveries
+
+1. **Duplicate prompt issue**: When user cancelled credentials, the connector returned but launcher called `refresh_schemaX_objects()` which prompted again. Fixed by checking `session.get_credentials()` before refreshing.
+
+2. **Modal dialog grab**: Login dialog needed `grab_set()` to block interaction with parent windows during credential entry.
+
+3. **Thread-safe connections**: Load GUI must establish connection on main thread BEFORE spawning worker thread — Tkinter dialogs cannot be created from background threads.
+
+4. **Menu bar pack order**: Custom menu bar must use `before=verse_outer_frame` to appear at top of window.
+
+5. **Auto-hide scrollbars**: Attempted for object list panes but rolled back as it "looked messy". Kept only for verse pane.
+
+6. **`_recreate_tree()` function**: Called during dark mode toggle, must also implement auto-hide scrollbar if that feature is enabled for a pane.
+
+7. **Malformed try-except blocks**: Found and fixed several broken try-except structures with duplicate/orphaned code in hoonytools.pyw.
+
+#### Testing Checklist
+
+1. **Launch without login**: Start HoonyTools — GUI should appear immediately without any login prompt.
+
+2. **Schema1 on-demand auth**: Click on schema1 object list or use a tool targeting schema1 — login prompt should appear only then.
+
+3. **Schema2 on-demand auth**: Click on schema2 object list — separate login prompt for schema2 credentials.
+
+4. **Credential persistence**: Save credentials for both schemas, restart app — saved credentials should auto-populate login dialogs.
+
+5. **File menu**: Verify "M.View Manager" appears in File menu and launches the MV Manager tool.
+
+6. **Verse pane navigation**: Click Previous/Next buttons — verse should change and history should work correctly.
+
+7. **Verse pane dark mode**: Toggle dark mode — only the verse text area should change colors (not the LabelFrame border or buttons).
+
+8. **All tools functional**: Test each tool (PK Designator, Index Tool, Object Cleanup, MV Manager) — all should work with new API.
+
+9. **All loaders functional**: Test each loader (SQL View, SQL MV, Excel/CSV) — credentials should be requested before GUI opens.
+
+#### Migration Notes for Developers
+
+- Replace `force_shared=True` with `schema='schema2'`.
+- Replace `force_shared=False` with `schema='schema1'`.
+- Replace `session.user_credentials` with `session.get_credentials('schema1')`.
+- Replace `session.dwh_credentials` with `session.get_credentials('schema2')`.
+- Replace `dwh_session.register_connection()` with `session.register_connection(root, conn, 'schema2')`.
+- Replace `dwh_session.cleanup()` with `session.close_connections(root, 'schema2')`.

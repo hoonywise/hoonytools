@@ -4,6 +4,69 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🚀 v2.0.0 — Major Refactoring: Unified Session, Streamlined UI, Word of God Verse Pane (2026-02-20)
+
+This major release delivers a comprehensive refactoring of credential handling, removes the toolbar combobox in favor of direct menu and button access, and introduces an elegant Bible verse display pane.
+
+### Added
+
+- **File Menu**: New "File" menu added to the menu bar (leftmost position) with "M.View Manager" item for launching the Materialized View Manager tool.
+- **"Word of God" Verse Pane**: Elegant Bible verse display replacing the simple centered label:
+  - LabelFrame with "Word of God" title styled consistently with object panes
+  - Fixed-height white content area with word-wrapped verse text
+  - **Previous/Next buttons** for manual navigation through verse history
+  - Auto-hide scrollbar appears on hover for long verses
+  - Verse history tracking — navigate back to previously shown verses
+  - Auto-rotation every ~78 seconds (adds to history)
+  - Dark mode support (only inner text area changes, border/title unchanged)
+- **Unified Session Management**: New `libs/session.py` replaces separate user and DWH session modules:
+  - Symmetric dual-schema support (`schema1` and `schema2`)
+  - Dynamic pane labels showing "Not Connected" until authenticated, then username
+  - Centralized credential storage and connection tracking
+  - `session.get_credentials()`, `session.set_credentials()`, `session.register_connection()`, `session.close_connections()` API
+- **On-Demand Authentication**: GUI opens directly without mandatory login prompt; credentials requested only when a tool needs database access.
+- **Credentials-First Pattern**: Tools prompt for credentials BEFORE showing their GUI, preventing empty tool windows on cancel.
+
+### Changed
+
+- **Database Connector API**: Changed `force_shared=True/False` parameter to `schema='schema1'|'schema2'` for clarity.
+- **Config.ini Structure**: Now uses `[schema1]` and `[schema2]` sections instead of `[user]` and `[dwh]`.
+- **Tool Access**: All tools now accessed via left pane buttons or File menu instead of toolbar combobox.
+- **Object Pane Labels**: Dynamic labels show connection status — "Not Connected" or authenticated username.
+- **Object Count Labels**: Repositioned to right edge of pane title area for better alignment with dynamic schema labels.
+
+### Removed
+
+- **Toolbar Combobox**: Removed the "Select Tool" dropdown and associated `_CustomCombobox` class (~200 lines).
+- **Run Button**: No longer needed since tools are launched directly from buttons/menus.
+- **Exit Button**: Users now close the application using the window X button (which still performs full cleanup via `safe_exit()`).
+- **`libs/dwh_session.py`**: Functionality merged into unified `libs/session.py`.
+- **`TOOLS` Dictionary**: Tool registry removed; tools wired directly to buttons/menus.
+- **Dark Mode Combobox Styling**: Removed ~150 lines of combobox theming code from `set_panes_dark()` and `set_panes_light()`.
+
+### Fixed
+
+- **Duplicate Credentials Prompt**: Fixed issue where canceling credentials prompted again due to `refresh_schemaX_objects()` being called in `on_finish` callback.
+- **Malformed Try-Except Blocks**: Fixed several broken try-except structures in `hoonytools.pyw` with duplicate/orphaned code.
+- **Menu Bar Dark Mode**: File menu now properly toggles with View and Help menus in dark mode.
+
+### Files Touched
+
+- `HoonyTools.pyw` — Major refactoring: removed toolbar, added File menu, Word of God verse pane, unified session integration
+- `libs/session.py` — **REWRITTEN** (~337 lines): Unified session management for both schemas
+- `libs/oracle_db_connector.py` — **REWRITTEN**: New `schema=` parameter API with modal login dialog
+- `libs/abort_manager.py` — Updated for new session API
+- `libs/dwh_session.py` — **DELETED**: Merged into `libs/session.py`
+- `tools/pk_designate_gui.py` — Updated to use new session/connector API
+- `tools/index_gui.py` — Updated to use new session/connector API
+- `tools/object_cleanup_gui.py` — Updated to use new session/connector API
+- `tools/mv_refresh_gui.py` — Updated to use new session/connector API
+- `loaders/sql_view_loader.py` — Credentials prompt before GUI, uses pre-established connection
+- `loaders/sql_mv_loader.py` — Credentials prompt before GUI, uses pre-established connection
+- `loaders/excel_csv_loader.py` — Credentials prompt before GUI, connection persists for multiple loads
+
+---
+
 ## 🚀 v1.5.5 — Integrated Drop Button & Status Indicator (2026-02-20)
 
 This release integrates the Object Dropper functionality directly into the main GUI's left pane, adds comprehensive status indicator support, and introduces sortable column headers with multi-select capability.
