@@ -25,6 +25,12 @@ def run_mv_refresh_gui(on_finish=None):
     conn = get_db_connection()
     if not conn:
         return
+    # If we obtained a connection for the user/schema1, update session label
+    try:
+        if hasattr(conn, 'username') and conn.username:
+            session.set_label('schema1', conn.username)
+    except Exception:
+        pass
 
     # use shared helper if available
     try:
@@ -134,27 +140,54 @@ def run_mv_refresh_gui(on_finish=None):
     # List to track all buttons for dark mode styling
     _all_buttons = []
 
-    # User MVs pane
-    tk.Label(left, text="User Materialized Views:").pack(anchor="w")
-    user_btn_frame = tk.Frame(left)
+    # User MVs pane (LabelFrame with dynamic header and count)
+    user_frame = tk.LabelFrame(left, padx=6, pady=6)
+    user_frame.pack(fill="both", pady=(0, 8), expand=True)
+
+    # Dynamic schema label for user pane
+    user_label_frame = tk.Frame(user_frame)
+    user_schema_label = tk.Label(user_label_frame, text=session.get_label('schema1') + (" MVs" if session.get_label('schema1') != 'Not Connected' else ""), font=("Arial", 9, "bold"))
+    user_schema_label.pack(side="left")
+    try:
+        session.register_label_widget('schema1', user_schema_label)
+    except Exception:
+        pass
+    user_frame.configure(labelwidget=user_label_frame)
+
+    user_btn_frame = tk.Frame(user_frame)
     user_btn_frame.pack(fill="x")
     btn_refresh_user = tk.Button(user_btn_frame, text="Refresh", width=8, command=lambda: load_user_mviews())
     btn_refresh_user.pack(side="left")
     _all_buttons.append(btn_refresh_user)
-    mview_listbox_user = tk.Listbox(left, width=40, height=14)
-    mview_listbox_user.pack(fill="y")
+    user_count_label = tk.Label(user_btn_frame, text="", font=("Arial", 8))
+    user_count_label.pack(side="left", padx=(6,0))
 
-    # DWH MVs pane (lazy login)
-    tk.Label(left, text="DWH Materialized Views:").pack(anchor="w", pady=(8,0))
-    dwh_btn_frame = tk.Frame(left)
+    mview_listbox_user = tk.Listbox(user_frame, width=40, height=14)
+    mview_listbox_user.pack(fill="both", expand=True)
+
+    # DWH MVs pane (LabelFrame with dynamic header and count, lazy login)
+    dwh_frame = tk.LabelFrame(left, padx=6, pady=6)
+    dwh_frame.pack(fill="both", expand=True)
+
+    dwh_label_frame = tk.Frame(dwh_frame)
+    dwh_schema_label = tk.Label(dwh_label_frame, text=session.get_label('schema2') + (" MVs" if session.get_label('schema2') != 'Not Connected' else ""), font=("Arial", 9, "bold"))
+    dwh_schema_label.pack(side="left")
+    try:
+        session.register_label_widget('schema2', dwh_schema_label)
+    except Exception:
+        pass
+    dwh_frame.configure(labelwidget=dwh_label_frame)
+
+    dwh_btn_frame = tk.Frame(dwh_frame)
     dwh_btn_frame.pack(fill="x")
-    btn_refresh_dwh = tk.Button(dwh_btn_frame, text="Refresh DWH", width=12, command=lambda: refresh_dwh_mviews())
+    btn_refresh_dwh = tk.Button(dwh_btn_frame, text="Refresh", width=8, command=lambda: refresh_dwh_mviews())
     btn_refresh_dwh.pack(side="left")
     _all_buttons.append(btn_refresh_dwh)
-    dwh_status_label = tk.Label(dwh_btn_frame, text="(not connected)")
-    dwh_status_label.pack(side="left", padx=(6,0))
-    mview_listbox_dwh = tk.Listbox(left, width=40, height=14)
-    mview_listbox_dwh.pack(fill="y")
+    dwh_count_label = tk.Label(dwh_btn_frame, text="", font=("Arial", 8))
+    dwh_count_label.pack(side="left", padx=(6,0))
+
+    mview_listbox_dwh = tk.Listbox(dwh_frame, width=40, height=14)
+    mview_listbox_dwh.pack(fill="both", expand=True)
 
     info_text = tk.Text(right, height=8)
     info_text.pack(fill="x")
@@ -208,6 +241,27 @@ def run_mv_refresh_gui(on_finish=None):
                         btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
                 except Exception:
                     pass
+        except Exception:
+            pass
+
+    # Helpers to update dynamic header labels and counts
+    def update_user_header():
+        try:
+            label = session.get_label('schema1')
+            if label and label != 'Not Connected':
+                user_schema_label.config(text=f"{label} MVs")
+            else:
+                user_schema_label.config(text="Not Connected")
+        except Exception:
+            pass
+
+    def update_dwh_header():
+        try:
+            label = session.get_label('schema2')
+            if label and label != 'Not Connected':
+                dwh_schema_label.config(text=f"{label} MVs")
+            else:
+                dwh_schema_label.config(text="Not Connected")
         except Exception:
             pass
 
@@ -303,6 +357,16 @@ def run_mv_refresh_gui(on_finish=None):
             # attach as normal attribute for later lookup
             setattr(root, '_mview_rows_user', {r[0]: r for r in rows})
             cur.close()
+            # update count label and header
+            try:
+                cnt = mview_listbox_user.size()
+                user_count_label.config(text=f"{cnt} MVs" if cnt > 0 else "No MVs")
+            except Exception:
+                pass
+            try:
+                update_user_header()
+            except Exception:
+                pass
             # restore selection if requested
             try:
                 if selected_name:
@@ -342,6 +406,19 @@ def run_mv_refresh_gui(on_finish=None):
                 mview_listbox_dwh.insert(tk.END, display)
             setattr(root, '_mview_rows_dwh', {f"{owner}.{r[0]}": (owner,) + r for r in rows})
             cur.close()
+
+            # update count label and header
+            try:
+                cnt = mview_listbox_dwh.size()
+                dwh_count_label.config(text=f"{cnt} MVs" if cnt > 0 else "No MVs")
+            except Exception:
+                pass
+            try:
+                update_dwh_header()
+            except Exception:
+                pass
+
+            # restore selection if requested
             try:
                 if selected_name:
                     for i in range(mview_listbox_dwh.size()):
@@ -357,6 +434,10 @@ def run_mv_refresh_gui(on_finish=None):
             logger.exception(f"Failed to load DWH materialized views: {e}")
             mview_listbox_dwh.delete(0, tk.END)
             mview_listbox_dwh.insert(tk.END, "(no access or error)")
+            try:
+                dwh_count_label.config(text="No MVs")
+            except Exception:
+                pass
 
     def refresh_dwh_mviews():
         # Prompt for DWH login only when user asks to refresh DWH list
@@ -372,9 +453,16 @@ def run_mv_refresh_gui(on_finish=None):
             except Exception:
                 logger.debug('Failed to register connection', exc_info=True)
             try:
-                dwh_status_label.config(text=f"(connected as {dconn.username})" if hasattr(dconn, 'username') else '(connected)')
+                # update the persistent session label and header
+                username = dconn.username if hasattr(dconn, 'username') else None
+                if username:
+                    session.set_label('schema2', username)
+                update_dwh_header()
             except Exception:
-                dwh_status_label.config(text='(connected)')
+                try:
+                    update_dwh_header()
+                except Exception:
+                    pass
         # load using owner DWH
         try:
             load_dwh_mviews(dconn, 'DWH')
@@ -588,9 +676,15 @@ def run_mv_refresh_gui(on_finish=None):
                     except Exception:
                         logger.debug('Failed to register connection', exc_info=True)
                     try:
-                        dwh_status_label.config(text=f"(connected as {dconn.username})" if hasattr(dconn, 'username') else '(connected)')
+                        username = dconn.username if hasattr(dconn, 'username') else None
+                        if username:
+                            session.set_label('schema2', username)
+                        update_dwh_header()
                     except Exception:
-                        dwh_status_label.config(text='(connected)')
+                        try:
+                            update_dwh_header()
+                        except Exception:
+                            pass
                 cur = dconn.cursor()
                 # qualified includes owner
                 cur.execute(f"BEGIN DBMS_MVIEW.REFRESH('{qualified}','{mode}'); END;")
@@ -634,9 +728,15 @@ def run_mv_refresh_gui(on_finish=None):
                 except Exception:
                     logger.debug('Failed to register connection', exc_info=True)
                 try:
-                    dwh_status_label.config(text=f"(connected as {dconn.username})" if hasattr(dconn, 'username') else '(connected)')
+                    username = dconn.username if hasattr(dconn, 'username') else None
+                    if username:
+                        session.set_label('schema2', username)
+                    update_dwh_header()
                 except Exception:
-                    dwh_status_label.config(text='(connected)')
+                    try:
+                        update_dwh_header()
+                    except Exception:
+                        pass
             row = getattr(root, '_mview_rows_dwh', {}).get(qualified)
             # stored as (owner,) + row
             mv_row = row[1:] if row else None
@@ -658,6 +758,7 @@ def run_mv_refresh_gui(on_finish=None):
         results = []
         try:
             cur = active_cursor
+            sql = None
             for t in tables:
                 try:
                     # If helper available, detect existing log and offer reuse/drop
@@ -724,6 +825,7 @@ def run_mv_refresh_gui(on_finish=None):
                                         meta_text = str(meta_info or {})
                                         try:
                                             cursor = conn.cursor()
+                                            mlog_name = None
                                             master_name = table_name.split('.')[-1].upper()
                                             diag_lines = []
                                             try:
@@ -743,6 +845,9 @@ def run_mv_refresh_gui(on_finish=None):
                                             except Exception:
                                                 diag_lines.append("user_tables_mlog_count: (no access)")
                                             try:
+                                                # If mlog_name was not set above, set a safe default
+                                                if mlog_name is None:
+                                                    mlog_name = f"MLOG$_{master_name}"
                                                 cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
                                                 diag_lines.append(f"all_tables_mlog_count: {cursor.fetchone()[0]}")
                                             except Exception:
@@ -768,20 +873,20 @@ def run_mv_refresh_gui(on_finish=None):
                                 ack_cb = tk.Checkbutton(dlg, text=f"I understand this will affect the {len(deps)} listed materialized view(s).", variable=ack)
                                 ack_cb.pack(padx=12, pady=(4,4), anchor='w')
 
-                                result = {'value': None}
+                                result = [None]
 
                                 def do_reuse():
-                                    result['value'] = 'reuse'
+                                    result[0] = 'reuse'
                                     dlg.destroy()
 
                                 def do_drop():
                                     if not ack.get():
                                         return
-                                    result['value'] = 'drop'
+                                    result[0] = 'drop'
                                     dlg.destroy()
 
                                 def do_cancel():
-                                    result['value'] = None
+                                    result[0] = None
                                     dlg.destroy()
 
                                 btnf = tk.Frame(dlg)
@@ -810,7 +915,7 @@ def run_mv_refresh_gui(on_finish=None):
                                         dlg.mainloop()
                                     except Exception:
                                         pass
-                                return result.get('value')
+                                return result[0]
 
                             choice = show_existing_log_options_compact(t, meta, desired_sql)
                             # If the user cancelled the existing-log dialog, treat as explicit cancel
