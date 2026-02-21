@@ -1391,7 +1391,22 @@ def show_settings(parent=None):
 
     def _on_apply():
         if _validate():
-            _save()
+            if _save():
+                # Update original values to match what was just saved
+                # so Cancel/X won't revert these changes
+                from libs import gui_utils
+                entry_refs['_original_theme'] = gui_utils.get_current_theme()
+                
+                # Read back splash settings from config
+                cfg = _load_config()
+                try:
+                    entry_refs['_original_splash_enabled'] = cfg.getboolean('Appearance', 'splash_enabled')
+                except Exception:
+                    pass
+                try:
+                    entry_refs['_original_splash_opacity'] = cfg.getfloat('Appearance', 'splash_opacity')
+                except Exception:
+                    pass
 
     # Create buttons
     btn_ok = tk.Button(button_frame, text="OK", width=8, command=_on_ok)

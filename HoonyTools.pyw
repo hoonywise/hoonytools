@@ -477,7 +477,7 @@ def show_splash():
     # Load splash opacity from config (default 1.0)
     target_opacity = 1.0
     try:
-        config_path = Path(__file__).parent / "libs" / "config.ini"
+        config_path = base_path / "libs" / "config.ini"
         cfg = ConfigParser()
         cfg.read(config_path)
         target_opacity = cfg.getfloat('Appearance', 'splash_opacity')
@@ -2504,8 +2504,8 @@ if __name__ == "__main__":
         splash_enabled = True
         try:
             from configparser import ConfigParser
-            from pathlib import Path
-            config_path = Path(__file__).parent / "libs" / "config.ini"
+            from libs.paths import PROJECT_PATH
+            config_path = PROJECT_PATH / "libs" / "config.ini"
             cfg = ConfigParser()
             cfg.read(config_path)
             splash_enabled = cfg.getboolean('Appearance', 'splash_enabled')
