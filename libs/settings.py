@@ -541,6 +541,11 @@ class CustomizeColorsDialog:
         # Build color rows grouped by category
         self._build_color_rows()
         
+        # Force widget realization and update swatches
+        # (winfo_rgb needs widgets to be mapped before it can resolve colors)
+        self.inner_frame.update_idletasks()
+        self.win.after(50, self._update_all_swatches)  # Small delay ensures full realization
+        
         # Button frame
         btn_frame = tk.Frame(main_frame)
         btn_frame.pack(fill='x', pady=(10, 0))
@@ -669,6 +674,18 @@ class CustomizeColorsDialog:
                 swatch.config(bg=color_value)
             except Exception:
                 swatch.config(bg='#808080')  # Fallback gray
+    
+    def _update_all_swatches(self):
+        """Update all swatch colors after widgets are fully realized."""
+        for key, swatch in self.swatch_widgets.items():
+            color_value = self.colors.get(key, '#000000')
+            self._set_swatch_color(swatch, color_value)
+            # Also update hex label if it exists
+            if hasattr(swatch, '_hex_label'):
+                try:
+                    swatch._hex_label.config(text=color_value)
+                except Exception:
+                    pass
     
     def _pick_color(self, key):
         """Open color picker for a specific key."""
