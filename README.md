@@ -181,7 +181,6 @@ Once launched, the GUI gives access to all tools via an intuitive interface:
   - `File → M.View Manager` — Open the Materialized View Manager
   - `File → Settings` — Configure credentials and appearance (`Ctrl+Alt+S`)
   - `File → Exit` — Close the application
-  - `View → Dark Mode` — Toggle dark/light theme
   - `Help → About` — Version and contact info
 - **Status Indicator**: Green (idle) / Red (busy) light shows current operation status
 - **Console Log**: View real-time operation logs and messages
@@ -249,12 +248,17 @@ You can run as often as needed — no admin rights or elevated privileges requir
   - Enter Username, Password, and DSN for each schema
   - Credentials are saved to `libs/config.ini` and loaded into session memory
   - Eliminates login popups when credentials are pre-configured
-- **Appearance**: Toggle Dark Mode preference
+- **Appearance**: Theme selection and splash screen controls
 
-### Dark Mode
-- Toggle via `View → Dark Mode` in the menu bar or in Settings.
-- Applies dark theme to all windows, dialogs, and tool GUIs.
-- Preference is saved and restored on next launch.
+### Theme System
+- **16 themes** including popular styles: Pure Black, Midnight, Dracula, One Dark, Monokai, Charcoal, Nord, Solarized, and more
+- **Custom colors**: Customize individual UI elements (buttons, labels, menus, panes, etc.)
+- Applies to the entire UI including all tool dialogs
+- Theme preference persists across sessions
+
+### Splash Screen Controls
+- Toggle splash screen on/off
+- Adjust splash opacity (0-100%)
 
 ---
 
