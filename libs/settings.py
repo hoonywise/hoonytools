@@ -602,45 +602,40 @@ def show_settings(parent=None):
 
         if _save_config(cfg):
             # Update session memory so login dialog won't appear unnecessarily
+            # Import session outside try block - this is critical and should not fail silently
+            from libs import session
+            _parent = entry_refs.get('_parent')
+
+            # Schema 1: Update or clear session credentials (critical - no silent failure)
+            if s1_user_val and s1_pass_val and s1_dsn_val:
+                session.set_credentials('schema1', {
+                    'user': s1_user_val,
+                    'password': s1_pass_val,
+                    'dsn': s1_dsn_val,
+                    'save': True
+                })
+            else:
+                session.clear_credentials('schema1')
+
+            # Schema 2: Update or clear session credentials (critical - no silent failure)
+            if s2_user_val and s2_pass_val and s2_dsn_val:
+                session.set_credentials('schema2', {
+                    'user': s2_user_val,
+                    'password': s2_pass_val,
+                    'dsn': s2_dsn_val,
+                    'save': True
+                })
+            else:
+                session.clear_credentials('schema2')
+
+            # Trigger object pane refresh in main GUI after credentials are saved
+            # This is non-critical and can fail gracefully
             try:
-                from libs import session
-                _parent = entry_refs.get('_parent')
-
-                # Schema 1: Update or clear session credentials
-                if s1_user_val and s1_pass_val and s1_dsn_val:
-                    session.set_credentials('schema1', {
-                        'user': s1_user_val,
-                        'password': s1_pass_val,
-                        'dsn': s1_dsn_val,
-                        'save': True
-                    })
-                else:
-                    session.clear_credentials('schema1')
-
-                # Schema 2: Update or clear session credentials
-                if s2_user_val and s2_pass_val and s2_dsn_val:
-                    session.set_credentials('schema2', {
-                        'user': s2_user_val,
-                        'password': s2_pass_val,
-                        'dsn': s2_dsn_val,
-                        'save': True
-                    })
-                else:
-                    session.clear_credentials('schema2')
-
-                # Trigger object pane refresh in main GUI after credentials are saved
                 if _parent:
                     if hasattr(_parent, '_refresh_schema1') and s1_user_val and s1_pass_val and s1_dsn_val:
-                        try:
-                            _parent._refresh_schema1()
-                        except Exception:
-                            pass
+                        _parent._refresh_schema1()
                     if hasattr(_parent, '_refresh_schema2') and s2_user_val and s2_pass_val and s2_dsn_val:
-                        try:
-                            _parent._refresh_schema2()
-                        except Exception:
-                            pass
-
+                        _parent._refresh_schema2()
             except Exception:
                 pass
 

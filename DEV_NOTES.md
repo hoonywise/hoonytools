@@ -1349,3 +1349,54 @@ Only triggers refresh if complete credentials were provided (all three fields no
 - **Callback pattern**: Using `hasattr()` checks makes this backwards-compatible; Settings won't crash if launched from a different parent window that lacks refresh callbacks.
 - **Conditional refresh**: Only refreshes schemas with complete credentials, avoiding unnecessary connection attempts for empty/partial entries.
 - **Label widget registration**: The `register_label_widget()` / `update_label_widget()` pattern allows any code that sets credentials to automatically update the GUI without needing direct widget references.
+
+---
+
+### Entry #22: Known Edge Case - Brief GUI Freeze on Immediate Tool Launch After Settings Save (v2.1.5)
+
+#### Observed Behavior
+
+On a fresh launch (no `config.ini`), if the user:
+1. Enters credentials via Settings (File → Settings)
+2. Clicks OK
+3. **Immediately** clicks File → M.View Manager (within ~1-2 seconds)
+
+The main GUI may freeze briefly ("Not Responding") before recovering and opening the MV Manager correctly.
+
+#### Root Cause
+
+When Settings saves credentials:
+1. `session.set_credentials()` updates session memory (synchronous, fast)
+2. `_refresh_schema1()` and `_refresh_schema2()` are triggered, spawning **background threads** to connect and fetch objects
+3. If the user immediately opens MV Manager, it calls `get_db_connection()` on the **main thread**
+4. Both the refresh threads AND MV Manager are trying to initialize Oracle client / connect simultaneously
+5. The main thread blocks during Oracle client initialization and connection, causing the freeze
+
+The `get_db_connection()` call in `mv_refresh_gui.py` (line 25) runs synchronously before the GUI is shown:
+```python
+conn = get_db_connection()  # Blocks main thread during connection
+```
+
+#### Why This Is Acceptable
+
+1. **Extremely unlikely scenario**: User must be on fresh launch, enter credentials via Settings (not login prompt), AND immediately click MV Manager
+2. **MV Manager is not commonly used**: It's a niche tool for materialized view management, not a primary workflow
+3. **Graceful recovery**: The freeze resolves on its own and MV Manager opens correctly
+4. **Credentials ARE set correctly**: The session memory is updated before the freeze occurs
+
+#### Potential Future Fix (If Needed)
+
+If this becomes a repeated user complaint, consider refactoring MV Manager to:
+- Show the GUI window first with a "Connecting..." state
+- Connect to the database in a background thread
+- Update the GUI when connection completes
+
+This would follow the same pattern as the main GUI's object pane refresh. However, this is a significant refactoring effort (~1300+ lines in `mv_refresh_gui.py`) with risk of introducing new bugs.
+
+#### Decision
+
+**Leave as-is** for now. The edge case is rare, the behavior recovers gracefully, and the risk of refactoring outweighs the benefit. Document for future reference.
+
+#### Related Fix
+
+In `libs/settings.py`, the `set_credentials()` calls were moved **outside** the try/except block to ensure credentials are always set to session memory, even if the refresh triggers fail. This prevents the login prompt from appearing when it shouldn't.
