@@ -477,59 +477,6 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         btn_copy.pack(side='left', padx=(0,6))
         btn_save.pack(side='left')
 
-        # Gather low-level diagnostic counts to help debug false positives
-        diag = {}
-        mlog_name = None
-        try:
-            master_name = table.split('.')[-1].upper()
-            try:
-                cursor.execute("SELECT COUNT(*) FROM USER_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
-                diag['user_mview_logs_count'] = cursor.fetchone()[0]
-            except Exception:
-                diag['user_mview_logs_count'] = None
-            try:
-                cursor.execute("SELECT COUNT(*) FROM ALL_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
-                diag['all_mview_logs_count'] = cursor.fetchone()[0]
-            except Exception:
-                diag['all_mview_logs_count'] = None
-            try:
-                mlog_name = f"MLOG$_{master_name}"
-                cursor.execute("SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
-                diag['user_tables_mlog_count'] = cursor.fetchone()[0]
-            except Exception:
-                diag['user_tables_mlog_count'] = None
-            try:
-                cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
-                diag['all_tables_mlog_count'] = cursor.fetchone()[0]
-            except Exception:
-                diag['all_tables_mlog_count'] = None
-        except Exception:
-            diag = {}
-
-        # Debug info button (helps surface permission/stale-dictionary cases)
-        def show_diag():
-            try:
-                meta_text = ''
-                try:
-                    meta_text = str(meta)
-                except Exception:
-                    meta_text = '(no meta)'
-                lines = [f"detect_existing_mlog meta: {meta_text}"]
-                for k in ('user_mview_logs_count','all_mview_logs_count','user_tables_mlog_count','all_tables_mlog_count'):
-                    lines.append(f"{k}: {diag.get(k)!r}")
-                try:
-                    _safe_messagebox('showinfo', 'Debug Info', '\n'.join(lines), dlg=dlg)
-                except Exception:
-                    _safe_messagebox('showwarning', 'Debug Failed', f'Could not show debug info: (failed to display debug info)', dlg=dlg)
-            except Exception:
-                # swallow any unexpected errors while preparing debug text
-                try:
-                    _safe_messagebox('showwarning', 'Debug Failed', 'Could not produce debug info.', dlg=dlg)
-                except Exception:
-                    pass
-        btn_debug = tk.Button(btns_deps, text='Show debug info', command=show_diag, width=14)
-        btn_debug.pack(side='left', padx=(6,0))
-
         # acknowledgement checkbox variable (checkbox will be placed next to the confirmation entry)
         ack_var = tk.BooleanVar(value=False)
 
