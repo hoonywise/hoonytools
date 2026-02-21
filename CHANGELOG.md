@@ -4,6 +4,28 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🔧 v2.1.1 — Minor Fixes & Cleanup (2026-02-20)
+
+This patch release includes small UI fixes and code cleanup.
+
+### Fixed
+
+- **Dark Mode Button Styling**: Login dialog buttons now properly apply dark mode styling when the theme is active, using a shared `detect_dark_from_style()` helper.
+
+- **Invalid Character in Splash Screen**: Fixed display issue caused by an invalid/garbled character in the splash screen text.
+
+### Removed
+
+- **`libs/layout_definitions.py`**: Deleted unused 457-line file containing legacy layout constants that were no longer referenced anywhere in the codebase.
+
+### Files Touched
+
+- `libs/oracle_db_connector.py` — Dark mode button styling fix
+- `HoonyTools.pyw` — Splash screen character fix
+- `libs/layout_definitions.py` — **DELETED**
+
+---
+
 ## 🚀 v2.1.0 — Settings Menu GUI (2026-02-20)
 
 This release introduces a comprehensive Settings GUI accessible via the File menu, enabling users to configure application preferences without editing config files directly.

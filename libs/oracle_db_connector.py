@@ -253,8 +253,23 @@ def _show_login_dialog(schema='schema1', parent=None):
 
     btn_frame = tk.Frame(frame, pady=10)
     btn_frame.grid(row=4, columnspan=2)
-    tk.Button(btn_frame, text="Login", command=submit, width=10).pack(side="left", padx=5)
-    tk.Button(btn_frame, text="Cancel", command=cancel, width=10).pack(side="left", padx=5)
+    btn_login = tk.Button(btn_frame, text="Login", command=submit, width=10)
+    btn_login.pack(side="left", padx=5)
+    btn_cancel = tk.Button(btn_frame, text="Cancel", command=cancel, width=10)
+    btn_cancel.pack(side="left", padx=5)
+
+    # Apply dark mode styling to buttons if active
+    def _detect_dark_mode():
+        try:
+            from tkinter import ttk
+            bg = ttk.Style().lookup('Pane.Treeview', 'background')
+            return str(bg).lower() in ('#000000', 'black')
+        except Exception:
+            return False
+
+    if _detect_dark_mode():
+        for btn in (btn_login, btn_cancel):
+            btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
 
     login_window.wait_window()
     return result if result else None

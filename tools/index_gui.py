@@ -174,6 +174,9 @@ def main(parent=None, schema=None, object_name=None, object_type=None, on_finish
     win = _ensure_dialog_parent(parent)
     win.title(f'Index Manager - {owner}.{object_name}')
 
+    # List to track all buttons for dark mode styling
+    _all_buttons = []
+
     # === Main layout: left (columns) + right (existing indexes) ===
     main_frame = tk.Frame(win)
     main_frame.pack(fill=BOTH, expand=True, padx=8, pady=8)
@@ -288,6 +291,18 @@ def main(parent=None, schema=None, object_name=None, object_type=None, on_finish
                 col_list.config(bg='white', fg='black', selectbackground='#2a6bd6')
             except Exception:
                 pass
+        # Apply button styling for dark/light mode
+        try:
+            for btn in _all_buttons:
+                try:
+                    if dark:
+                        btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                    else:
+                        btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     _apply_entry_theme()
 
@@ -596,10 +611,29 @@ def main(parent=None, schema=None, object_name=None, object_type=None, on_finish
     btn_frame = tk.Frame(win)
     btn_frame.pack(fill='x', padx=8, pady=(6, 8))
 
-    Button(btn_frame, text='Create Index', command=create_indexes, width=14).pack(side=LEFT, padx=(0, 6))
-    Button(btn_frame, text='Drop Selected Index', command=drop_selected_index, width=18).pack(side=LEFT, padx=(0, 6))
-    Button(btn_frame, text='Refresh', command=lambda: (load_columns(), load_existing_indexes()), width=10).pack(side=LEFT, padx=(0, 6))
-    Button(btn_frame, text='Close', command=win.destroy, width=10).pack(side=RIGHT)
+    btn_create = Button(btn_frame, text='Create Index', command=create_indexes, width=14)
+    btn_drop = Button(btn_frame, text='Drop Selected Index', command=drop_selected_index, width=18)
+    btn_refresh = Button(btn_frame, text='Refresh', command=lambda: (load_columns(), load_existing_indexes()), width=10)
+    btn_close = Button(btn_frame, text='Close', command=win.destroy, width=10)
+    btn_create.pack(side=LEFT, padx=(0, 6))
+    btn_drop.pack(side=LEFT, padx=(0, 6))
+    btn_refresh.pack(side=LEFT, padx=(0, 6))
+    btn_close.pack(side=RIGHT)
+    _all_buttons.extend([btn_create, btn_drop, btn_refresh, btn_close])
+
+    # Apply initial dark mode styling to buttons
+    try:
+        if ttk:
+            st = ttk.Style()
+            sbg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+            if isinstance(sbg, str) and sbg.strip().lower() in ('#000000', '#000', 'black'):
+                for btn in _all_buttons:
+                    try:
+                        btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                    except Exception:
+                        pass
+    except Exception:
+        pass
 
     # --- Center and show the dialog after all widgets are built ---
     center_window(win, 900, 560)

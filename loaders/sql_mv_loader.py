@@ -172,9 +172,25 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
 
         btnf = tk.Frame(dlg)
         btnf.pack(pady=8)
-        tk.Button(btnf, text="Create Logs & Continue", command=on_ok, width=18).pack(side="left", padx=6)
-        tk.Button(btnf, text="Skip Logs & Continue", command=on_skip, width=18).pack(side="left", padx=6)
-        tk.Button(btnf, text="Cancel", command=on_cancel, width=10).pack(side="left", padx=6)
+        # Create buttons with dark mode styling if needed
+        _dlg_btns = []
+        btn1 = tk.Button(btnf, text="Create Logs & Continue", command=on_ok, width=18)
+        btn2 = tk.Button(btnf, text="Skip Logs & Continue", command=on_skip, width=18)
+        btn3 = tk.Button(btnf, text="Cancel", command=on_cancel, width=10)
+        btn1.pack(side="left", padx=6)
+        btn2.pack(side="left", padx=6)
+        btn3.pack(side="left", padx=6)
+        _dlg_btns.extend([btn1, btn2, btn3])
+        # Detect dark mode and style buttons
+        try:
+            import tkinter.ttk as _ttk_dlg
+            st = _ttk_dlg.Style()
+            bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+            if isinstance(bg, str) and bg.strip().lower() in ('#000000', '#000', 'black'):
+                for btn in _dlg_btns:
+                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+        except Exception:
+            pass
 
         dlg.update_idletasks()
         # center dialog
@@ -434,8 +450,13 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
 
         btns_deps = tk.Frame(dlg)
         btns_deps.pack(padx=12, anchor='w')
-        tk.Button(btns_deps, text='Copy list', command=copy_deps, width=10).pack(side='left', padx=(0,6))
-        tk.Button(btns_deps, text='Save list', command=save_deps, width=10).pack(side='left')
+        # Create buttons with dark mode styling
+        _deps_btns = []
+        btn_copy = tk.Button(btns_deps, text='Copy list', command=copy_deps, width=10)
+        btn_save = tk.Button(btns_deps, text='Save list', command=save_deps, width=10)
+        btn_copy.pack(side='left', padx=(0,6))
+        btn_save.pack(side='left')
+        _deps_btns.extend([btn_copy, btn_save])
 
         # Gather low-level diagnostic counts to help debug false positives
         diag = {}
@@ -487,7 +508,19 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
                     _safe_messagebox('showwarning', 'Debug Failed', 'Could not produce debug info.', dlg=dlg)
                 except Exception:
                     pass
-        tk.Button(btns_deps, text='Show debug info', command=show_diag, width=14).pack(side='left', padx=(6,0))
+        btn_debug = tk.Button(btns_deps, text='Show debug info', command=show_diag, width=14)
+        btn_debug.pack(side='left', padx=(6,0))
+        _deps_btns.append(btn_debug)
+        # Apply dark mode styling to dialog buttons
+        try:
+            import tkinter.ttk as _ttk_dlg2
+            st = _ttk_dlg2.Style()
+            bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+            if isinstance(bg, str) and bg.strip().lower() in ('#000000', '#000', 'black'):
+                for btn in _deps_btns:
+                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+        except Exception:
+            pass
 
         # acknowledgement checkbox variable (checkbox will be placed next to the confirmation entry)
         ack_var = tk.BooleanVar(value=False)
@@ -564,8 +597,13 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         reuse_label = f"Reuse Existing Log - {existing_type}" if existing_type and existing_type != 'UNKNOWN' else "Reuse Existing Log"
         btn_row = tk.Frame(center_stack)
         btn_row.pack(side='top', pady=(0,6))
-        tk.Button(btn_row, text=reuse_label, command=do_reuse, width=26).pack(side='left', padx=(0,6))
-        tk.Button(btn_row, text="Cancel", command=do_cancel, width=10).pack(side='left')
+        # Create buttons with dark mode styling
+        _bottom_btns = []
+        btn_reuse = tk.Button(btn_row, text=reuse_label, command=do_reuse, width=26)
+        btn_cancel_dlg = tk.Button(btn_row, text="Cancel", command=do_cancel, width=10)
+        btn_reuse.pack(side='left', padx=(0,6))
+        btn_cancel_dlg.pack(side='left')
+        _bottom_btns.extend([btn_reuse, btn_cancel_dlg])
 
         # (Confirmation entry removed — checkbox alone is required to enable Drop)
 
@@ -577,6 +615,17 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         drop_btn = tk.Button(controls_row, text="Drop & Recreate", command=do_drop, width=18)
         drop_btn.pack(side='left', padx=(12,0))
         drop_btn.config(state='disabled')
+        _bottom_btns.append(drop_btn)
+        # Apply dark mode styling to bottom bar buttons
+        try:
+            import tkinter.ttk as _ttk_dlg3
+            st = _ttk_dlg3.Style()
+            bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+            if isinstance(bg, str) and bg.strip().lower() in ('#000000', '#000', 'black'):
+                for btn in _bottom_btns:
+                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+        except Exception:
+            pass
 
         def can_enable_drop():
             try:
@@ -1017,6 +1066,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         _ttk = None
     _last_dark = None
     _poll_id = None
+    _all_buttons = []  # Will be populated when buttons are created
 
     def _detect_dark_from_style():
         try:
@@ -1046,6 +1096,18 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
                 sql_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
                 try:
                     mv_name_entry.config(bg='white', fg='black', insertbackground='black')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Apply button styling for dark/light mode
+        try:
+            for btn in _all_buttons:
+                try:
+                    if dark:
+                        btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                    else:
+                        btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
                 except Exception:
                     pass
         except Exception:
@@ -1215,8 +1277,20 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     btn_frame = tk.Frame(builder_window)
     btn_frame.pack(pady=15)
 
-    tk.Button(btn_frame, text="Create Materialized View", command=on_submit, width=22).pack(side="left", padx=10)
-    tk.Button(btn_frame, text="Cancel", command=on_cancel, width=10).pack(side="left", padx=10)
+    # Create buttons with references for dark mode styling
+    btn_create_mv = tk.Button(btn_frame, text="Create Materialized View", command=on_submit, width=22)
+    btn_cancel_mv = tk.Button(btn_frame, text="Cancel", command=on_cancel, width=10)
+    btn_create_mv.pack(side="left", padx=10)
+    btn_cancel_mv.pack(side="left", padx=10)
+    _all_buttons.extend([btn_create_mv, btn_cancel_mv])
+    
+    # Apply initial button theme if dark mode is active
+    if _initial_dark:
+        for btn in _all_buttons:
+            try:
+                btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+            except Exception:
+                pass
 
     # Center on screen
     builder_window.update_idletasks()

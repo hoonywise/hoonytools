@@ -854,3 +854,113 @@ def _show_status_message(message, error=False):
 8. **Validation**: Enter partial credentials (e.g., only username) — should show validation error
 9. **Cancel Discards**: Make changes, click Cancel — changes should not be saved
 10. **Exit Menu**: File → Exit — application should close cleanly
+
+---
+
+### 🧹 Entry #17: Code Cleanup Attempt — Lessons Learned (2026-02-20)
+
+Summary: This session attempted a comprehensive code cleanup including dead code removal, unused file deletion, and utility function consolidation. While some changes were successfully applied, a regression was introduced that required manual rollback of most changes.
+
+#### The Big Oops 🚨
+
+After completing Phase 3 (consolidating duplicate utility functions into a shared `libs/gui_utils.py` module), a critical regression was discovered: **the application began prompting for credentials even when they were already saved in Settings**. The expected behavior was that saved credentials would be loaded at startup and tools would connect without prompting.
+
+The user had to manually rollback changes to restore proper credential handling. Investigation did not conclusively identify the root cause — the changes appeared correct and the credential flow code was not directly modified. Possible causes include:
+- Import order side effects from the new `gui_utils.py` module
+- Subtle interaction between module loading and `session.load_saved_credentials()` timing
+- An unrelated concurrent change that was conflated with the cleanup work
+
+**Lesson learned**: When making sweeping refactoring changes across multiple files, test incrementally after each phase rather than batching all changes together. This would have identified which specific change caused the regression.
+
+#### What Was Attempted
+
+**Phase 1: Dead Code Removal**
+- Removed `process_queued_errors()` and `_error_queue` from `libs/oracle_db_connector.py`
+- Simplified `show_error_safe()` to log errors from background threads instead of queueing
+- Removed `_get_current_user()` from `libs/mv_log_utils.py`
+- Removed `select_sheets_gui()` (~76 lines) from `loaders/excel_csv_loader.py`
+- Removed `show_replace_column_selector()` (deprecated) from `loaders/excel_csv_loader.py`
+
+**Phase 2: Unused File Deletion**
+- Deleted `libs/layout_definitions.py` (457 lines) — confirmed unused via grep
+- Deleted `libs/setup_config.py` (55 lines) — obsolete CLI setup script
+- Kept `libs/bible_books.py` — initially thought unused but discovered it IS used by HoonyTools.pyw for bible verse display
+
+**Phase 3: Utility Function Consolidation (caused regression)**
+- Created `libs/gui_utils.py` with shared functions:
+  - `center_window(window, width, height)` — center a Tkinter window on screen
+  - `quote_ident(name)` — quote an Oracle identifier for safe SQL use
+  - `detect_dark_from_style()` — detect if dark mode is active via ttk style
+  - `ensure_dialog_parent(parent)` — return a Toplevel attached to parent or new Tk
+- Updated 8 files to import from `libs/gui_utils.py` instead of defining locally
+
+#### What Was Successfully Applied (kept after rollback)
+
+- **Dark mode button styling**: Login dialog buttons now apply dark mode styling using the shared helper
+- **Splash screen character fix**: Fixed invalid/garbled character display
+- **Deleted `libs/layout_definitions.py`**: 457 lines of unused layout constants
+
+#### Potentially Unused Functions Discovered
+
+During the cleanup analysis, the following functions/code were identified as potentially dead but NOT removed due to the rollback:
+
+**`libs/oracle_db_connector.py`**:
+- `process_queued_errors()` — error queue system for background threads (never called after initial cleanup)
+- `_error_queue` — Queue object supporting the above
+
+**`libs/mv_log_utils.py`**:
+- `_get_current_user()` — helper to get Oracle username (no callers found)
+
+**`loaders/excel_csv_loader.py`**:
+- `select_sheets_gui()` (~76 lines) — legacy Excel sheet selector dialog (replaced by new loader GUI)
+- `show_replace_column_selector()` — deprecated column selector (marked as such in comments)
+- `load_multiple_files()` — legacy multi-file loader flow (replaced by `load_files_gui()`)
+
+**`HoonyTools.pyw`** (top of file):
+- `apply_dark_theme()` (~30 lines) — full-window dark mode function (never called, remnant of older approach)
+- `apply_light_theme()` (~30 lines) — counterpart to above (never called)
+
+**`libs/layout_definitions.py`** (DELETED):
+- Entire file (457 lines) — layout constants not imported anywhere
+
+**`libs/setup_config.py`** (attempted deletion, status unknown after rollback):
+- Entire file (55 lines) — obsolete CLI script for initial config setup
+
+#### Duplicate Code Patterns Found
+
+These functions were duplicated across multiple files and could be consolidated in a future cleanup:
+
+| Function | Files Where Duplicated |
+|----------|----------------------|
+| `center_window()` | `HoonyTools.pyw`, `tools/pk_designate_gui.py`, `tools/object_cleanup_gui.py` |
+| `_quote_ident()` / `quote_ident()` | `tools/index_gui.py`, `tools/pk_designate_gui.py` |
+| `_detect_dark_from_style()` / `_detect_dark_mode()` | `oracle_db_connector.py`, `sql_mv_loader.py`, `sql_view_loader.py`, `mv_refresh_gui.py`, `object_cleanup_gui.py`, `pk_designate_gui.py` |
+| `_ensure_dialog_parent()` | `tools/index_gui.py`, `tools/pk_designate_gui.py` |
+
+#### Recommendations for Future Cleanup Attempts
+
+1. **Test after each file modification** — Don't batch multiple file changes before testing
+2. **Start with the lowest-risk changes** — Delete unused files first, then dead functions, then refactor
+3. **Create a feature branch** — Allows easy rollback without affecting main development
+4. **Use git stash or commits** — Save working state before each phase
+5. **Check import order** — Python module imports can have side effects; verify startup sequence
+6. **Add logging to credential flow** — Would help diagnose why credentials weren't being recognized
+
+#### Files Modified (before rollback)
+
+- `HoonyTools.pyw` — Removed `process_queued_errors` import/call
+- `libs/oracle_db_connector.py` — Removed dead code, imported from gui_utils
+- `libs/mv_log_utils.py` — Removed `_get_current_user()`
+- `libs/gui_utils.py` — **CREATED** (may have been deleted in rollback)
+- `loaders/excel_csv_loader.py` — Removed dead functions, imported from gui_utils
+- `loaders/sql_mv_loader.py` — Imported from gui_utils
+- `loaders/sql_view_loader.py` — Imported from gui_utils
+- `tools/index_gui.py` — Imported from gui_utils
+- `tools/object_cleanup_gui.py` — Imported from gui_utils
+- `tools/pk_designate_gui.py` — Imported from gui_utils
+- `tools/mv_refresh_gui.py` — Imported from gui_utils
+
+#### Files Deleted (status after rollback)
+
+- `libs/layout_definitions.py` — 457 lines, confirmed safe to delete
+- `libs/setup_config.py` — 55 lines, status unknown after rollback

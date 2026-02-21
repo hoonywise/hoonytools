@@ -305,9 +305,9 @@ def show_load_mode_dialog(parent, schema, table_name, df_columns):
     btn_frame = Frame(win)
     btn_frame.pack(fill="both", expand=True, padx=12, pady=6)
 
-    result = {"mode": None, "preview_sql": True}
+    result = {"mode": None, "preview_sql": False}
     from tkinter import IntVar
-    preview_var = IntVar(value=1)  # default checked per request
+    preview_var = IntVar(value=0)  # default unchecked
 
     def do_close():
         try:
@@ -1866,7 +1866,7 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
     # Preview SQL checkbox
     preview_row = Frame(options_frame)
     preview_row.pack(fill='x')
-    preview_var = IntVar(value=1)
+    preview_var = IntVar(value=0)  # default unchecked
     tk.Checkbutton(preview_row, text='Preview SQL before executing', variable=preview_var).pack(side=LEFT)
 
     # --- Column preview ---

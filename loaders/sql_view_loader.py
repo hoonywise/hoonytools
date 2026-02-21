@@ -43,6 +43,7 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
         _ttk = None
     _last_dark = None
     _poll_id = None
+    _all_buttons = []  # Will be populated when buttons are created
 
     def _detect_dark_from_style():
         try:
@@ -65,6 +66,15 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
                 sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
             else:
                 sql_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
+        except Exception:
+            pass
+        # Apply button styling for dark/light mode
+        try:
+            for btn in _all_buttons:
+                if dark:
+                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                else:
+                    btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
         except Exception:
             pass
 
@@ -245,8 +255,17 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
     btn_frame = tk.Frame(builder_window)
     btn_frame.pack(pady=15)
 
-    tk.Button(btn_frame, text="Create View", command=on_submit, width=15).pack(side="left", padx=10)
-    tk.Button(btn_frame, text="Cancel", command=on_cancel, width=10).pack(side="left", padx=10)
+    # Create buttons with references for dark mode styling
+    btn_create = tk.Button(btn_frame, text="Create View", command=on_submit, width=15)
+    btn_cancel = tk.Button(btn_frame, text="Cancel", command=on_cancel, width=10)
+    btn_create.pack(side="left", padx=10)
+    btn_cancel.pack(side="left", padx=10)
+    _all_buttons.extend([btn_create, btn_cancel])
+    
+    # Apply initial button theme if dark mode is active
+    if _initial_dark:
+        for btn in _all_buttons:
+            btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
 
     # Center on screen
     builder_window.update_idletasks()
