@@ -177,11 +177,17 @@ def _sanitize_constraint_name(name: str) -> str:
     return cand[:30]
 
 
-def main(parent=None):
-    """Entry point for the PK designate tool. Accepts optional parent for proper dialog parenting."""
-    schema_choice = prompt_schema_choice(parent)
+def main(parent=None, schema_choice=None):
+    """Entry point for the PK designate tool. Accepts optional parent for proper dialog parenting.
+    
+    Args:
+        parent: Optional parent window for modal behavior
+        schema_choice: Optional 'user' or 'dwh' to skip the schema selection prompt
+    """
     if schema_choice is None:
-        return
+        schema_choice = prompt_schema_choice(parent)
+        if schema_choice is None:
+            return
 
     # Acquire DB connection
     conn = get_db_connection(force_shared=(schema_choice == 'dwh'), root=parent)
@@ -200,7 +206,7 @@ def main(parent=None):
 
     win = _ensure_dialog_parent(parent)
     win.title(f'Designate PRIMARY KEY - {owner}')
-    center_window(win, 1100, 560)
+    # Centering is done after all widgets are packed (see below)
 
     try:
         try:
@@ -827,6 +833,14 @@ def main(parent=None):
     Button(btn_frame, text='Close', command=win.destroy, width=10).pack(side=RIGHT, padx=6)
 
     load_tables()
+
+    # Center on screen after all widgets are packed
+    win.update_idletasks()
+    width = win.winfo_width()
+    height = win.winfo_height()
+    x = (win.winfo_screenwidth() // 2) - (width // 2)
+    y = (win.winfo_screenheight() // 2) - (height // 2)
+    win.geometry(f"{width}x{height}+{x}+{y}")
 
     # Wait appropriately
     if parent:

@@ -12,13 +12,14 @@ logger = logging.getLogger(__name__)
 # reference to Tk's default root if present (use getattr to avoid static-analysis issues)
 _tk_default_root = getattr(tk, '_default_root', None)
 
-def run_sql_view_loader(parent=None, on_finish=None):
+def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
     # Backwards-compatible parameter handling: the launcher may pass a parent
     # window (root) as the first argument. If a non-callable is passed, treat
     # it as parent and clear on_finish.
     if on_finish is not None and not callable(on_finish):
         parent = on_finish
         on_finish = None
+    # use_dwh parameter determines whether to use DWH (shared) credentials
     # Theme support for pane-only dark mode (polling fallback)
     try:
         import tkinter.ttk as _ttk
@@ -94,7 +95,7 @@ def run_sql_view_loader(parent=None, on_finish=None):
     def on_submit():
         view_name = view_name_entry.get().strip()
         sql_query = sql_text.get("1.0", tk.END).strip()
-        use_dwh = dwh_var.get()
+        # use_dwh is now a parameter passed to run_sql_view_loader
 
         if not view_name:
             _safe_messagebox('showerror', "Missing View Name", "❌ Please enter a view name.", dlg=builder_window)
@@ -138,9 +139,7 @@ def run_sql_view_loader(parent=None, on_finish=None):
             logger.info(f"✅ View '{view_name}' created and granted SELECT to PUBLIC.")
 
             _safe_messagebox('showinfo', "Success", f"✅ View '{view_name}' created successfully.", dlg=builder_window)
-            builder_window.destroy()
-            if on_finish:
-                on_finish()            
+            # Window stays open - user closes manually; on_finish called when window closes
         except Exception as e:
             logger.error(f"❌ Error creating view: {e}")
             try:
@@ -174,8 +173,7 @@ def run_sql_view_loader(parent=None, on_finish=None):
 
     def on_cancel():
         builder_window.destroy()
-        if on_finish:
-            on_finish()
+        # on_finish is called in the finally block after window closes
 
     # Detect initial dark mode BEFORE creating widgets to avoid a white flash
     try:
@@ -249,11 +247,6 @@ def run_sql_view_loader(parent=None, on_finish=None):
     except Exception:
         view_name_entry = tk.Entry(control_frame, width=40)
     view_name_entry.grid(row=0, column=1, padx=(0, 20))
-
-    dwh_var = tk.BooleanVar()
-    # Keep checkbox/frames in default (light) chrome; avoid changing their bg so chrome stays consistent
-    dwh_checkbox = tk.Checkbutton(control_frame, text="Load to DWH schema (shared login)", variable=dwh_var)
-    dwh_checkbox.grid(row=0, column=2)
 
     btn_frame = tk.Frame(builder_window)
     btn_frame.pack(pady=15)
@@ -341,3 +334,9 @@ def run_sql_view_loader(parent=None, on_finish=None):
                     pass
         except Exception:
             pass
+        # Call on_finish callback when window is closed
+        if on_finish:
+            try:
+                on_finish()
+            except Exception:
+                pass
