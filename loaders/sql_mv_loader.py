@@ -24,13 +24,14 @@ except Exception:
     pass
 
 
-def run_sql_mv_loader(parent=None, on_finish=None):
+def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     # Backwards-compatible parameter handling: the launcher may pass a parent
     # window (root) as the first argument. If a non-callable is passed, treat
     # it as parent and clear on_finish.
     if on_finish is not None and not callable(on_finish):
         parent = on_finish
         on_finish = None
+    # use_dwh parameter determines whether to use DWH (shared) credentials
     def detect_tables_from_sql(sql_text):
         """A conservative table detector: finds tokens after FROM and JOIN. Returns list of unique table identifiers."""
         # prefer shared helper when available
@@ -667,7 +668,7 @@ def run_sql_mv_loader(parent=None, on_finish=None):
         refresh_method = refresh_method_var.get()
         refresh_trigger = refresh_trigger_var.get()
         query_rewrite = rewrite_var.get()
-        use_dwh = dwh_var.get()
+        # use_dwh is now a parameter passed to run_sql_mv_loader
 
         if not mv_name:
             try:
@@ -935,9 +936,7 @@ def run_sql_mv_loader(parent=None, on_finish=None):
                         _safe_messagebox('showinfo', "Success", f"\u2705 Materialized View '{mv_name}' created successfully.", dlg=builder_window)
                     except Exception:
                         pass
-                builder_window.destroy()
-                if on_finish:
-                    on_finish()
+                # Window stays open - user closes manually; on_finish called when window closes
             except Exception as e:
                 # Log full traceback to help debugging
                 import traceback
@@ -981,8 +980,7 @@ def run_sql_mv_loader(parent=None, on_finish=None):
 
     def on_cancel():
         builder_window.destroy()
-        if on_finish:
-            on_finish()
+        # on_finish is called in the finally block after window closes
 
     # Create Toplevel with optional parent so the window can be modal
     builder_window = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
@@ -1171,9 +1169,6 @@ def run_sql_mv_loader(parent=None, on_finish=None):
     except Exception:
         mv_name_entry = tk.Entry(control_frame)
     mv_name_entry.grid(row=0, column=1, sticky="we", padx=(6, 12))
-    dwh_var = tk.BooleanVar()
-    dwh_checkbox = tk.Checkbutton(control_frame, text="Load to DWH schema (shared login)", variable=dwh_var)
-    dwh_checkbox.grid(row=0, column=2, sticky="w")
 
     # Configure grid weights so the entry expands
     control_frame.grid_columnconfigure(1, weight=1)
@@ -1258,3 +1253,9 @@ def run_sql_mv_loader(parent=None, on_finish=None):
                     pass
         except Exception:
             pass
+        # Call on_finish callback when window is closed
+        if on_finish:
+            try:
+                on_finish()
+            except Exception:
+                pass

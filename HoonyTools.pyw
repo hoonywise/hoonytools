@@ -15,7 +15,7 @@ import random
 import webbrowser
 from configparser import ConfigParser
 
-APP_VERSION = "1.5.5"
+APP_VERSION = "1.5.7"
 
 
 # Theme helpers
@@ -132,10 +132,8 @@ for p in [path, base_path]:
 from libs import abort_manager
 # load_files_gui is imported lazily by pane Load button handlers
 # from loaders.excel_csv_loader import load_files_gui
-from loaders.sql_view_loader import run_sql_view_loader
-from loaders.sql_mv_loader import run_sql_mv_loader
+# SQL View Loader, SQL MV Loader, and PK Designate are imported lazily by pane button handlers
 # drop_user_tables moved to integrated Drop buttons - import drop_objects on-demand in handlers
-from tools.pk_designate_gui import main as pk_designate_main
 from libs.bible_books import book_lookup
 
 should_abort = False
@@ -862,6 +860,16 @@ def launch_tool_gui():
         status_lbl = tk.Label(top_bar, text="", font=("Arial", 8), fg=getattr(parent.master, "_dark_theme", {}).get("muted", "#444444"))
         status_lbl.pack(side="left")
 
+        # Second button row: View, M.View, P.Key
+        btn_row2 = tk.Frame(frame)
+        btn_row2.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
+        view_btn = tk.Button(btn_row2, text="View", width=10)
+        view_btn.pack(side="left", padx=(0, 8))
+        mv_btn = tk.Button(btn_row2, text="M.View", width=10)
+        mv_btn.pack(side="left", padx=(0, 8))
+        pk_btn = tk.Button(btn_row2, text="P.Key", width=10)
+        pk_btn.pack(side="left", padx=(0, 8))
+
         # Content area (treeview + scrollbar) sits below the top bar and expands
         content_area = tk.Frame(frame)
         content_area.pack(fill="both", expand=True)
@@ -881,7 +889,7 @@ def launch_tool_gui():
         tv.pack(side="left", fill="both", expand=True)
         vs.pack(side="right", fill="y")
 
-        return frame, tv, refresh_btn, index_btn, load_btn, drop_btn, status_lbl
+        return frame, tv, refresh_btn, index_btn, load_btn, drop_btn, status_lbl, view_btn, mv_btn, pk_btn
 
     # Ensure Treeview style is configured before creating tree widgets so
     # style settings are honored by backends (especially on Windows ttk).
@@ -902,8 +910,8 @@ def launch_tool_gui():
         pre_style = None
 
     # Create the two object panes in the left_pane (stacked, share vertical space)
-    user_frame, user_tree, user_refresh_btn, user_index_btn, user_load_btn, user_drop_btn, user_status = _make_objects_frame(left_pane, "User Objects")
-    dwh_frame, dwh_tree, dwh_refresh_btn, dwh_index_btn, dwh_load_btn, dwh_drop_btn, dwh_status = _make_objects_frame(left_pane, "DWH Objects")
+    user_frame, user_tree, user_refresh_btn, user_index_btn, user_load_btn, user_drop_btn, user_status, user_view_btn, user_mv_btn, user_pk_btn = _make_objects_frame(left_pane, "User Objects")
+    dwh_frame, dwh_tree, dwh_refresh_btn, dwh_index_btn, dwh_load_btn, dwh_drop_btn, dwh_status, dwh_view_btn, dwh_mv_btn, dwh_pk_btn = _make_objects_frame(left_pane, "DWH Objects")
     
     # Enable sortable column headers for both treeviews
     _make_sortable_tree(user_tree)
@@ -1486,7 +1494,11 @@ def launch_tool_gui():
             messagebox.showerror('Error', 'Could not determine user schema.', parent=root)
             return
         from tools.index_gui import main as index_main
-        index_main(parent=root, schema=owner, object_name=name, object_type=obj_type)
+        _update_status_light('busy')
+        def on_close():
+            _update_status_light('idle')
+            refresh_user_objects()  # auto-refresh after closing
+        index_main(parent=root, schema=owner, object_name=name, object_type=obj_type, on_finish=on_close)
 
     def launch_index_dwh():
         name, obj_type = _get_selected_object(dwh_tree)
@@ -1499,7 +1511,11 @@ def launch_tool_gui():
             messagebox.showwarning('Not Supported', 'Indexes cannot be created on views. Please select a table or materialized view.', parent=root)
             return
         from tools.index_gui import main as index_main
-        index_main(parent=root, schema='DWH', object_name=name, object_type=obj_type)
+        _update_status_light('busy')
+        def on_close():
+            _update_status_light('idle')
+            refresh_dwh_objects()  # auto-refresh after closing
+        index_main(parent=root, schema='DWH', object_name=name, object_type=obj_type, on_finish=on_close)
 
     user_index_btn.config(command=launch_index_user)
     dwh_index_btn.config(command=launch_index_dwh)
@@ -1612,6 +1628,64 @@ def launch_tool_gui():
 
     user_drop_btn.config(command=launch_drop_user)
     dwh_drop_btn.config(command=launch_drop_dwh)
+
+    # --- View button handlers ---
+    def launch_view_user():
+        from loaders.sql_view_loader import run_sql_view_loader
+        _update_status_light('busy')
+        def on_close():
+            _update_status_light('idle')
+            refresh_user_objects()  # auto-refresh after closing
+        run_sql_view_loader(parent=root, on_finish=on_close, use_dwh=False)
+
+    def launch_view_dwh():
+        from loaders.sql_view_loader import run_sql_view_loader
+        _update_status_light('busy')
+        def on_close():
+            _update_status_light('idle')
+            refresh_dwh_objects()  # auto-refresh after closing
+        run_sql_view_loader(parent=root, on_finish=on_close, use_dwh=True)
+
+    user_view_btn.config(command=launch_view_user)
+    dwh_view_btn.config(command=launch_view_dwh)
+
+    # --- MV button handlers ---
+    def launch_mv_user():
+        from loaders.sql_mv_loader import run_sql_mv_loader
+        _update_status_light('busy')
+        def on_close():
+            _update_status_light('idle')
+            refresh_user_objects()  # auto-refresh after closing
+        run_sql_mv_loader(parent=root, on_finish=on_close, use_dwh=False)
+
+    def launch_mv_dwh():
+        from loaders.sql_mv_loader import run_sql_mv_loader
+        _update_status_light('busy')
+        def on_close():
+            _update_status_light('idle')
+            refresh_dwh_objects()  # auto-refresh after closing
+        run_sql_mv_loader(parent=root, on_finish=on_close, use_dwh=True)
+
+    user_mv_btn.config(command=launch_mv_user)
+    dwh_mv_btn.config(command=launch_mv_dwh)
+
+    # --- PK button handlers ---
+    def launch_pk_user():
+        from tools.pk_designate_gui import main as pk_main
+        _update_status_light('busy')
+        pk_main(parent=root, schema_choice='user')
+        _update_status_light('idle')
+        refresh_user_objects()  # auto-refresh after closing
+
+    def launch_pk_dwh():
+        from tools.pk_designate_gui import main as pk_main
+        _update_status_light('busy')
+        pk_main(parent=root, schema_choice='dwh')
+        _update_status_light('idle')
+        refresh_dwh_objects()  # auto-refresh after closing
+
+    user_pk_btn.config(command=launch_pk_user)
+    dwh_pk_btn.config(command=launch_pk_dwh)
 
     # Top toolbar (centered): tool selector + buttons
     # Create the toolbar at the root level and pack it before the main content_frame
@@ -3021,11 +3095,9 @@ def launch_tool_gui():
     root.mainloop()
 
 TOOLS = {
-    "☑ SQL View Loader": run_sql_view_loader,
-    "☑ SQL Materialized View Loader": run_sql_mv_loader,
     "☑ Materialized View Manager": None,  # placeholder, will be wired if available
-    "☑ Designate PK": pk_designate_main,
     
+    # SQL View Loader, SQL MV Loader, and Designate PK moved to left pane buttons
     # Object Dropper removed - functionality now integrated into Drop buttons in left pane
 }
 
