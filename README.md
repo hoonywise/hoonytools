@@ -70,7 +70,6 @@ HoonyTools/
 ├── requirements.txt                # (Optional) Python modules if running from source)
 ├── libs/                           # Shared utility modules (Oracle, config, logging, etc.)
 │   ├── config.ini                  # Created at first login if "Save password" is checked
-│   ├── setup_config.py             # Setup script for login
 │   ├── paths.py                    # Filepaths for domain-specific folders
 │   ├── mv_log_utils.py             # MV log detection helpers used by loaders and tools
 │   ├── pk_designate_settings.json  # Persisted settings for PK Designator
