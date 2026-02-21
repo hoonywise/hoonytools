@@ -15,7 +15,7 @@ import random
 import webbrowser
 from configparser import ConfigParser
 
-APP_VERSION = "2.1.5"
+APP_VERSION = "2.1.6"
 
 
 # Theme helpers
