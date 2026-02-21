@@ -1087,6 +1087,190 @@ def get_colors_for_preset(preset_key: str) -> Dict[str, str]:
 
 
 # =============================================================================
+# Color Picker Custom Colors Persistence
+# =============================================================================
+
+# Default custom colors for the Windows color picker (16 slots, all white by default)
+DEFAULT_PICKER_CUSTOM_COLORS = ['#FFFFFF'] * 16
+
+
+def load_picker_custom_colors() -> List[str]:
+    """
+    Load the 16 custom color swatches for the Windows color picker dialog.
+    
+    These are stored in config.ini under [colorpicker] section as picker_custom_0 through picker_custom_15.
+    
+    Returns:
+        List of 16 hex color strings
+    """
+    config_path = _get_config_path()
+    config = configparser.ConfigParser()
+    custom_colors = DEFAULT_PICKER_CUSTOM_COLORS.copy()
+    
+    try:
+        config.read(config_path)
+    except Exception as e:
+        logger.error(f"Failed to read config for picker custom colors: {e}")
+        return custom_colors
+    
+    if not config.has_section('colorpicker'):
+        return custom_colors
+    
+    # Read picker_custom_0 through picker_custom_15
+    for i in range(16):
+        option = f'picker_custom_{i}'
+        if config.has_option('colorpicker', option):
+            color = config.get('colorpicker', option)
+            # Validate it looks like a hex color
+            if color.startswith('#') and len(color) == 7:
+                custom_colors[i] = color
+    
+    return custom_colors
+
+
+def save_picker_custom_colors(colors: List[str]) -> None:
+    """
+    Save the 16 custom color swatches for the Windows color picker dialog.
+    
+    Args:
+        colors: List of 16 hex color strings
+    """
+    if len(colors) != 16:
+        logger.warning(f"Expected 16 colors, got {len(colors)}")
+        return
+    
+    config_path = _get_config_path()
+    config = configparser.ConfigParser()
+    
+    try:
+        config.read(config_path)
+    except Exception as e:
+        logger.error(f"Failed to read config for picker custom colors: {e}")
+        return
+    
+    # Ensure colorpicker section exists
+    if not config.has_section('colorpicker'):
+        config.add_section('colorpicker')
+    
+    # Save picker_custom_0 through picker_custom_15
+    for i, color in enumerate(colors):
+        config.set('colorpicker', f'picker_custom_{i}', color)
+    
+    try:
+        with open(config_path, 'w') as f:
+            config.write(f)
+        logger.debug(f"Saved 16 picker custom colors")
+    except Exception as e:
+        logger.error(f"Failed to save picker custom colors: {e}")
+
+
+def ask_color_with_persistence(initial_color: str = '#FFFFFF', 
+                                title: str = 'Choose color',
+                                parent=None) -> Optional[str]:
+    """
+    Open Windows color chooser dialog with persistent custom color swatches.
+    
+    Uses Windows ChooseColor API via ctypes to support custom color persistence.
+    Falls back to tkinter.colorchooser if ctypes fails.
+    
+    Args:
+        initial_color: Starting color (hex string like '#RRGGBB')
+        title: Dialog title
+        parent: Parent window (for centering)
+    
+    Returns:
+        Selected color as hex string, or None if cancelled
+    """
+    import ctypes
+    from ctypes import wintypes
+    
+    try:
+        # Convert hex colors to COLORREF (DWORD: 0x00BBGGRR)
+        def hex_to_colorref(hex_color: str) -> int:
+            """Convert '#RRGGBB' to Windows COLORREF (0x00BBGGRR)."""
+            hex_color = hex_color.lstrip('#')
+            r = int(hex_color[0:2], 16)
+            g = int(hex_color[2:4], 16)
+            b = int(hex_color[4:6], 16)
+            return r | (g << 8) | (b << 16)
+        
+        def colorref_to_hex(colorref: int) -> str:
+            """Convert Windows COLORREF (0x00BBGGRR) to '#RRGGBB'."""
+            r = colorref & 0xFF
+            g = (colorref >> 8) & 0xFF
+            b = (colorref >> 16) & 0xFF
+            return f'#{r:02X}{g:02X}{b:02X}'
+        
+        # Load saved custom colors
+        saved_colors = load_picker_custom_colors()
+        
+        # Create array of 16 COLORREFs for custom colors
+        CustomColors = (ctypes.c_uint32 * 16)()
+        for i, hex_color in enumerate(saved_colors):
+            CustomColors[i] = hex_to_colorref(hex_color)
+        
+        # CHOOSECOLOR structure
+        class CHOOSECOLOR(ctypes.Structure):
+            _fields_ = [
+                ('lStructSize', wintypes.DWORD),
+                ('hwndOwner', wintypes.HWND),
+                ('hInstance', wintypes.HWND),
+                ('rgbResult', wintypes.DWORD),
+                ('lpCustColors', ctypes.POINTER(ctypes.c_uint32)),
+                ('Flags', wintypes.DWORD),
+                ('lCustData', wintypes.LPARAM),
+                ('lpfnHook', ctypes.c_void_p),
+                ('lpTemplateName', wintypes.LPCWSTR),
+            ]
+        
+        # Flags
+        CC_RGBINIT = 0x00000001
+        CC_FULLOPEN = 0x00000002  # Show custom color picker expanded
+        CC_ANYCOLOR = 0x00000100
+        
+        # Get parent window handle
+        hwnd = 0
+        if parent:
+            try:
+                hwnd = int(parent.winfo_id())
+            except Exception:
+                pass
+        
+        # Initialize structure
+        cc = CHOOSECOLOR()
+        cc.lStructSize = ctypes.sizeof(CHOOSECOLOR)
+        cc.hwndOwner = hwnd
+        cc.rgbResult = hex_to_colorref(initial_color)
+        cc.lpCustColors = CustomColors
+        cc.Flags = CC_RGBINIT | CC_FULLOPEN | CC_ANYCOLOR
+        
+        # Call ChooseColor
+        comdlg32 = ctypes.windll.comdlg32
+        if comdlg32.ChooseColorW(ctypes.byref(cc)):
+            # User clicked OK - save the custom colors
+            new_custom_colors = [colorref_to_hex(CustomColors[i]) for i in range(16)]
+            save_picker_custom_colors(new_custom_colors)
+            
+            # Return selected color
+            return colorref_to_hex(cc.rgbResult)
+        else:
+            # User cancelled - still save custom colors in case they added some
+            new_custom_colors = [colorref_to_hex(CustomColors[i]) for i in range(16)]
+            if new_custom_colors != saved_colors:
+                save_picker_custom_colors(new_custom_colors)
+            return None
+            
+    except Exception as e:
+        logger.warning(f"Windows color chooser failed, falling back to tkinter: {e}")
+        # Fallback to tkinter colorchooser
+        from tkinter import colorchooser
+        result = colorchooser.askcolor(color=initial_color, title=title, parent=parent)
+        if result and result[1]:
+            return result[1]
+        return None
+
+
+# =============================================================================
 # Widget Styling Functions (New - Full Chrome Theming)
 # =============================================================================
 

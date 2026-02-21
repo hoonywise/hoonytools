@@ -514,11 +514,9 @@ class CustomizeColorsDialog:
             base_preset_key: Starting preset to copy colors from
         """
         from libs import gui_utils
-        from tkinter import colorchooser
         
         self.parent = parent
         self.gui_utils = gui_utils
-        self.colorchooser = colorchooser
         
         # Get starting colors from base preset
         self.colors = gui_utils.get_colors_for_preset(base_preset_key)
@@ -756,15 +754,15 @@ class CustomizeColorsDialog:
             except Exception:
                 current_color = '#808080'
         
-        # Open color chooser
-        result = self.colorchooser.askcolor(
-            color=current_color,
-            title=f"Choose color for {COLOR_KEY_LABELS.get(key, ('', key))[1]}",
+        # Open color chooser with persistent custom colors
+        title = f"Choose color for {COLOR_KEY_LABELS.get(key, ('', key))[1]}"
+        new_color = self.gui_utils.ask_color_with_persistence(
+            initial_color=current_color,
+            title=title,
             parent=self.win
         )
         
-        if result and result[1]:
-            new_color = result[1]
+        if new_color:
             self.colors[key] = new_color
             
             # Update swatch
