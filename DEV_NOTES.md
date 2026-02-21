@@ -1686,19 +1686,42 @@ The View menu (which only contained Dark Mode toggle) was removed entirely. Them
 - Legacy constants (`DARK_BG`, `DARK_FG`, etc.) preserved for any external code
 - `apply_dark_mode_to_widget()` and `style_dialog_for_dark_mode()` still work
 
-#### Future Phases
+#### Phase 2: Custom Colors (Implemented)
 
-**Phase 2 (Custom Colors):**
-- Enable "Customize..." button in Settings > Appearance
-- Color pickers (hex entry + `tkinter.colorchooser.askcolor()`)
-- Custom overrides stored in `[theme.custom]` section
-- Live preview panel showing all 22 color keys grouped logically
-- Reset to preset button
+The "Customize..." button in Settings > Appearance now opens a `CustomizeColorsDialog`:
+
+**UI Design:**
+- Scrollable list of all 22 color keys, grouped by category
+- Groups: Content Panes, Window Chrome, Labels, LabelFrame, Buttons, Entry Fields, Menus, Checkboxes, Scrollbars
+- Each row: label, clickable color swatch, hex value display
+- Clicking a swatch opens `tkinter.colorchooser.askcolor()`
+
+**Workflow:**
+1. User selects any preset from dropdown
+2. Clicks "Customize..."
+3. Dialog opens with current preset's colors pre-filled
+4. User picks colors by clicking swatches
+5. "Apply" previews changes (saves colors and sets theme to "Custom")
+6. "OK" saves and closes; "Cancel" reverts to original theme
+7. Dropdown now shows "Custom" selected
+
+**Storage:**
+- Custom colors stored in `config.ini` under `[theme]` section with `custom_` prefix
+- Example: `custom_pane_bg = #1a1a2e`, `custom_button_fg = #ffffff`
+- When `preset = custom`, `get_color()` reads from these custom keys with fallback to Charcoal
+
+**New functions in `gui_utils.py`:**
+```python
+load_custom_colors_from_config()   # Returns dict of custom color overrides
+save_custom_color_to_config(key, hex_value)  # Save single color
+save_all_custom_colors(colors)     # Save all colors at once
+get_colors_for_preset(preset_key)  # Get colors for any preset without changing current theme
+```
 
 #### Files Updated
 
-- `libs/gui_utils.py` — 22 color keys, 7 fully-defined presets, per-widget styling functions
-- `libs/settings.py` — Full chrome theming, registered with gui_utils callbacks
+- `libs/gui_utils.py` — 22 color keys, 7 presets + Custom, per-widget styling functions, custom color persistence
+- `libs/settings.py` — Full chrome theming, CustomizeColorsDialog class, registered with gui_utils callbacks
 - `HoonyTools.pyw` — New unified `apply_full_theme()`, removed View menu
 - `loaders/sql_mv_loader.py` — Full chrome theming for MV Builder dialog
 - `tools/mv_refresh_gui.py` — Uses `gui_utils` theme API

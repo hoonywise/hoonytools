@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # Theme Constants
 # =============================================================================
 
-# Ordered list of theme keys (spectrum from darkest to lightest)
+# Ordered list of theme keys (spectrum from darkest to lightest, plus Custom)
 THEME_ORDER = [
     'pure_black',
     'midnight',
@@ -24,6 +24,7 @@ THEME_ORDER = [
     'graphite',
     'silver',
     'system_light',
+    'custom',
 ]
 
 # Display names for UI
@@ -35,6 +36,7 @@ THEME_DISPLAY_NAMES = {
     'graphite': 'Graphite',
     'silver': 'Silver',
     'system_light': 'System Light',
+    'custom': 'Custom',
 }
 
 # Complete list of color keys for full chrome theming
@@ -397,6 +399,13 @@ def get_color(key: str) -> str:
     Returns:
         Color value (hex string or system color name)
     """
+    if _current_theme == 'custom':
+        custom_colors = load_custom_colors_from_config()
+        if key in custom_colors:
+            return custom_colors[key]
+        # Fallback to charcoal for missing keys
+        return PRESET_THEMES['charcoal'].get(key, '')
+    
     theme = PRESET_THEMES.get(_current_theme, PRESET_THEMES['system_light'])
     return theme.get(key, '')
 
@@ -408,6 +417,13 @@ def get_all_colors() -> Dict[str, str]:
     Returns:
         Dict mapping color keys to their values
     """
+    if _current_theme == 'custom':
+        # Start with charcoal as base, overlay custom colors
+        colors = PRESET_THEMES['charcoal'].copy()
+        custom_colors = load_custom_colors_from_config()
+        colors.update(custom_colors)
+        return colors
+    
     theme = PRESET_THEMES.get(_current_theme, PRESET_THEMES['system_light'])
     return theme.copy()
 
@@ -428,12 +444,15 @@ def set_theme(theme_key: str, save: bool = True) -> None:
     Set the current theme and notify callbacks.
     
     Args:
-        theme_key: Theme key from THEME_ORDER
+        theme_key: Theme key from THEME_ORDER (includes 'custom')
         save: Whether to persist to config.ini
     """
     global _current_theme
     
-    if theme_key not in PRESET_THEMES:
+    # Valid themes include all presets plus 'custom'
+    valid_themes = set(PRESET_THEMES.keys()) | {'custom'}
+    
+    if theme_key not in valid_themes:
         logger.warning(f"Unknown theme '{theme_key}', defaulting to 'system_light'")
         theme_key = 'system_light'
     
@@ -575,6 +594,127 @@ def save_theme_to_config(theme_key: str) -> None:
         logger.debug(f"Saved theme to config: {theme_key}")
     except Exception as e:
         logger.error(f"Failed to save theme to config: {e}")
+
+
+def load_custom_colors_from_config() -> Dict[str, str]:
+    """
+    Load custom color values from config.ini.
+    
+    Custom colors are stored under [theme] section with 'custom_' prefix.
+    E.g., custom_pane_bg = #1a1a2e
+    
+    Returns:
+        Dict mapping color keys to their custom values (without 'custom_' prefix)
+    """
+    config_path = _get_config_path()
+    config = configparser.ConfigParser()
+    custom_colors = {}
+    
+    try:
+        config.read(config_path)
+    except Exception as e:
+        logger.error(f"Failed to read config for custom colors: {e}")
+        return custom_colors
+    
+    if not config.has_section('theme'):
+        return custom_colors
+    
+    # Read all custom_* options
+    for option in config.options('theme'):
+        if option.startswith('custom_'):
+            key = option[7:]  # Remove 'custom_' prefix
+            if key in COLOR_KEYS:
+                custom_colors[key] = config.get('theme', option)
+    
+    return custom_colors
+
+
+def save_custom_color_to_config(key: str, hex_value: str) -> None:
+    """
+    Save a single custom color value to config.ini.
+    
+    Args:
+        key: Color key from COLOR_KEYS (e.g., 'pane_bg')
+        hex_value: Hex color value (e.g., '#1a1a2e')
+    """
+    if key not in COLOR_KEYS:
+        logger.warning(f"Invalid color key: {key}")
+        return
+    
+    config_path = _get_config_path()
+    config = configparser.ConfigParser()
+    
+    try:
+        config.read(config_path)
+    except Exception as e:
+        logger.error(f"Failed to read config for custom color: {e}")
+        return
+    
+    # Ensure theme section exists
+    if not config.has_section('theme'):
+        config.add_section('theme')
+    
+    config.set('theme', f'custom_{key}', hex_value)
+    
+    try:
+        with open(config_path, 'w') as f:
+            config.write(f)
+        logger.debug(f"Saved custom color {key}={hex_value}")
+    except Exception as e:
+        logger.error(f"Failed to save custom color: {e}")
+
+
+def save_all_custom_colors(colors: Dict[str, str]) -> None:
+    """
+    Save all custom colors to config.ini at once.
+    
+    Args:
+        colors: Dict mapping color keys to hex values
+    """
+    config_path = _get_config_path()
+    config = configparser.ConfigParser()
+    
+    try:
+        config.read(config_path)
+    except Exception as e:
+        logger.error(f"Failed to read config for custom colors: {e}")
+        return
+    
+    # Ensure theme section exists
+    if not config.has_section('theme'):
+        config.add_section('theme')
+    
+    # Save each color with custom_ prefix
+    for key, value in colors.items():
+        if key in COLOR_KEYS:
+            config.set('theme', f'custom_{key}', value)
+    
+    try:
+        with open(config_path, 'w') as f:
+            config.write(f)
+        logger.debug(f"Saved {len(colors)} custom colors")
+    except Exception as e:
+        logger.error(f"Failed to save custom colors: {e}")
+
+
+def get_colors_for_preset(preset_key: str) -> Dict[str, str]:
+    """
+    Get all colors for a specific preset (without changing current theme).
+    
+    Args:
+        preset_key: Preset key (e.g., 'charcoal', 'midnight')
+    
+    Returns:
+        Dict mapping color keys to values for that preset
+    """
+    if preset_key == 'custom':
+        # For custom, start with charcoal and overlay saved custom colors
+        colors = PRESET_THEMES['charcoal'].copy()
+        custom_colors = load_custom_colors_from_config()
+        colors.update(custom_colors)
+        return colors
+    
+    return PRESET_THEMES.get(preset_key, PRESET_THEMES['charcoal']).copy()
 
 
 # =============================================================================

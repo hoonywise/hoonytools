@@ -326,45 +326,42 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
     
     theme_dropdown.bind('<<ComboboxSelected>>', _on_theme_change)
     
-    # Customize button (disabled for Phase 1)
+    # Store reference to theme_var for customize dialog
+    entry_refs['_theme_dropdown'] = theme_dropdown
+    
+    def _on_customize():
+        """Open the Customize Colors dialog."""
+        # Get the base preset to start from (current theme, or charcoal if already custom)
+        current_key = gui_utils.get_current_theme()
+        base_preset = current_key if current_key != 'custom' else 'charcoal'
+        
+        # Open customize dialog
+        dialog = CustomizeColorsDialog(parent_frame.winfo_toplevel(), base_preset)
+        
+        # After dialog closes, update dropdown if theme changed to Custom
+        def _check_theme():
+            try:
+                new_theme = gui_utils.get_current_theme()
+                if new_theme == 'custom':
+                    theme_var.set('Custom')
+            except Exception:
+                pass
+        
+        # Wait for dialog to close then check
+        parent_frame.after(100, _check_theme)
+    
+    # Customize button (now enabled)
     customize_btn = tk.Button(
         theme_row,
         text="Customize...",
-        state='disabled',
-        command=lambda: None
+        command=_on_customize
     )
     customize_btn.pack(side='left', padx=(10, 0))
-    
-    # Add tooltip for disabled button
-    try:
-        from tkinter import Toplevel
-        
-        def _show_tooltip(event):
-            tooltip = Toplevel(customize_btn)
-            tooltip.wm_overrideredirect(True)
-            tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
-            label = tk.Label(tooltip, text="Coming in future update", 
-                           background="#ffffe0", relief='solid', borderwidth=1,
-                           padx=5, pady=2)
-            label.pack()
-            customize_btn._tooltip = tooltip
-            
-        def _hide_tooltip(event):
-            if hasattr(customize_btn, '_tooltip'):
-                try:
-                    customize_btn._tooltip.destroy()
-                except Exception:
-                    pass
-        
-        customize_btn.bind('<Enter>', _show_tooltip)
-        customize_btn.bind('<Leave>', _hide_tooltip)
-    except Exception:
-        pass
     
     # Theme description
     desc_label = tk.Label(
         theme_frame,
-        text="Choose a theme preset. Changes apply immediately.",
+        text="Choose a preset or click Customize to create your own theme.",
         fg='gray'
     )
     desc_label.pack(anchor='w', pady=(10, 0))
@@ -380,6 +377,411 @@ CATEGORIES = {
     "Connections": _build_connections_panel,
     "Appearance": _build_appearance_panel,
 }
+
+
+# --------------------------------------------------------------------------
+# Customize Colors Dialog
+# --------------------------------------------------------------------------
+
+# Human-readable labels for color keys, grouped by category
+COLOR_KEY_LABELS = {
+    # Content Panes
+    'pane_bg': ('Content Panes', 'Background'),
+    'pane_fg': ('Content Panes', 'Text'),
+    'select_bg': ('Content Panes', 'Selection'),
+    'insert_bg': ('Content Panes', 'Cursor'),
+    # Window Chrome
+    'window_bg': ('Window Chrome', 'Background'),
+    'border_bg': ('Window Chrome', 'Borders'),
+    # Labels
+    'label_bg': ('Labels', 'Background'),
+    'label_fg': ('Labels', 'Text'),
+    # LabelFrame
+    'labelframe_bg': ('LabelFrame', 'Background'),
+    'labelframe_fg': ('LabelFrame', 'Title Text'),
+    # Buttons
+    'button_bg': ('Buttons', 'Background'),
+    'button_fg': ('Buttons', 'Text'),
+    'button_active_bg': ('Buttons', 'Active Background'),
+    'button_active_fg': ('Buttons', 'Active Text'),
+    # Entry Fields
+    'entry_bg': ('Entry Fields', 'Background'),
+    'entry_fg': ('Entry Fields', 'Text'),
+    # Menus
+    'menu_bg': ('Menus', 'Background'),
+    'menu_fg': ('Menus', 'Text'),
+    'menu_active_bg': ('Menus', 'Hover Background'),
+    'menu_active_fg': ('Menus', 'Hover Text'),
+    # Checkboxes
+    'checkbox_bg': ('Checkboxes', 'Background'),
+    'checkbox_fg': ('Checkboxes', 'Text'),
+    'checkbox_select': ('Checkboxes', 'Checkmark Area'),
+    # Scrollbars
+    'scrollbar_bg': ('Scrollbars', 'Track'),
+    'scrollbar_fg': ('Scrollbars', 'Thumb'),
+}
+
+# Order of groups for display
+COLOR_GROUP_ORDER = [
+    'Content Panes',
+    'Window Chrome',
+    'Labels',
+    'LabelFrame',
+    'Buttons',
+    'Entry Fields',
+    'Menus',
+    'Checkboxes',
+    'Scrollbars',
+]
+
+
+class CustomizeColorsDialog:
+    """
+    Dialog for customizing theme colors.
+    
+    Shows all 22 color keys in a scrollable list with color swatches
+    and color picker buttons. Changes can be previewed live.
+    """
+    
+    def __init__(self, parent, base_preset_key='charcoal'):
+        """
+        Initialize the Customize Colors dialog.
+        
+        Args:
+            parent: Parent window
+            base_preset_key: Starting preset to copy colors from
+        """
+        from libs import gui_utils
+        from tkinter import colorchooser
+        
+        self.parent = parent
+        self.gui_utils = gui_utils
+        self.colorchooser = colorchooser
+        
+        # Get starting colors from base preset
+        self.colors = gui_utils.get_colors_for_preset(base_preset_key)
+        self.original_theme = gui_utils.get_current_theme()
+        self.swatch_widgets = {}  # key -> Label widget for color swatch
+        
+        # Create dialog window
+        self.win = tk.Toplevel(parent)
+        self.win.title("Customize Theme Colors")
+        self.win.resizable(True, True)
+        self.win.minsize(450, 500)
+        
+        # Set icon
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("hoonywise.hoonytools")
+            icon_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
+            self.win.iconbitmap(default=icon_path)
+        except Exception:
+            pass
+        
+        # Center on screen
+        _center_window(self.win, 480, 600)
+        
+        # Make modal
+        try:
+            self.win.transient(parent)
+            self.win.grab_set()
+        except Exception:
+            pass
+        
+        self._build_ui()
+        
+        # Focus
+        try:
+            self.win.focus_force()
+            self.win.lift()
+        except Exception:
+            pass
+    
+    def _build_ui(self):
+        """Build the dialog UI."""
+        # Main frame
+        main_frame = tk.Frame(self.win)
+        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Instructions
+        instr_label = tk.Label(
+            main_frame,
+            text="Click a swatch to change its color. Click Apply to preview.",
+            fg='gray'
+        )
+        instr_label.pack(anchor='w', pady=(0, 10))
+        
+        # Scrollable canvas for color rows
+        canvas_frame = tk.Frame(main_frame)
+        canvas_frame.pack(fill='both', expand=True)
+        
+        self.canvas = tk.Canvas(canvas_frame, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(canvas_frame, orient='vertical', command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        
+        scrollbar.pack(side='right', fill='y')
+        self.canvas.pack(side='left', fill='both', expand=True)
+        
+        # Inner frame for content
+        self.inner_frame = tk.Frame(self.canvas)
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.inner_frame, anchor='nw')
+        
+        def _on_configure(event=None):
+            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+            self.canvas.itemconfig(self.canvas_window, width=self.canvas.winfo_width())
+        
+        self.inner_frame.bind('<Configure>', _on_configure)
+        self.canvas.bind('<Configure>', lambda e: self.canvas.itemconfig(self.canvas_window, width=e.width))
+        
+        # Mousewheel scrolling
+        def _on_mousewheel(event):
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        
+        self.canvas.bind_all('<MouseWheel>', _on_mousewheel)
+        
+        # Build color rows grouped by category
+        self._build_color_rows()
+        
+        # Button frame
+        btn_frame = tk.Frame(main_frame)
+        btn_frame.pack(fill='x', pady=(10, 0))
+        
+        # Reset button on left
+        reset_btn = tk.Button(
+            btn_frame,
+            text="Reset to Preset",
+            command=self._on_reset
+        )
+        reset_btn.pack(side='left')
+        
+        # OK, Cancel, Apply on right
+        apply_btn = tk.Button(btn_frame, text="Apply", width=8, command=self._on_apply)
+        apply_btn.pack(side='right', padx=(5, 0))
+        
+        cancel_btn = tk.Button(btn_frame, text="Cancel", width=8, command=self._on_cancel)
+        cancel_btn.pack(side='right', padx=(5, 0))
+        
+        ok_btn = tk.Button(btn_frame, text="OK", width=8, command=self._on_ok)
+        ok_btn.pack(side='right', padx=(5, 0))
+        
+        # Store button refs for theming
+        self._buttons = [reset_btn, apply_btn, cancel_btn, ok_btn]
+        self._instr_label = instr_label
+        
+        # Apply initial theme to dialog
+        self._apply_dialog_theme()
+        
+        # Clean up on close
+        self.win.protocol("WM_DELETE_WINDOW", self._on_cancel)
+        
+        def _on_destroy(event=None):
+            if event.widget == self.win:
+                try:
+                    self.canvas.unbind_all('<MouseWheel>')
+                except Exception:
+                    pass
+        
+        self.win.bind('<Destroy>', _on_destroy)
+    
+    def _build_color_rows(self):
+        """Build rows for each color key, grouped by category."""
+        current_group = None
+        row = 0
+        
+        # Group colors by category
+        for group_name in COLOR_GROUP_ORDER:
+            # Find all keys in this group
+            keys_in_group = [
+                (key, label[1]) 
+                for key, label in COLOR_KEY_LABELS.items() 
+                if label[0] == group_name
+            ]
+            
+            if not keys_in_group:
+                continue
+            
+            # Group header
+            header = tk.Label(
+                self.inner_frame,
+                text=group_name,
+                font=('TkDefaultFont', 9, 'bold'),
+                anchor='w'
+            )
+            header.grid(row=row, column=0, columnspan=3, sticky='w', pady=(10 if row > 0 else 0, 5))
+            row += 1
+            
+            # Color rows
+            for key, label_text in keys_in_group:
+                self._build_color_row(row, key, label_text)
+                row += 1
+    
+    def _build_color_row(self, row, key, label_text):
+        """Build a single color row with label, swatch, and pick button."""
+        # Label
+        label = tk.Label(self.inner_frame, text=f"  {label_text}:", anchor='w', width=20)
+        label.grid(row=row, column=0, sticky='w', padx=(10, 5), pady=2)
+        
+        # Color swatch (clickable)
+        color_value = self.colors.get(key, '#000000')
+        
+        swatch = tk.Label(
+            self.inner_frame,
+            width=8,
+            height=1,
+            relief='solid',
+            borderwidth=1,
+            cursor='hand2'
+        )
+        swatch.grid(row=row, column=1, sticky='w', padx=5, pady=2)
+        
+        # Set swatch color
+        self._set_swatch_color(swatch, color_value)
+        
+        # Store reference
+        self.swatch_widgets[key] = swatch
+        
+        # Click handler for swatch
+        def _on_swatch_click(event, k=key):
+            self._pick_color(k)
+        
+        swatch.bind('<Button-1>', _on_swatch_click)
+        
+        # Hex value label
+        hex_label = tk.Label(self.inner_frame, text=color_value, width=12, anchor='w')
+        hex_label.grid(row=row, column=2, sticky='w', padx=5, pady=2)
+        
+        # Store hex label for updating
+        swatch._hex_label = hex_label
+    
+    def _set_swatch_color(self, swatch, color_value):
+        """Set the background color of a swatch, handling system colors."""
+        # For system color names (like "SystemWindow"), we need to resolve them
+        # to actual hex values since tk Labels don't always render them correctly
+        if color_value.startswith('System'):
+            try:
+                # Use winfo_rgb to resolve system color to RGB
+                rgb = swatch.winfo_rgb(color_value)
+                hex_color = '#{:02x}{:02x}{:02x}'.format(rgb[0]//256, rgb[1]//256, rgb[2]//256)
+                swatch.config(bg=hex_color)
+            except Exception:
+                swatch.config(bg='#808080')  # Fallback gray
+        else:
+            try:
+                swatch.config(bg=color_value)
+            except Exception:
+                swatch.config(bg='#808080')  # Fallback gray
+    
+    def _pick_color(self, key):
+        """Open color picker for a specific key."""
+        current_color = self.colors.get(key, '#000000')
+        
+        # Handle system color names
+        if current_color.startswith('System'):
+            try:
+                swatch = self.swatch_widgets.get(key)
+                if swatch:
+                    rgb = swatch.winfo_rgb(current_color)
+                    current_color = '#{:02x}{:02x}{:02x}'.format(rgb[0]//256, rgb[1]//256, rgb[2]//256)
+            except Exception:
+                current_color = '#808080'
+        
+        # Open color chooser
+        result = self.colorchooser.askcolor(
+            color=current_color,
+            title=f"Choose color for {COLOR_KEY_LABELS.get(key, ('', key))[1]}",
+            parent=self.win
+        )
+        
+        if result and result[1]:
+            new_color = result[1]
+            self.colors[key] = new_color
+            
+            # Update swatch
+            swatch = self.swatch_widgets.get(key)
+            if swatch:
+                self._set_swatch_color(swatch, new_color)
+                if hasattr(swatch, '_hex_label'):
+                    swatch._hex_label.config(text=new_color)
+    
+    def _apply_dialog_theme(self):
+        """Apply current theme colors to the dialog itself."""
+        # Since we're customizing, use the colors being edited
+        bg = self.colors.get('window_bg', '#252525')
+        fg = self.colors.get('label_fg', '#e0e0e0')
+        
+        try:
+            self.win.config(bg=bg)
+            self.canvas.config(bg=bg)
+            self.inner_frame.config(bg=bg)
+            self._instr_label.config(bg=bg, fg='gray')
+            
+            # Apply to all children in inner_frame
+            for widget in self.inner_frame.winfo_children():
+                try:
+                    widget.config(bg=bg, fg=fg)
+                except Exception:
+                    pass
+            
+            # Apply to buttons
+            btn_bg = self.colors.get('button_bg', '#3a3a3a')
+            btn_fg = self.colors.get('button_fg', '#e0e0e0')
+            for btn in self._buttons:
+                try:
+                    btn.config(bg=btn_bg, fg=btn_fg)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    
+    def _on_apply(self):
+        """Apply colors as preview without closing."""
+        # Save all custom colors
+        self.gui_utils.save_all_custom_colors(self.colors)
+        
+        # Set theme to 'custom' to use these colors
+        self.gui_utils.set_theme('custom', save=True)
+    
+    def _on_ok(self):
+        """Save and close."""
+        self._on_apply()
+        self._cleanup_and_close()
+    
+    def _on_cancel(self):
+        """Cancel and restore original theme."""
+        # Restore original theme
+        self.gui_utils.set_theme(self.original_theme, save=True)
+        self._cleanup_and_close()
+    
+    def _on_reset(self):
+        """Reset colors to current preset base."""
+        from tkinter import messagebox
+        
+        # Ask which preset to reset to
+        result = messagebox.askyesno(
+            "Reset Colors",
+            "Reset all colors to the current preset's defaults?\n\n"
+            "This will discard your customizations.",
+            parent=self.win
+        )
+        
+        if result:
+            # Get colors from original theme (before customization started)
+            base_preset = self.original_theme if self.original_theme != 'custom' else 'charcoal'
+            self.colors = self.gui_utils.get_colors_for_preset(base_preset)
+            
+            # Update all swatches
+            for key, swatch in self.swatch_widgets.items():
+                color_value = self.colors.get(key, '#000000')
+                self._set_swatch_color(swatch, color_value)
+                if hasattr(swatch, '_hex_label'):
+                    swatch._hex_label.config(text=color_value)
+    
+    def _cleanup_and_close(self):
+        """Clean up and close the dialog."""
+        try:
+            self.canvas.unbind_all('<MouseWheel>')
+        except Exception:
+            pass
+        self.win.destroy()
 
 
 # --------------------------------------------------------------------------

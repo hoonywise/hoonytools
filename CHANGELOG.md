@@ -4,14 +4,14 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
-## 🎨 v2.1.8 — Theme System with Full Chrome Theming (2026-02-21)
+## 🎨 v2.1.8 — Theme System with Full Chrome Theming & Custom Colors (2026-02-21)
 
-This release introduces a comprehensive theme system with 7 preset themes and **full chrome theming** - not just content panes, but the entire UI including buttons, labels, frames, menus, and borders. Themes are selected via a dropdown in Settings > Appearance with live preview.
+This release introduces a comprehensive theme system with 7 preset themes, **full chrome theming**, and **custom color support**. The entire UI (buttons, labels, frames, menus, borders) can now be themed. Users can customize any of the 22 color keys via the new Customize Colors dialog.
 
 ### Added
 
 - **Theme System Infrastructure** (`libs/gui_utils.py`):
-  - 7 preset themes: Pure Black, Midnight, Charcoal, Slate, Graphite, Silver, System Light
+  - 7 preset themes + Custom: Pure Black, Midnight, Charcoal, Slate, Graphite, Silver, System Light, Custom
   - **22 color keys** for full UI customization:
     - Content panes: `pane_bg`, `pane_fg`, `select_bg`, `insert_bg`
     - Window chrome: `window_bg`, `border_bg`
@@ -27,11 +27,20 @@ This release introduces a comprehensive theme system with 7 preset themes and **
   - Root option database configuration: `configure_root_options()`
   - Callback registration for live theme updates across all windows
   - Automatic migration from legacy `dark_mode` setting to new `theme.preset`
+  - Custom color persistence: `load_custom_colors_from_config()`, `save_custom_color_to_config()`, `save_all_custom_colors()`
+
+- **Customize Colors Dialog** (`libs/settings.py`):
+  - New `CustomizeColorsDialog` class for editing all 22 color keys
+  - Scrollable interface with colors grouped by category (Content Panes, Window Chrome, Buttons, etc.)
+  - Clickable color swatches that open the system color picker
+  - Live preview via "Apply" button
+  - "Reset to Preset" option to discard customizations
+  - Custom colors stored in `config.ini` with `custom_` prefix (e.g., `custom_pane_bg`)
 
 - **Theme Dropdown in Settings**: New "Themes" section in Appearance panel with:
-  - Dropdown to select preset theme (Pure Black to System Light)
+  - Dropdown to select preset theme (Pure Black to System Light, plus Custom)
   - Live preview - changes apply immediately when selecting
-  - "Customize..." button (disabled, coming in future update)
+  - "Customize..." button opens the Customize Colors dialog
 
 - **Unified `apply_full_theme()` function**: Replaces separate `set_panes_dark()`/`set_panes_light()` functions with a single function that reads all colors from the theme system
 
