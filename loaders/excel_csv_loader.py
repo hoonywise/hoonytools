@@ -44,7 +44,7 @@ except Exception:
 
 from libs.oracle_db_connector import get_db_connection
 from libs import abort_manager
-from libs import dwh_session
+from libs import session
 
 def center_window(window, width, height):
     window.update_idletasks()
@@ -1345,8 +1345,9 @@ def load_multiple_files(launcher_root=None):
         logger.info(f"Background worker starting (thread={threading.current_thread().name} id={threading.get_ident()})")
 
         # Establish connection (downgrade DPY-1001/abort errors)
+        schema_key = 'schema2' if schema_choice == "dwh" else 'schema1'
         try:
-            conn = get_db_connection(force_shared=(schema_choice == "dwh"), root=parent)
+            conn = get_db_connection(schema=schema_key, root=parent)
         except Exception as e:
             # Treat driver 'not connected' errors as expected when an abort
             # is in progress or when raised on a background thread.
@@ -1376,11 +1377,11 @@ def load_multiple_files(launcher_root=None):
 
         cursor = None
         try:
-            if schema_choice == 'dwh':
-                try:
-                    dwh_session.register_connection(parent, conn)
-                except Exception:
-                    logger.debug('Failed to register dwh connection', exc_info=True)
+            # Register connection with session for cleanup
+            try:
+                session.register_connection(parent, conn, schema_key)
+            except Exception:
+                logger.debug('Failed to register connection', exc_info=True)
 
             schema = "DWH" if schema_choice == "dwh" else conn.username.upper()
             logger.info(f"🔐 Connected to schema: {schema}")
@@ -1649,9 +1650,9 @@ def load_multiple_files(launcher_root=None):
 
             try:
                 try:
-                    dwh_session.cleanup(parent)
+                    session.close_connections(parent)
                 except Exception:
-                    logger.debug('DWH cleanup failed', exc_info=True)
+                    logger.debug('Session cleanup failed', exc_info=True)
                 if created_temp_root:
                     try:
                         parent.destroy()
@@ -1724,6 +1725,28 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
         import tkinter.ttk as ttk
     except Exception:
         ttk = None
+
+    # =========================================================================
+    # Get credentials FIRST, before showing the tool GUI
+    # =========================================================================
+    schema_key = 'schema2' if schema_choice == 'dwh' else 'schema1'
+    conn = get_db_connection(schema=schema_key, root=parent)
+    if not conn:
+        # User cancelled or connection failed - don't show the GUI
+        return
+    
+    # Register connection for cleanup
+    try:
+        session.register_connection(parent, conn, schema_key)
+    except Exception:
+        logger.debug('Failed to register connection', exc_info=True)
+
+    # Store connection info for use in _execute_load
+    _conn_info = {
+        'conn': conn,
+        'schema_key': schema_key,
+        'schema': "DWH" if schema_choice == 'dwh' else conn.username.upper()
+    }
 
     # --- file entry storage ---
     # Each entry is a dict:
@@ -1971,14 +1994,14 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
 
         # Close DWH connections in background if applicable
         try:
-            if schema_choice == 'dwh' and parent:
+            if parent:
                 import threading as _thr
-                def _close_dwh():
+                def _close_conns():
                     try:
-                        dwh_session.close_dwh_connection(parent)
+                        session.close_connections(parent)
                     except Exception:
-                        logger.debug('Failed to close DWH connection during abort', exc_info=True)
-                _thr.Thread(target=_close_dwh, daemon=True).start()
+                        logger.debug('Failed to close connections during abort', exc_info=True)
+                _thr.Thread(target=_close_conns, daemon=True).start()
         except Exception:
             pass
 
@@ -2380,9 +2403,18 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
         # Disable controls during load; enable Abort
         load_btn.config(state='disabled')
         abort_btn.config(state='normal')
-        status_var.set('Connecting...')
+        status_var.set('Loading...')
         _set_main_status('busy')  # Turn main GUI indicator red
         win.update_idletasks()
+
+        # Use the connection established at GUI startup
+        conn = _conn_info['conn']
+        schema = _conn_info['schema']
+
+        try:
+            abort_manager.register_connection(conn)
+        except Exception:
+            pass
 
         # Snapshot entries for the worker (avoid reading UI from background)
         _entries_snapshot = list(file_entries)
@@ -2390,27 +2422,8 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
 
         def _worker():
             nonlocal is_single, use_tight, mode, do_preview, upsert_keys, upsert_updates, index_columns
-            conn = None
             cursor = None
             try:
-                conn = get_db_connection(force_shared=(schema_choice == 'dwh'), root=parent)
-                if not conn:
-                    win.after(0, lambda: status_var.set('Connection failed'))
-                    win.after(0, lambda: load_btn.config(state='normal'))
-                    return
-
-                try:
-                    if schema_choice == 'dwh' and parent:
-                        dwh_session.register_connection(parent, conn)
-                except Exception:
-                    pass
-
-                try:
-                    abort_manager.register_connection(conn)
-                except Exception:
-                    pass
-
-                schema = "DWH" if schema_choice == 'dwh' else conn.username.upper()
                 cursor = conn.cursor()
                 abort_manager.reset()
 
@@ -2422,7 +2435,11 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
                     col_sizes = _compute_col_sizes(combined_df) if use_tight else None
 
                     total_rows = len(combined_df)
-                    win.after(0, lambda: status_var.set(f'Loading {total_rows} rows into {schema}.{tbl_name}...'))
+                    try:
+                        if win.winfo_exists():
+                            win.after(0, lambda: status_var.set(f'Loading {total_rows} rows into {schema}.{tbl_name}...'))
+                    except Exception:
+                        pass
 
                     _load_one_table(conn, cursor, schema, tbl_name, combined_df,
                                     col_sizes, mode, do_preview, upsert_keys, upsert_updates,
@@ -2439,8 +2456,12 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
                         # In separate mode, use per-file index selections
                         entry_idx_cols = entry.get('index_selections', []) or index_columns
 
-                        win.after(0, lambda tn=tbl_name, idx=i: status_var.set(
-                            f'Loading file {idx+1}/{total}: {schema}.{tn}...'))
+                        try:
+                            if win.winfo_exists():
+                                win.after(0, lambda tn=tbl_name, idx=i: status_var.set(
+                                    f'Loading file {idx+1}/{total}: {schema}.{tn}...'))
+                        except Exception:
+                            pass
 
                         _load_one_table(conn, cursor, schema, tbl_name, df,
                                         col_sizes, mode, do_preview, upsert_keys, upsert_updates,
@@ -2452,44 +2473,70 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
                     pass
 
                 logger.info('All files processed.')
-                win.after(0, lambda: status_var.set('All files loaded successfully.'))
+                try:
+                    if win.winfo_exists():
+                        win.after(0, lambda: status_var.set('All files loaded successfully.'))
+                except Exception:
+                    pass
 
                 # Clear the file list pane on success
                 def _clear_after_load():
-                    file_entries.clear()
-                    _current_file_idx[0] = None
-                    _refresh_file_tv()
-                    if col_tv:
-                        col_tv.delete(*col_tv.get_children())
-                    idx_list.delete(0, END)
-                    key_list.delete(0, END)
-                    upd_list.delete(0, END)
-                    table_name_var.set('')
-                win.after(0, _clear_after_load)
+                    try:
+                        file_entries.clear()
+                        _current_file_idx[0] = None
+                        _refresh_file_tv()
+                        if col_tv:
+                            col_tv.delete(*col_tv.get_children())
+                        idx_list.delete(0, END)
+                        key_list.delete(0, END)
+                        upd_list.delete(0, END)
+                        table_name_var.set('')
+                    except tk.TclError:
+                        pass
+                try:
+                    if win.winfo_exists():
+                        win.after(0, _clear_after_load)
+                except Exception:
+                    pass
 
             except Exception as e:
                 logger.exception(f'Load failed: {e}')
-                win.after(0, lambda: status_var.set(f'Error: {e}'))
+                try:
+                    if win.winfo_exists():
+                        win.after(0, lambda: status_var.set(f'Error: {e}'))
+                except Exception:
+                    pass
             finally:
                 try:
                     if cursor:
                         cursor.close()
                 except Exception:
                     pass
-                try:
-                    if conn:
-                        conn.close()
-                except Exception:
-                    pass
+                # NOTE: Don't close conn here - keep it open for multiple loads
+                # Connection will be closed when window is closed
                 try:
                     abort_manager.reset()
                 except Exception:
                     pass
                 def _on_worker_done():
-                    load_btn.config(state='normal')
-                    abort_btn.config(state='disabled')
-                    _set_main_status('idle')  # Turn main GUI indicator green
-                win.after(0, _on_worker_done)
+                    try:
+                        # Check if widgets still exist before updating them
+                        if win.winfo_exists():
+                            try:
+                                load_btn.config(state='normal')
+                            except tk.TclError:
+                                pass
+                            try:
+                                abort_btn.config(state='disabled')
+                            except tk.TclError:
+                                pass
+                        _set_main_status('idle')  # Turn main GUI indicator green
+                    except Exception:
+                        pass
+                try:
+                    win.after(0, _on_worker_done)
+                except Exception:
+                    pass
 
         def _load_one_table(conn, cursor, schema, tbl_name, df, col_sizes, mode,
                             do_preview, upsert_keys, upsert_updates,
@@ -2755,6 +2802,26 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
             win.bind('<Destroy>', _on_destroy)
     except Exception:
         pass
+
+    # --- Window close handler ---
+    def _on_window_close():
+        # Close the database connection when window is closed
+        try:
+            if _conn_info.get('conn'):
+                _conn_info['conn'].close()
+                _conn_info['conn'] = None
+        except Exception:
+            logger.debug('Failed to close connection on window close', exc_info=True)
+        try:
+            session.close_connections(parent)
+        except Exception:
+            pass
+        try:
+            win.destroy()
+        except Exception:
+            pass
+
+    win.protocol('WM_DELETE_WINDOW', _on_window_close)
 
     # --- Wait ---
     if parent:

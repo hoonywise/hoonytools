@@ -32,6 +32,23 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         parent = on_finish
         on_finish = None
     # use_dwh parameter determines whether to use DWH (shared) credentials
+    
+    # =========================================================================
+    # Get credentials FIRST, before showing the tool GUI
+    # =========================================================================
+    schema_key = 'schema2' if use_dwh else 'schema1'
+    conn = get_db_connection(schema=schema_key, root=parent)
+    if not conn:
+        # User cancelled or connection failed - don't show the GUI
+        # Don't call on_finish here - it would trigger a refresh which prompts again
+        return
+    
+    # Register connection for cleanup
+    try:
+        session.register_connection(parent if parent else _tk_default_root, conn, schema_key)
+    except Exception:
+        logger.debug('Failed to register connection', exc_info=True)
+    
     def detect_tables_from_sql(sql_text):
         """A conservative table detector: finds tokens after FROM and JOIN. Returns list of unique table identifiers."""
         # prefer shared helper when available
@@ -694,21 +711,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         if sql_query.endswith(";"):
             sql_query = sql_query.rstrip("; \n")
 
-        # Choose credentials source
-        conn = get_db_connection(force_shared=True) if use_dwh else get_db_connection()
-        if not conn:
-            return
-        try:
-            if use_dwh:
-                # Register with central DWH session manager for cleanup
-                from libs import dwh_session
-                try:
-                    dwh_session.register_connection(_tk_default_root, conn)
-                except Exception:
-                    # best-effort; do not block on registration failure
-                    logger.debug('Failed to register dwh connection', exc_info=True)
-        except Exception:
-            logger.debug('Failed to register dwh connection', exc_info=True)
+        # Use the connection established at GUI startup
         cursor = None
 
         # Ensure the DB connection is always closed even on early returns

@@ -1,4 +1,4 @@
-import tkinter as tk
+﻿import tkinter as tk
 from tkinter import scrolledtext, ttk
 import tkinter.font as tkfont
 import logging
@@ -15,7 +15,7 @@ import random
 import webbrowser
 from configparser import ConfigParser
 
-APP_VERSION = "1.5.7"
+APP_VERSION = "2.0.0"
 
 
 # Theme helpers
@@ -55,19 +55,15 @@ def apply_dark_theme(root, accent="white"):
         except Exception:
             pass
 
-    # Create the initial combobox so it's present at startup (light mode by default)
+    # Configure ttk styles for dark theme
     try:
-        _recreate_tool_menu(use_pane_style=False)
+        style.configure("Treeview", background=panel, fieldbackground=panel, foreground=fg, rowheight=20)
+        style.map("Treeview", background=[("selected", sel)], foreground=[("selected", "white")])
+        style.configure("TCombobox", fieldbackground=panel, background=panel, foreground=fg)
+        style.configure("TButton", background=panel, foreground=fg)
+        style.map("TButton", background=[("active", border)])
     except Exception:
         pass
-        try:
-            style.configure("Treeview", background=panel, fieldbackground=panel, foreground=fg, rowheight=20)
-            style.map("Treeview", background=[("selected", sel)], foreground=[("selected", "white")])
-            style.configure("TCombobox", fieldbackground=panel, background=panel, foreground=fg)
-            style.configure("TButton", background=panel, foreground=fg)
-            style.map("TButton", background=[("active", border)])
-        except Exception:
-            pass
 
     try:
         root.option_add('*Menu.background', panel)
@@ -234,7 +230,7 @@ else:
         pass
 
 def get_random_verse():
-    return random.choice(BIBLE_VERSES) if BIBLE_VERSES else "📖 Verse not available"
+    return random.choice(BIBLE_VERSES) if BIBLE_VERSES else "ðŸ“– Verse not available"
 
 def validate_required_folders():
     # Startup should be clean; loaders that need folders should create them when executed.
@@ -316,44 +312,29 @@ def center_window(window, width, height):
 
 def abort_process():
     abort_manager.set_abort(True)
-    logger.warning("⛔ Abort requested by user.")
+    logger.warning("â›” Abort requested by user.")
     # Best-effort UI updates and attempt to interrupt blocking DB calls.
     try:
         # Update status light if present
         if 'status_light' in globals() and getattr(status_light, 'winfo_exists', lambda: False)():
             try:
-                status_light.config(text="⏹️ Aborting...")
+                status_light.config(text="â¹ï¸ Aborting...")
             except Exception:
                 pass
 
-        # Disable Run control to avoid starting another operation while aborting
-        try:
-            if 'run_btn' in globals() and run_btn:
-                run_btn.config(state='disabled')
-        except Exception:
-            pass
-        try:
-            if 'tool_menu' in globals() and tool_menu:
-                try:
-                    tool_menu.config(state='disabled')
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # Attempt to close any registered DWH connections on this root to help
+        # Attempt to close any registered connections on this root to help
         # unblock DB calls. Close them in a background thread so the main GUI
         # does not freeze if the close operation blocks or is slow.
         try:
-            from libs import dwh_session
+            from libs import session as _sess
             import threading as _thr
-            def _close_dwh():
+            def _close_connections():
                 try:
                     if 'root' in globals():
-                        dwh_session.close_dwh_connection(root)
+                        _sess.close_connections(root)
                 except Exception:
-                    logger.debug('Failed to close DWH connection in background', exc_info=True)
-            _thr.Thread(target=_close_dwh, daemon=True).start()
+                    logger.debug('Failed to close connections in background', exc_info=True)
+            _thr.Thread(target=_close_connections, daemon=True).start()
         except Exception:
             pass
 
@@ -436,20 +417,7 @@ def abort_process():
             def _reenable():
                 try:
                     if 'status_light' in globals() and getattr(status_light, 'winfo_exists', lambda: False)():
-                        status_light.config(text="🟢")
-                except Exception:
-                    pass
-                try:
-                    if 'run_btn' in globals() and run_btn:
-                        run_btn.config(state='normal')
-                except Exception:
-                    pass
-                try:
-                    if 'tool_menu' in globals() and tool_menu:
-                        try:
-                            tool_menu.config(state='readonly')
-                        except Exception:
-                            pass
+                        status_light.config(text="ðŸŸ¢")
                 except Exception:
                     pass
 
@@ -468,87 +436,6 @@ def abort_process():
         threading.Thread(target=_monitor_abort, daemon=True).start()
     except Exception:
         pass
-
-def run_selected():
-    global should_abort
-    should_abort = False
-    tool_name = selected_tool.get()
-    logger.info(f"Run button pressed for tool: {tool_name}")
-    log_text.delete(1.0, tk.END)
-    status_light.config(text="⏳")     
-
-    def run_and_update_with_conn(conn):
-        try:
-            logger.info(f"🚀 Running: {tool_name}")
-            try:
-                TOOLS[tool_name](conn)
-            except TypeError:
-                # fallback: call without conn if callable doesn't accept it
-                TOOLS[tool_name]()
-        except Exception as e:
-            logger.exception(f"❌ Error running {tool_name}: {e}")
-        finally:
-            status_light.config(text="🟢")
-
-    # If selected tool is missing or None, inform the user
-    if tool_name not in TOOLS or TOOLS.get(tool_name) is None:
-        try:
-            from tkinter import messagebox
-            messagebox.showwarning("Tool Unavailable", f"Selected tool is not available: {tool_name}")
-        except Exception:
-            logger.warning(f"Selected tool is not available: {tool_name}")
-        status_light.config(text="🟢")
-        return
-
-    
-
-    # For everything else
-    def run_and_update():
-        try:
-            # Tools that accept an on_finish callback should be called with it so the launcher
-            # can update its status light. Treat SQL View and SQL Materialized View loaders
-            # the same way.
-            if tool_name in ("☑ SQL View Loader", "☑ SQL Materialized View Loader"):
-                # Pass launcher root as parent so loaders can register theme callbacks
-                try:
-                    TOOLS[tool_name](root, on_finish=lambda: status_light.config(text="🟢"))
-                except TypeError:
-                    # fallback for older signatures
-                    try:
-                        TOOLS[tool_name](on_finish=lambda: status_light.config(text="🟢"))
-                    except Exception:
-                        TOOLS[tool_name]()
-            else:
-                try:
-                    # Prefer passing launcher root to tools when supported so dialogs are parented correctly
-                    TOOLS[tool_name](root)
-                except TypeError:
-                    try:
-                        TOOLS[tool_name]()
-                    except TypeError:
-                        # Last resort: call without args
-                        TOOLS[tool_name]()
-                status_light.config(text="🟢")
-        except KeyboardInterrupt:
-            # User or system interrupted the tool; attempt graceful cleanup and avoid
-            # letting KeyboardInterrupt propagate into Tk's callback machinery.
-            try:
-                logger.info(f"Tool run interrupted by KeyboardInterrupt: {tool_name}")
-            except Exception:
-                pass
-            try:
-                status_light.config(text="🟢")
-            except Exception:
-                pass
-            return
-        except Exception as e:
-            logger.exception(f"❌ Error running {tool_name}: {e}")
-            try:
-                status_light.config(text="🟢")
-            except Exception:
-                pass
-
-    run_and_update()
 
 def stream_logs():
     global is_gui_running
@@ -599,7 +486,7 @@ def show_splash():
     # === Created by hoonywise ===
     footer_top = tk.Label(
         splash,
-        text="Created by hoonywise · hoonywise@proton.me",
+        text="Created by hoonywise Â· hoonywise@proton.me",
         font=("Arial", 9, "italic"),
         fg="#444444"
     )
@@ -631,14 +518,11 @@ def show_splash():
     splash.mainloop()
 
 def launch_tool_gui():
-    from libs.oracle_db_connector import prompt_credentials
-    from libs import session  # 👈 NEW
-
-
+    from libs import session
     
-    global root, selected_tool, log_text, log_stream, status_light, run_btn, tool_menu
+    global root, log_text, log_stream, status_light
 
-    # Create the main Tk root directly and keep it hidden while login dialog appears.
+    # Create the main Tk root
     root = tk.Tk()
     root.withdraw()
     # NOTE: Do not bind WM_DELETE_WINDOW here because safe_exit (defined later)
@@ -651,48 +535,16 @@ def launch_tool_gui():
             icon_ico_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
             root.iconbitmap(default=icon_ico_path)
         except Exception as e:
-            print(f"⚠️ Failed to set taskbar icon: {e}")
+            print(f"âš ï¸ Failed to set taskbar icon: {e}")
 
-    # Keep the main window hidden while the login dialog is shown
-    # This prevents geometry nudging issues on some systems. The main
-    # window will be deiconified and centered after a successful login.
-    root.withdraw()
-
-    # 4️⃣ 🔐 Prompt for login
-    session.stored_credentials = prompt_credentials()
-    # Also populate user_credentials so user-scoped tools don't re-prompt
-    if session.stored_credentials:
-        try:
-            session.user_credentials = session.stored_credentials
-        except Exception:
-            pass
-    # Load saved DWH creds from config.ini (if present) so refresh can use them immediately
+    # Load any saved credentials from config.ini (no mandatory login)
+    # Users will be prompted on-demand when they use tools or refresh
     try:
-        from libs import oracle_db_connector as _ob
-        if _ob.config and _ob.config.has_section("dwh"):
-            sec = _ob.config["dwh"]
-            try:
-                session.dwh_credentials = {"username": sec.get("username"), "password": sec.get("password"), "dsn": sec.get("dsn")}
-            except Exception:
-                pass
+        session.load_saved_credentials()
     except Exception:
         pass
-    if not session.stored_credentials:
-        try:
-            root.destroy()
-        except Exception:
-            pass
-        try:
-            if 'hidden_root' in globals() and getattr(hidden_root, 'winfo_exists', lambda: False)():
-                try:
-                    hidden_root.destroy()
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        return
     
-    # ✅ After login success: show and center the main window
+    # Show the main window
     root.deiconify()
     # Ensure the window is realized, then center it on the primary monitor
     try:
@@ -707,9 +559,124 @@ def launch_tool_gui():
         pass
     root.title("HoonyTools Launcher")
 
-    # === Bible Verse Row (centered across the entire window) ===
-    verse_frame = tk.Frame(root)
-    verse_frame.pack(fill="x", padx=10, pady=(0, 8))
+    # === Word of God - Bible Verse Row ===
+    verse_outer_frame = tk.Frame(root)
+    verse_outer_frame.pack(fill="x", padx=8, pady=(12, 12))
+    # Store reference for menu bar pack ordering
+    globals()['verse_outer_frame'] = verse_outer_frame
+
+    verse_labelframe = tk.LabelFrame(verse_outer_frame, text="Word of God", padx=7, pady=7)
+    # Match horizontal alignment: align with left edge of object list pane and right edge of log pane
+    # content_frame padx=10, left_pane padx=(6,10) -> left edge at 16px from window
+    # We need padx=(6, 0) but verse_outer already has padx=10, so total left = 16px
+    # Right side: log_text has padx=10 inside right_pane, so we need no extra right padding
+    verse_labelframe.pack(fill="x", padx=(21.5, 12))
+
+    # Top bar with Previous/Next buttons (like object pane)
+    verse_btn_bar = tk.Frame(verse_labelframe)
+    verse_btn_bar.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
+    
+    verse_prev_btn = tk.Button(verse_btn_bar, text="Previous", width=10)
+    verse_prev_btn.pack(side="left", padx=(0, 8))
+    verse_next_btn = tk.Button(verse_btn_bar, text="Next", width=10)
+    verse_next_btn.pack(side="left", padx=(0, 8))
+
+    # Verse history for Previous/Next navigation
+    verse_history = []  # List of shown verses
+    verse_history_index = [-1]  # Current position in history (use list for mutability in closures)
+
+    def _display_verse(verse_text_content):
+        """Display a verse in the text widget."""
+        try:
+            verse_text.config(state="normal")
+            verse_text.delete("1.0", tk.END)
+            verse_text.insert("1.0", verse_text_content)
+            verse_text.config(state="disabled")
+        except Exception:
+            pass
+
+    def _show_next_verse():
+        """Show next verse - either from history or get a new random one."""
+        if verse_history_index[0] < len(verse_history) - 1:
+            # Move forward in history
+            verse_history_index[0] += 1
+            _display_verse(verse_history[verse_history_index[0]])
+        else:
+            # Get a new random verse and add to history
+            new_verse = get_random_verse()
+            verse_history.append(new_verse)
+            verse_history_index[0] = len(verse_history) - 1
+            _display_verse(new_verse)
+
+    def _show_prev_verse():
+        """Show previous verse from history."""
+        if verse_history_index[0] > 0:
+            verse_history_index[0] -= 1
+            _display_verse(verse_history[verse_history_index[0]])
+
+    verse_prev_btn.config(command=_show_prev_verse)
+    verse_next_btn.config(command=_show_next_verse)
+
+    # Create a frame to hold the Text widget and scrollbar
+    # Set minimum height to accommodate scrollbar (about 50px)
+    verse_inner = tk.Frame(verse_labelframe, bg="white", height=50)
+    verse_inner.pack(fill="x", expand=True)
+    verse_inner.pack_propagate(False)  # Prevent shrinking below minimum height
+
+    # Scrollbar (initially hidden, shown on hover)
+    verse_scrollbar = tk.Scrollbar(verse_inner, orient="vertical")
+
+    # Fixed-height Text widget - black text for readability
+    # White background like the treeview areas in object list panes
+    verse_text = tk.Text(
+        verse_inner,
+        font=("Arial", 9, "italic"),
+        fg="black",
+        bg="white",
+        height=3,
+        wrap="word",
+        relief="flat",
+        state="disabled",
+        cursor="arrow",
+        highlightthickness=0,
+        borderwidth=0,
+        yscrollcommand=verse_scrollbar.set
+    )
+    verse_text.pack(side="left", fill="both", expand=True)
+    verse_scrollbar.config(command=verse_text.yview)
+
+    # Show/hide scrollbar on hover
+    def _show_verse_scrollbar(e=None):
+        try:
+            verse_scrollbar.pack(side="right", fill="y")
+        except Exception:
+            pass
+
+    def _hide_verse_scrollbar(e=None):
+        try:
+            verse_scrollbar.pack_forget()
+        except Exception:
+            pass
+
+    verse_inner.bind('<Enter>', _show_verse_scrollbar)
+    verse_inner.bind('<Leave>', _hide_verse_scrollbar)
+    verse_text.bind('<Enter>', _show_verse_scrollbar)
+    verse_text.bind('<Leave>', _hide_verse_scrollbar)
+
+    # Register for dark mode styling (only the inner text area, not the frame/border)
+    globals()['verse_labelframe'] = verse_labelframe
+    globals()['verse_text'] = verse_text
+    globals()['verse_scrollbar'] = verse_scrollbar
+    globals()['verse_inner'] = verse_inner
+
+    # Auto-rotate verse every ~78 seconds (adds to history like clicking Next)
+    def rotate_verse():
+        _show_next_verse()
+        root.after(77777, rotate_verse)
+
+    # Show first verse immediately and start auto-rotation timer
+    _show_next_verse()
+    root.after(77777, rotate_verse)
 
     # === Main content: two-column layout (left object lists, right main UI) ===
     content_frame = tk.Frame(root)
@@ -727,32 +694,11 @@ def launch_tool_gui():
     right_pane = tk.Frame(content_frame)
     right_pane.pack(side="left", fill="both", expand=True)
 
-    verse_label = tk.Label(
-        verse_frame,
-        text=get_random_verse(),
-        font=("Arial", 9, "italic"),
-        fg=getattr(root, "_dark_theme", {}).get("muted", "#444444"),
-        anchor="center",
-        justify="center",
-        wraplength=1000
-    )
-    verse_label.pack(fill="x")
-
-    # 🔁 Optionally refresh verse every 60 seconds
-    def rotate_verse():
-        verse_label.config(text=get_random_verse())
-        root.after(77777, rotate_verse)  
-
-    rotate_verse()    
-        
-    # Horizontal divider below verse
-    tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10, pady=(5, 10))    
-
-    # ✅ Set GUI icon (.ico for taskbar)
+    # âœ… Set GUI icon (.ico for taskbar)
     icon_ico_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
     root.iconbitmap(default=icon_ico_path)
 
-    # ✅ Set window icon (.png for title bar)
+    # âœ… Set window icon (.png for title bar)
     icon_path = ASSETS_PATH / "assets" / "hoonywise_300.png"
     icon_img = tk.PhotoImage(file=icon_path)
     root.iconphoto(False, icon_img)
@@ -760,24 +706,14 @@ def launch_tool_gui():
 
     # === Load Logo Assets ===
     assets_path = base_path / "assets"
-    # Initialize Oracle client early and load saved DWH creds into session if present
+    # Initialize Oracle client early (credentials loaded via session.load_saved_credentials())
     try:
-        from libs import oracle_db_connector as _ob, session as _session
-        if _ob.config and _ob.config.has_section("dwh"):
-            sec = _ob.config["dwh"]
-            try:
-                _session.dwh_credentials = {"username": sec.get("username"), "password": sec.get("password"), "dsn": sec.get("dsn")}
-            except Exception:
-                pass
+        import oracledb as _orac
         try:
-            import oracledb as _orac
-            try:
-                _orac.init_oracle_client()
-                logger.info("✅ Oracle client initialized (Thick mode if available)")
-            except Exception:
-                logger.info("ℹ️ Oracle client init skipped or unavailable; proceeding with Thin mode")
+            _orac.init_oracle_client()
+            logger.info("Oracle client initialized (Thick mode if available)")
         except Exception:
-            pass
+            logger.info("Oracle client init skipped or unavailable; proceeding with Thin mode")
     except Exception:
         pass
     
@@ -817,7 +753,7 @@ def launch_tool_gui():
             for c in tv['columns']:
                 base_title = col_titles.get(c, c.title())
                 if c == col:
-                    arrow = ' \u25bc' if reverse else ' \u25b2'  # ▼ or ▲
+                    arrow = ' \u25bc' if reverse else ' \u25b2'  # â–¼ or â–²
                     tv.heading(c, text=base_title + arrow)
                 else:
                     tv.heading(c, text=base_title)
@@ -840,19 +776,36 @@ def launch_tool_gui():
         tv.bind('<Control-A>', select_all)  # Handle caps lock
     
     # --- Helper: create object list frame in left pane
-    def _make_objects_frame(parent, title):
-        frame = tk.LabelFrame(parent, text=title, padx=6, pady=6)
+    def _make_objects_frame(parent, schema_key):
+        """Create an object pane frame for a schema.
+        
+        Args:
+            parent: Parent widget
+            schema_key: 'schema1' or 'schema2' for session integration
+        
+        Returns:
+            Tuple of (frame, treeview, buttons..., schema_label_widget)
+        """
+        from libs import session as _sess
+        
+        frame = tk.LabelFrame(parent, padx=6, pady=6)
         # allow frames to share available vertical space equally
         frame.pack(fill="both", pady=(0, 8), expand=True)
+        
+        # Create custom label with bold schema name (count shown separately at right edge)
+        label_frame = tk.Frame(frame)
+        schema_label = tk.Label(label_frame, text=_sess.get_label(schema_key), font=("Arial", 9, "bold"))
+        schema_label.pack(side="left")
+        frame.configure(labelwidget=label_frame)
+        
+        # Register the label widget with session for dynamic updates
+        _sess.register_label_widget(schema_key, schema_label)
 
-        # Top bar inside the LabelFrame: Refresh button near the left (next to title)
-        # Add left padding so the button is visually separated from the frame border
+        # Top bar: Refresh, Load, Drop buttons
         top_bar = tk.Frame(frame)
         top_bar.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
         refresh_btn = tk.Button(top_bar, text="Refresh", width=10)
         refresh_btn.pack(side="left", padx=(0, 8))
-        index_btn = tk.Button(top_bar, text="Index", width=10)
-        index_btn.pack(side="left", padx=(0, 8))
         load_btn = tk.Button(top_bar, text="Load", width=10)
         load_btn.pack(side="left", padx=(0, 8))
         drop_btn = tk.Button(top_bar, text="Drop", width=10)
@@ -860,7 +813,7 @@ def launch_tool_gui():
         status_lbl = tk.Label(top_bar, text="", font=("Arial", 8), fg=getattr(parent.master, "_dark_theme", {}).get("muted", "#444444"))
         status_lbl.pack(side="left")
 
-        # Second button row: View, M.View, P.Key
+        # Second button row: View, M.View, P.Key, Index
         btn_row2 = tk.Frame(frame)
         btn_row2.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
         view_btn = tk.Button(btn_row2, text="View", width=10)
@@ -869,14 +822,14 @@ def launch_tool_gui():
         mv_btn.pack(side="left", padx=(0, 8))
         pk_btn = tk.Button(btn_row2, text="P.Key", width=10)
         pk_btn.pack(side="left", padx=(0, 8))
+        index_btn = tk.Button(btn_row2, text="Index", width=10)
+        index_btn.pack(side="left", padx=(0, 8))
 
-        # Content area (treeview + scrollbar) sits below the top bar and expands
+        # Content area (treeview + scrollbar)
         content_area = tk.Frame(frame)
         content_area.pack(fill="both", expand=True)
 
-        # Lock treeview width to avoid auto-resize when labels change
-        # Third column `info` shows PK columns for tables or parent table for indexes
-        # selectmode="extended" enables multi-select with Ctrl+click and Shift+click
+        # Treeview with name, type, info columns
         tv = ttk.Treeview(content_area, columns=("name", "type", "info"), show="headings", selectmode="extended")
         tv.heading("name", text="Name")
         tv.heading("type", text="Type")
@@ -889,7 +842,7 @@ def launch_tool_gui():
         tv.pack(side="left", fill="both", expand=True)
         vs.pack(side="right", fill="y")
 
-        return frame, tv, refresh_btn, index_btn, load_btn, drop_btn, status_lbl, view_btn, mv_btn, pk_btn
+        return frame, tv, refresh_btn, load_btn, drop_btn, status_lbl, view_btn, mv_btn, pk_btn, index_btn
 
     # Ensure Treeview style is configured before creating tree widgets so
     # style settings are honored by backends (especially on Windows ttk).
@@ -910,39 +863,40 @@ def launch_tool_gui():
         pre_style = None
 
     # Create the two object panes in the left_pane (stacked, share vertical space)
-    user_frame, user_tree, user_refresh_btn, user_index_btn, user_load_btn, user_drop_btn, user_status, user_view_btn, user_mv_btn, user_pk_btn = _make_objects_frame(left_pane, "User Objects")
-    dwh_frame, dwh_tree, dwh_refresh_btn, dwh_index_btn, dwh_load_btn, dwh_drop_btn, dwh_status, dwh_view_btn, dwh_mv_btn, dwh_pk_btn = _make_objects_frame(left_pane, "DWH Objects")
+    # schema1 = user schema, schema2 = shared/DWH schema
+    schema1_frame, schema1_tree, schema1_refresh_btn, schema1_load_btn, schema1_drop_btn, schema1_status, schema1_view_btn, schema1_mv_btn, schema1_pk_btn, schema1_index_btn = _make_objects_frame(left_pane, 'schema1')
+    schema2_frame, schema2_tree, schema2_refresh_btn, schema2_load_btn, schema2_drop_btn, schema2_status, schema2_view_btn, schema2_mv_btn, schema2_pk_btn, schema2_index_btn = _make_objects_frame(left_pane, 'schema2')
     
     # Enable sortable column headers for both treeviews
-    _make_sortable_tree(user_tree)
-    _make_sortable_tree(dwh_tree)
+    _make_sortable_tree(schema1_tree)
+    _make_sortable_tree(schema2_tree)
     
     # Enable Ctrl+A to select all for both treeviews
-    _bind_select_all(user_tree)
-    _bind_select_all(dwh_tree)
+    _bind_select_all(schema1_tree)
+    _bind_select_all(schema2_tree)
 
     # Keep cached row data so we can recreate trees when toggling theme
-    user_rows = []
-    dwh_rows = []
+    schema1_rows = []
+    schema2_rows = []
 
     # Prevent the left pane from auto-resizing when internal labels change
     left_pane.pack_propagate(False)
 
     # Create external count labels aligned to the right of each object frame
-    # Use grid placement so they don't affect the inner frame widths
-    user_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
-    dwh_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
+    # Match font size with schema label (Arial 9) but not bold, use muted color
+    schema1_count_label = tk.Label(left_pane, text="", font=("Arial", 9), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
+    schema2_count_label = tk.Label(left_pane, text="", font=("Arial", 9), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
     # start with a placeholder placement; we'll position these next to the LabelFrame titles
-    user_count_label.place(x=0, y=0)
-    dwh_count_label.place(x=0, y=0)
+    schema1_count_label.place(x=0, y=0)
+    schema2_count_label.place(x=0, y=0)
 
     # hide the internal status labels created inside each frame to avoid them resizing the frame
     try:
-        user_status.pack_forget()
+        schema1_status.pack_forget()
     except Exception:
         pass
     try:
-        dwh_status.pack_forget()
+        schema2_status.pack_forget()
     except Exception:
         pass
 
@@ -954,33 +908,33 @@ def launch_tool_gui():
     left_pane.grid_columnconfigure(0, weight=1)
     left_pane.grid_columnconfigure(1, weight=0)
     # Re-pack the frames using grid so they share the vertical space
-    user_frame.pack_forget()
-    dwh_frame.pack_forget()
+    schema1_frame.pack_forget()
+    schema2_frame.pack_forget()
     # add left padding so the object frames sit a few pixels in from the left border
-    user_frame.grid(row=0, column=0, sticky="nsew", pady=(0,8), padx=(14,0))
-    dwh_frame.grid(row=1, column=0, sticky="nsew", padx=(14,0))
+    schema1_frame.grid(row=0, column=0, sticky="nsew", pady=(0,8), padx=(14,0))
+    schema2_frame.grid(row=1, column=0, sticky="nsew", padx=(14,0))
 
-    # Position the object-count labels next to each LabelFrame title (top-left header area)
+    # Position the object-count labels at the right edge of each LabelFrame title area
     def position_count_labels(event=None):
         try:
             left_pane.update_idletasks()
-            import tkinter.font as tkfont
-            default_font = tkfont.nametofont("TkDefaultFont")
+            
+            # Use frame width and position, with adequate right padding
+            right_padding = 59  # Padding from right edge of frame
 
-            # User frame title placement
-            ux = user_frame.winfo_x()
-            uy = user_frame.winfo_y()
-            user_title = user_frame.cget("text")
-            title_w = default_font.measure(user_title)
-            # small left offset inside the LabelFrame border (~8 px), then a small gap
-            user_count_label.place(x=ux + 8 + title_w + 8, y=uy - 2)
+            # Schema1 frame - position count label at right side of title border
+            uy = schema1_frame.winfo_y()
+            frame_x = schema1_frame.winfo_x()
+            frame_w = schema1_frame.winfo_width()
+            label_w = schema1_count_label.winfo_reqwidth()
+            schema1_count_label.place(x=frame_x + frame_w - label_w - right_padding, y=uy - 0)
 
-            # DWH frame title placement
-            dx = dwh_frame.winfo_x()
-            dy = dwh_frame.winfo_y()
-            dwh_title = dwh_frame.cget("text")
-            dwh_title_w = default_font.measure(dwh_title)
-            dwh_count_label.place(x=dx + 8 + dwh_title_w + 8, y=dy - 2)
+            # Schema2 frame - position count label at right side of title border
+            dy = schema2_frame.winfo_y()
+            frame2_x = schema2_frame.winfo_x()
+            frame2_w = schema2_frame.winfo_width()
+            label2_w = schema2_count_label.winfo_reqwidth()
+            schema2_count_label.place(x=frame2_x + frame2_w - label2_w - right_padding, y=dy - 0)
         except Exception:
             pass
 
@@ -1009,12 +963,12 @@ def launch_tool_gui():
 
         # cache rows for possible rebuild
         try:
-            if tv is user_tree:
-                nonlocal user_rows
-                user_rows = list(rows)
-            elif tv is dwh_tree:
-                nonlocal dwh_rows
-                dwh_rows = list(rows)
+            if tv is schema1_tree:
+                nonlocal schema1_rows
+                schema1_rows = list(rows)
+            elif tv is schema2_tree:
+                nonlocal schema2_rows
+                schema2_rows = list(rows)
         except Exception:
             pass
 
@@ -1086,7 +1040,7 @@ def launch_tool_gui():
             new_tv.pack(fill="both", expand=True)
 
         try:
-            rows = user_rows if old_tv is user_tree else dwh_rows if old_tv is dwh_tree else []
+            rows = schema1_rows if old_tv is schema1_tree else schema2_rows if old_tv is schema2_tree else []
         except Exception:
             rows = []
 
@@ -1120,13 +1074,13 @@ def launch_tool_gui():
         return new_tv
 
     # Background refreshers
-    def refresh_user_objects():
-        user_status.config(text="Loading...")
+    def refresh_schema1_objects():
+        schema1_status.config(text="Loading...")
         def worker():
             from libs.oracle_db_connector import get_db_connection
-            conn = get_db_connection(force_shared=False)
+            conn = get_db_connection(schema='schema1', root=root)
             if not conn:
-                root.after(0, lambda: user_status.config(text="No connection"))
+                root.after(0, lambda: schema1_status.config(text="No connection"))
                 return
             try:
                 cur = conn.cursor()
@@ -1232,13 +1186,13 @@ def launch_tool_gui():
             # If no rows found, show friendly message in status
             if not rows:
                 # update external count label and tree
-                root.after(0, lambda: (_populate_treeview(user_tree, rows), user_count_label.config(text="No Objects")))
+                root.after(0, lambda: (_populate_treeview(schema1_tree, rows), schema1_count_label.config(text="No Objects")))
             else:
-                root.after(0, lambda: (_populate_treeview(user_tree, rows), user_count_label.config(text=f"{len(rows)} Objects")))
+                root.after(0, lambda: (_populate_treeview(schema1_tree, rows), schema1_count_label.config(text=f"{len(rows)} Objects")))
         threading.Thread(target=worker, daemon=True).start()
 
-    def refresh_dwh_objects():
-        dwh_status.config(text="Loading...")
+    def refresh_schema2_objects():
+        schema2_status.config(text="Loading...")
 
         # Helper: spawn a worker that connects using explicit credentials (no UI prompts)
         def _start_worker_with_creds(creds):
@@ -1254,7 +1208,7 @@ def launch_tool_gui():
                 cur = None
                 conn = None
                 try:
-                    conn = oracledb.connect(user=creds["username"], password=creds["password"], dsn=creds["dsn"])
+                    conn = oracledb.connect(user=creds["user"], password=creds["password"], dsn=creds["dsn"])
                     cur = conn.cursor()
                     
                     # Query for tables, views, materialized views with PK info
@@ -1351,7 +1305,7 @@ def launch_tool_gui():
                         # Update status label and schedule a single main-thread prompt to repair DWH creds/config if not already prompting
                         try:
                             try:
-                                root.after(0, lambda: dwh_status.config(text="Prompting for DWH login..."))
+                                root.after(0, lambda: schema2_status.config(text="Prompting for DWH login..."))
                             except Exception:
                                 pass
                             from libs import session as _session
@@ -1361,15 +1315,17 @@ def launch_tool_gui():
                                 def prompt_and_retry():
                                     try:
                                         from libs.oracle_db_connector import get_db_connection
-                                        conn2 = get_db_connection(force_shared=True, root=root)
+                                        from libs import session as _s
+                                        conn2 = get_db_connection(schema='schema2', root=root)
                                         if conn2:
                                             try:
                                                 conn2.close()
                                             except Exception:
                                                 pass
-                                            if _session.dwh_credentials:
+                                            new_creds = _s.get_credentials('schema2')
+                                            if new_creds:
                                                 # retry using new creds
-                                                _start_worker_with_creds(_session.dwh_credentials)
+                                                _start_worker_with_creds(new_creds)
                                     finally:
                                         try:
                                             # allow future prompts
@@ -1398,38 +1354,27 @@ def launch_tool_gui():
                         pass
 
                 if not rows:
-                    root.after(0, lambda: (_populate_treeview(dwh_tree, rows), dwh_count_label.config(text="No Objects"), dwh_status.config(text="")))
+                    root.after(0, lambda: (_populate_treeview(schema2_tree, rows), schema2_count_label.config(text="No Objects"), schema2_status.config(text="")))
                 else:
-                    root.after(0, lambda: (_populate_treeview(dwh_tree, rows), dwh_count_label.config(text=f"{len(rows)} Objects"), dwh_status.config(text="")))
+                    root.after(0, lambda: (_populate_treeview(schema2_tree, rows), schema2_count_label.config(text=f"{len(rows)} Objects"), schema2_status.config(text="")))
 
             threading.Thread(target=worker, daemon=True).start()
 
         # Decide whether we can use saved creds (no UI) or need to prompt on the main thread
         from libs import session
-        from libs import oracle_db_connector as ob
 
-        creds = None
-        if session.dwh_credentials and session.dwh_credentials.get("username", "").lower() == "dwh":
-            creds = session.dwh_credentials
-        elif ob.config.has_section("dwh"):
-            section = ob.config["dwh"]
-            if section.get("username") and section.get("password") and section.get("dsn"):
-                creds = {
-                    "username": section.get("username"),
-                    "password": section.get("password"),
-                    "dsn": section.get("dsn")
-                }
+        creds = session.get_credentials('schema2')
 
         if creds:
-            # Use the saved credentials from session or config.ini in a background thread
+            # Use the saved credentials in a background thread
             _start_worker_with_creds(creds)
             return
 
-        # No saved creds: prompt on the main thread (get_db_connection will schedule a dialog via root)
+        # No saved creds: prompt on the main thread (get_db_connection will handle prompting)
         from libs.oracle_db_connector import get_db_connection
-        conn = get_db_connection(force_shared=True, root=root)
+        conn = get_db_connection(schema='schema2', root=root)
         if not conn:
-            root.after(0, lambda: dwh_status.config(text="Not logged in"))
+            root.after(0, lambda: schema2_status.config(text="Not logged in"))
             return
 
         # If get_db_connection returned a connection, close it and use the stored session credentials
@@ -1438,17 +1383,17 @@ def launch_tool_gui():
         except Exception:
             pass
 
-        # session.dwh_credentials should have been set by get_db_connection when prompting
-        creds = session.dwh_credentials if session.dwh_credentials else None
+        # Credentials should have been set by get_db_connection when prompting
+        creds = session.get_credentials('schema2')
         if not creds:
-            root.after(0, lambda: dwh_status.config(text="No credentials"))
+            root.after(0, lambda: schema2_status.config(text="No credentials"))
             return
 
         _start_worker_with_creds(creds)
 
     # Wire buttons
-    user_refresh_btn.config(command=refresh_user_objects)
-    dwh_refresh_btn.config(command=refresh_dwh_objects)
+    schema1_refresh_btn.config(command=refresh_schema1_objects)
+    schema2_refresh_btn.config(command=refresh_schema2_objects)
 
     # --- Index button handlers ---
     def _get_selected_object(tree):
@@ -1462,8 +1407,8 @@ def launch_tool_gui():
             return None, None
         return str(vals[0]), str(vals[1])
 
-    def launch_index_user():
-        name, obj_type = _get_selected_object(user_tree)
+    def launch_index_schema1():
+        name, obj_type = _get_selected_object(schema1_tree)
         if not name:
             from tkinter import messagebox
             messagebox.showwarning('No Selection', 'Please select an object in the User Objects pane first.', parent=root)
@@ -1480,7 +1425,7 @@ def launch_tool_gui():
         if not owner:
             try:
                 from libs.oracle_db_connector import get_db_connection
-                conn = get_db_connection(force_shared=False, root=root)
+                conn = get_db_connection(schema='schema1', root=root)
                 if conn:
                     owner = conn.username.upper()
                     try:
@@ -1497,11 +1442,13 @@ def launch_tool_gui():
         _update_status_light('busy')
         def on_close():
             _update_status_light('idle')
-            refresh_user_objects()  # auto-refresh after closing
+            # Only refresh if user successfully logged in (has credentials)
+            if session.get_credentials('schema1'):
+                refresh_schema1_objects()
         index_main(parent=root, schema=owner, object_name=name, object_type=obj_type, on_finish=on_close)
 
-    def launch_index_dwh():
-        name, obj_type = _get_selected_object(dwh_tree)
+    def launch_index_schema2():
+        name, obj_type = _get_selected_object(schema2_tree)
         if not name:
             from tkinter import messagebox
             messagebox.showwarning('No Selection', 'Please select an object in the DWH Objects pane first.', parent=root)
@@ -1514,23 +1461,25 @@ def launch_tool_gui():
         _update_status_light('busy')
         def on_close():
             _update_status_light('idle')
-            refresh_dwh_objects()  # auto-refresh after closing
+            # Only refresh if user successfully logged in (has credentials)
+            if session.get_credentials('schema2'):
+                refresh_schema2_objects()
         index_main(parent=root, schema='DWH', object_name=name, object_type=obj_type, on_finish=on_close)
 
-    user_index_btn.config(command=launch_index_user)
-    dwh_index_btn.config(command=launch_index_dwh)
+    schema1_index_btn.config(command=launch_index_schema1)
+    schema2_index_btn.config(command=launch_index_schema2)
 
     # --- Load button handlers ---
-    def launch_load_user():
+    def launch_load_schema1():
         from loaders.excel_csv_loader import load_files_gui
         load_files_gui(parent=root, schema_choice='user', on_status_change=_update_status_light)
 
-    def launch_load_dwh():
+    def launch_load_schema2():
         from loaders.excel_csv_loader import load_files_gui
         load_files_gui(parent=root, schema_choice='dwh', on_status_change=_update_status_light)
 
-    user_load_btn.config(command=launch_load_user)
-    dwh_load_btn.config(command=launch_load_dwh)
+    schema1_load_btn.config(command=launch_load_schema1)
+    schema2_load_btn.config(command=launch_load_schema2)
 
     # --- Drop button handlers ---
     def _get_selected_objects(tree):
@@ -1555,20 +1504,20 @@ def launch_tool_gui():
         try:
             global status_light
             if status == 'busy':
-                status_light.config(text="🔴")
+                status_light.config(text="ðŸ”´")
             elif status == 'aborting':
-                status_light.config(text="⏳")  # amber/yellow
+                status_light.config(text="â³")  # amber/yellow
             else:  # idle
-                status_light.config(text="🟢")
+                status_light.config(text="ðŸŸ¢")
             # Force UI update during synchronous operations
             root.update_idletasks()
             root.update()
         except Exception:
             pass
 
-    def launch_drop_user():
+    def launch_drop_schema1():
         """Handle Drop button click for User schema."""
-        objects = _get_selected_objects(user_tree)
+        objects = _get_selected_objects(schema1_tree)
         if not objects:
             from tkinter import messagebox
             messagebox.showwarning('No Selection', 'Please select one or more objects to drop.', parent=root)
@@ -1582,7 +1531,7 @@ def launch_tool_gui():
         if not owner:
             try:
                 from libs.oracle_db_connector import get_db_connection
-                conn = get_db_connection(force_shared=False, root=root)
+                conn = get_db_connection(schema='schema1', root=root)
                 if conn:
                     owner = conn.username.upper()
                     try:
@@ -1603,13 +1552,13 @@ def launch_tool_gui():
             schema_name=owner,
             objects=objects,
             parent_window=root,
-            on_complete=lambda: refresh_user_objects(),
+            on_complete=lambda: refresh_schema1_objects(),
             on_status_change=_update_status_light
         )
 
-    def launch_drop_dwh():
+    def launch_drop_schema2():
         """Handle Drop button click for DWH schema."""
-        objects = _get_selected_objects(dwh_tree)
+        objects = _get_selected_objects(schema2_tree)
         if not objects:
             from tkinter import messagebox
             messagebox.showwarning('No Selection', 'Please select one or more objects to drop.', parent=root)
@@ -1622,440 +1571,84 @@ def launch_tool_gui():
             schema_name='DWH',
             objects=objects,
             parent_window=root,
-            on_complete=lambda: refresh_dwh_objects(),
+            on_complete=lambda: refresh_schema2_objects(),
             on_status_change=_update_status_light
         )
 
-    user_drop_btn.config(command=launch_drop_user)
-    dwh_drop_btn.config(command=launch_drop_dwh)
+    schema1_drop_btn.config(command=launch_drop_schema1)
+    schema2_drop_btn.config(command=launch_drop_schema2)
 
     # --- View button handlers ---
-    def launch_view_user():
+    def launch_view_schema1():
         from loaders.sql_view_loader import run_sql_view_loader
         _update_status_light('busy')
         def on_close():
             _update_status_light('idle')
-            refresh_user_objects()  # auto-refresh after closing
+            # Only refresh if user successfully logged in (has credentials)
+            if session.get_credentials('schema1'):
+                refresh_schema1_objects()
         run_sql_view_loader(parent=root, on_finish=on_close, use_dwh=False)
 
-    def launch_view_dwh():
+    def launch_view_schema2():
         from loaders.sql_view_loader import run_sql_view_loader
         _update_status_light('busy')
         def on_close():
             _update_status_light('idle')
-            refresh_dwh_objects()  # auto-refresh after closing
+            # Only refresh if user successfully logged in (has credentials)
+            if session.get_credentials('schema2'):
+                refresh_schema2_objects()
         run_sql_view_loader(parent=root, on_finish=on_close, use_dwh=True)
 
-    user_view_btn.config(command=launch_view_user)
-    dwh_view_btn.config(command=launch_view_dwh)
+    schema1_view_btn.config(command=launch_view_schema1)
+    schema2_view_btn.config(command=launch_view_schema2)
 
     # --- MV button handlers ---
-    def launch_mv_user():
+    def launch_mv_schema1():
         from loaders.sql_mv_loader import run_sql_mv_loader
         _update_status_light('busy')
         def on_close():
             _update_status_light('idle')
-            refresh_user_objects()  # auto-refresh after closing
+            # Only refresh if user successfully logged in (has credentials)
+            if session.get_credentials('schema1'):
+                refresh_schema1_objects()
         run_sql_mv_loader(parent=root, on_finish=on_close, use_dwh=False)
 
-    def launch_mv_dwh():
+    def launch_mv_schema2():
         from loaders.sql_mv_loader import run_sql_mv_loader
         _update_status_light('busy')
         def on_close():
             _update_status_light('idle')
-            refresh_dwh_objects()  # auto-refresh after closing
+            # Only refresh if user successfully logged in (has credentials)
+            if session.get_credentials('schema2'):
+                refresh_schema2_objects()
         run_sql_mv_loader(parent=root, on_finish=on_close, use_dwh=True)
 
-    user_mv_btn.config(command=launch_mv_user)
-    dwh_mv_btn.config(command=launch_mv_dwh)
+    schema1_mv_btn.config(command=launch_mv_schema1)
+    schema2_mv_btn.config(command=launch_mv_schema2)
 
     # --- PK button handlers ---
-    def launch_pk_user():
+    def launch_pk_schema1():
         from tools.pk_designate_gui import main as pk_main
         _update_status_light('busy')
         pk_main(parent=root, schema_choice='user')
         _update_status_light('idle')
-        refresh_user_objects()  # auto-refresh after closing
+        # Only auto-refresh if user successfully logged in (has credentials)
+        if session.get_credentials('schema1'):
+            refresh_schema1_objects()
 
-    def launch_pk_dwh():
+    def launch_pk_schema2():
         from tools.pk_designate_gui import main as pk_main
         _update_status_light('busy')
         pk_main(parent=root, schema_choice='dwh')
         _update_status_light('idle')
-        refresh_dwh_objects()  # auto-refresh after closing
+        # Only auto-refresh if user successfully logged in (has credentials)
+        if session.get_credentials('schema2'):
+            refresh_schema2_objects()
 
-    user_pk_btn.config(command=launch_pk_user)
-    dwh_pk_btn.config(command=launch_pk_dwh)
+    schema1_pk_btn.config(command=launch_pk_schema1)
+    schema2_pk_btn.config(command=launch_pk_schema2)
 
-    # Top toolbar (centered): tool selector + buttons
-    # Create the toolbar at the root level and pack it before the main content_frame
-    # so it centers across the entire window (including the left pane).
-    top_toolbar = tk.Frame(root)
-    # pack before the already-created content_frame so it appears between the verse and content
-    top_toolbar.pack(fill="x", pady=(0, 6), before=content_frame)
-    toolbar_inner = tk.Frame(top_toolbar)
-    toolbar_inner.pack(anchor="center")
-    # Give the toolbar some extra top padding so it visually lines up with the log
-    toolbar_inner.configure(pady=6)
-
-    # Layout will use grid inside toolbar_inner to ensure deterministic
-    # placement: label (col0), combobox (col1), buttons (col2).
-    tk.Label(
-        toolbar_inner,
-        text="Select Tool:",
-        font=("Arial", 12, "bold")
-    ).grid(row=0, column=0, padx=(0, 10))
-
-    # Tool selector and buttons
-    selected_tool = tk.StringVar()
-
-    # Helper to recreate the toolbar combobox under a specified style so
-    # theme changes are honored across backends (some ttk widgets only
-    # pick up style at creation time).
-    def _recreate_tool_menu(use_pane_style=False):
-        global tool_menu, selected_tool
-        parent = toolbar_inner
-        values = list(TOOLS.keys())
-        # attempt to preserve current selection index/value
-        cur_idx = None
-        try:
-            cur_idx = tool_menu.current()
-        except Exception:
-            try:
-                val = selected_tool.get()
-                cur_idx = values.index(val) if val in values else 0
-            except Exception:
-                cur_idx = 0
-
-        try:
-            try:
-                logger.debug("DESTROYING existing tool_menu (if any)")
-            except Exception:
-                pass
-            tool_menu.destroy()
-        except Exception:
-            pass
-
-        # If ttk.Combobox is unreliable on this platform, use a small
-        # custom combobox implementation that uses a Toplevel + Listbox
-        # popup. This guarantees consistent popup behavior and styling.
-        class _CustomCombobox:
-            def __init__(self, master, textvariable, values, width=22, font=None, state='readonly', style=None):
-                self.master = master
-                self.var = textvariable
-                self.values = list(values)
-                self._dark = False
-                self.frame = tk.Frame(master)
-                # Use a normal Entry so background/foreground changes apply
-                # reliably across platforms. Prevent typing by blocking key events.
-                self.entry = tk.Entry(self.frame, textvariable=self.var, width=width, font=font, state='normal', relief='sunken')
-                # Prevent user edits (readonly behavior)
-                try:
-                    self.entry.bind('<Key>', lambda e: 'break')
-                except Exception:
-                    pass
-                self.entry.pack(side='left')
-                # Use a neutral grey arrow button background so the arrow remains
-                # visually consistent in both themes. Keep it non-focused.
-                self.btn = tk.Button(self.frame, text='\u25BC', width=2, command=self._on_button, takefocus=False, relief='raised', bd=1)
-                try:
-                    self.btn.config(bg='#c0c0c0', fg='black')
-                except Exception:
-                    pass
-                self.btn.pack(side='left')
-                self._popup = None
-                self._bindings = {}
-
-            def grid(self, **kw):
-                return self.frame.grid(**kw)
-
-            def pack(self, **kw):
-                return self.frame.pack(**kw)
-
-            def destroy(self):
-                try:
-                    if self._popup and getattr(self._popup, 'winfo_exists', lambda: False)():
-                        try:
-                            self._popup.destroy()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-                try:
-                    self.frame.destroy()
-                except Exception:
-                    pass
-
-            def bind(self, sequence, func, add=None):
-                # Bind to the entry widget; store handler for possible removal
-                try:
-                    self.entry.bind(sequence, func, add=add if add else None)
-                except Exception:
-                    try:
-                        self.frame.bind(sequence, func, add=add if add else None)
-                    except Exception:
-                        pass
-
-            def current(self, idx):
-                try:
-                    if idx is None:
-                        return
-                    v = self.values[idx]
-                    self.var.set(v)
-                except Exception:
-                    pass
-
-            def get(self):
-                return self.var.get()
-
-            def cget(self, key):
-                if key == 'style':
-                    return None
-                try:
-                    return self.entry.cget(key)
-                except Exception:
-                    return None
-
-            def configure(self, **kw):
-                try:
-                    self.entry.configure(**kw)
-                except Exception:
-                    pass
-
-            def _on_button(self):
-                # show popup
-                if self._popup and getattr(self._popup, 'winfo_exists', lambda: False)():
-                    try:
-                        self._popup.destroy()
-                    except Exception:
-                        pass
-                    return
-                try:
-                    x = self.frame.winfo_rootx()
-                    y = self.frame.winfo_rooty() + self.frame.winfo_height()
-                    self._popup = tk.Toplevel(self.frame)
-                    self._popup.wm_overrideredirect(True)
-                    self._popup.wm_geometry(f"+{x}+{y}")
-                    lb = tk.Listbox(self._popup, exportselection=False)
-                    # Make the popup list wider than the entry so long names are visible.
-                    try:
-                        ew = self.entry.cget('width')
-                        try:
-                            ew = int(ew)
-                        except Exception:
-                            ew = None
-                        if ew:
-                            desired = min(max(ew + 6, 30), 120)  # chars, clamp to reasonable range
-                            lb.config(width=desired)
-                    except Exception:
-                        pass
-                    # Use same font as entry for consistent sizing
-                    try:
-                        f = self.entry.cget('font')
-                        if f:
-                            lb.config(font=f)
-                    except Exception:
-                        pass
-                    for v in self.values:
-                        lb.insert('end', v)
-                    lb.pack()
-                    try:
-                        # Apply popup colors consistent with entry colors
-                        if getattr(self, '_dark', False):
-                            lb.config(bg='#000000', fg='#ffffff', selectbackground='#2a6bd6')
-                        else:
-                            lb.config(bg='white', fg='black', selectbackground='#2a6bd6')
-                    except Exception:
-                        pass
-                    def on_select(evt=None):
-                        try:
-                            sel = lb.curselection()
-                            if sel:
-                                val = lb.get(sel[0])
-                                self.var.set(val)
-                                # generate virtual event
-                                try:
-                                    self.frame.event_generate('<<ComboboxSelected>>')
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-                        try:
-                            self._popup.destroy()
-                        except Exception:
-                            pass
-                    lb.bind('<Double-Button-1>', lambda e: on_select())
-                    lb.bind('<Return>', lambda e: on_select())
-                    # Single click release should also confirm selection
-                    lb.bind('<ButtonRelease-1>', lambda e: on_select())
-                    lb.bind('<<ListboxSelect>>', lambda e: None)
-                    # click outside closes popup
-                    def on_focus_out(ev=None):
-                        try:
-                            if self._popup and getattr(self._popup, 'winfo_exists', lambda: False)():
-                                self._popup.destroy()
-                        except Exception:
-                            pass
-                    self._popup.bind('<FocusOut>', on_focus_out)
-                    # give focus to popup so clicks register
-                    try:
-                        self._popup.focus_force()
-                        try:
-                            lb.focus_set()
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-
-            # helper to set dark/light colors
-            def set_colors(self, dark=False):
-                try:
-                    self._dark = bool(dark)
-                    if self._dark:
-                        # Entry background, text and caret color
-                        try:
-                            self.entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', disabledbackground='#000000')
-                        except Exception:
-                            pass
-                        # Keep arrow button neutral grey so it remains visible on both themes
-                        try:
-                            self.btn.config(bg='#c0c0c0', fg='black')
-                        except Exception:
-                            pass
-                    else:
-                        try:
-                            self.entry.config(bg='white', fg='black', insertbackground='black', disabledbackground='white')
-                        except Exception:
-                            pass
-                        try:
-                            self.btn.config(bg='#c0c0c0', fg='black')
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-
-        # end _CustomCombobox
-
-        style_name = 'Pane.TCombobox' if use_pane_style else 'TCombobox'
-        try:
-            # helper: clear visual selection and move focus after use so the
-            # toolbar combobox doesn't keep a highlighted selection.
-            def _clear_combobox_selection(w):
-                try:
-                    try:
-                        w.selection_clear()
-                    except Exception:
-                        pass
-                    try:
-                        w.icursor('end')
-                    except Exception:
-                        pass
-                    try:
-                        if 'run_btn' in globals() and run_btn:
-                            run_btn.focus_set()
-                        else:
-                            root.focus_force()
-                    except Exception:
-                        try:
-                            root.focus_force()
-                        except Exception:
-                            pass
-                    # Small state flip can clear lingering native selection highlights
-                    try:
-                        prev_state = None
-                        try:
-                            prev_state = w.cget('state')
-                        except Exception:
-                            prev_state = None
-                        try:
-                            w.configure(state='disabled')
-                            root.update_idletasks()
-                        except Exception:
-                            pass
-                        try:
-                            if prev_state is not None:
-                                w.configure(state=prev_state)
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-
-            # Use custom combobox for reliable popup behavior
-            try:
-                tool_menu = _CustomCombobox(parent, textvariable=selected_tool, values=values, width=22, font=("Arial", 11))
-                try:
-                    tool_menu.grid(row=0, column=1)
-                except Exception:
-                    tool_menu.pack(side='left')
-                try:
-                    logger.debug("CREATED toolbar custom combobox (tool_menu)")
-                except Exception:
-                    pass
-                # bind selection event to clear selection visual
-                try:
-                    parent_ref = tool_menu.frame
-                    parent_ref.bind('<<ComboboxSelected>>', lambda e: _clear_combobox_selection(tool_menu.entry), add='+')
-                except Exception:
-                    pass
-                try:
-                    if cur_idx is not None and 0 <= cur_idx < len(values):
-                        tool_menu.current(cur_idx)
-                    else:
-                        tool_menu.current(0)
-                except Exception:
-                    pass
-            except Exception:
-                pass
-        except Exception:
-            # fallback: create without explicit style
-            try:
-                try:
-                    tool_menu = _CustomCombobox(parent, textvariable=selected_tool, values=values, width=22, font=("Arial", 11))
-                    try:
-                        tool_menu.grid(row=0, column=1)
-                    except Exception:
-                        tool_menu.pack(side='left')
-                    try:
-                        if cur_idx is not None:
-                            tool_menu.current(cur_idx)
-                        else:
-                            tool_menu.current(0)
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-            except Exception:
-                pass
-
-    # Ensure a toolbar combobox exists at startup. Some backends only apply
-    # style at widget creation time, and earlier code sometimes recreated
-    # the combobox only when toggling themes. Create it here once so the
-    # control is present immediately after the toolbar is built.
-    try:
-        _recreate_tool_menu(use_pane_style=False)
-        try:
-            logger.info("Initial toolbar combobox created at startup")
-        except Exception:
-            pass
-    except Exception:
-        try:
-            logger.exception("Initial toolbar combobox creation failed")
-        except Exception:
-            pass
-
-    btn_frame = tk.Frame(toolbar_inner)
-    # Use grid to place the button frame in column 2 so we avoid mixing
-    # pack and grid in the same parent (toolbar_inner uses grid for children).
-    btn_frame.grid(row=0, column=2, padx=12)
-
-    # Keep references to these controls so handlers can disable/enable them
-    run_btn = tk.Button(btn_frame, text="Run", width=10, command=lambda: run_selected())
-    run_btn.pack(side="left", padx=7)
-
+    # Window close handler
     def safe_exit():
         global is_gui_running
         is_gui_running = False
@@ -2073,22 +1666,17 @@ def launch_tool_gui():
                     pass
         except Exception:
             pass
-        # ❌ DO NOT rely on hidden_root being present in other modules — prefer
+        # âŒ DO NOT rely on hidden_root being present in other modules â€” prefer
         # explicit lifecycle management. Exit the process now.
         sys.exit()
 
-    tk.Button(btn_frame, text="Exit", width=10, command=safe_exit).pack(side="left", padx=7)
-
-    # Ensure the window manager close button performs the same cleanup
+    # Ensure the window manager close button performs cleanup
     try:
         root.protocol("WM_DELETE_WINDOW", safe_exit)
     except Exception:
         pass
 
-    # Removed global Ctrl+C abort binding to avoid interfering with clipboard copy.
-    # Keyboard shortcuts should not override platform copy behavior.
-
-    # Divider between toolbar and content
+    # Divider above log area
     tk.Frame(right_pane, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10, pady=(8, 12))
 
     # Place the log area in the right pane (narrower because left pane uses space)
@@ -2104,18 +1692,10 @@ def launch_tool_gui():
     except Exception:
         pass
     
-    # === Status Bar (under verse) ===
+    # === Status Bar (status light only - login status removed) ===
     tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10)
     status_bar = tk.Frame(root)
     status_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
-
-    tk.Label(
-        status_bar,
-        text=f"Logged in as: {session.stored_credentials['username']} @ {session.stored_credentials['dsn']}",
-        font=("Arial", 8),
-        anchor="w",
-        justify="left"
-    ).pack(side="left")
 
     # Status indicator using a canvas circle for better visibility
     status_canvas = tk.Canvas(status_bar, width=16, height=16, highlightthickness=0)
@@ -2130,13 +1710,13 @@ def launch_tool_gui():
             self.circle_id = circle_id
         def config(self, text=None, **kwargs):
             # Map emoji text to colors
-            if text == "🔴":
+            if text == "ðŸ”´":
                 self.canvas.itemconfig(self.circle_id, fill="#ef4444", outline="#dc2626")
-            elif text == "🟢":
+            elif text == "ðŸŸ¢":
                 self.canvas.itemconfig(self.circle_id, fill="#22c55e", outline="#16a34a")
-            elif text == "⏳":
+            elif text == "â³":
                 self.canvas.itemconfig(self.circle_id, fill="#f59e0b", outline="#d97706")  # amber/yellow
-            elif text == "⏹️ Aborting...":
+            elif text == "â¹ï¸ Aborting...":
                 self.canvas.itemconfig(self.circle_id, fill="#f59e0b", outline="#d97706")
         def winfo_exists(self):
             try:
@@ -2227,7 +1807,7 @@ def launch_tool_gui():
 
     stream_logs()
     
-    # ✅ Validate after GUI + log area are ready
+    # âœ… Validate after GUI + log area are ready
     if not validate_required_folders():
         root.destroy()
         return
@@ -2243,12 +1823,12 @@ def launch_tool_gui():
             tray_icon = pystray.Icon("HoonyTools", tray_img, "HoonyTools", menu=(item("Exit", on_exit),))
             tray_icon.run()
 
-    # 🧠 Start it in the background so GUI stays responsive
+    # ðŸ§  Start it in the background so GUI stays responsive
     threading.Thread(target=setup_tray_icon, daemon=True).start()    
     
     import traceback
     def excepthook(type, value, tb):
-        print("💥 Uncaught Exception:")
+        print("ðŸ’¥ Uncaught Exception:")
         traceback.print_exception(type, value, tb)
 
     sys.excepthook = excepthook    
@@ -2303,7 +1883,7 @@ def launch_tool_gui():
             return f"error:{e}"
 
     def set_panes_dark():
-        nonlocal user_tree, dwh_tree
+        nonlocal schema1_tree, schema2_tree
         # Record original theme/style/lookups the first time so we can
         # reliably restore them later. Also capture per-item tags and
         # master background colors.
@@ -2352,9 +1932,9 @@ def launch_tool_gui():
             if not pane_orig.get('user_item_tags'):
                 tags = {}
                 try:
-                    for it in list(user_tree.get_children()):
+                    for it in list(schema1_tree.get_children()):
                         try:
-                            tags[it] = tuple(user_tree.item(it).get('tags') or ())
+                            tags[it] = tuple(schema1_tree.item(it).get('tags') or ())
                         except Exception:
                             tags[it] = ()
                 except Exception:
@@ -2366,9 +1946,9 @@ def launch_tool_gui():
             if not pane_orig.get('dwh_item_tags'):
                 tags = {}
                 try:
-                    for it in list(dwh_tree.get_children()):
+                    for it in list(schema2_tree.get_children()):
                         try:
-                            tags[it] = tuple(dwh_tree.item(it).get('tags') or ())
+                            tags[it] = tuple(schema2_tree.item(it).get('tags') or ())
                         except Exception:
                             tags[it] = ()
                 except Exception:
@@ -2376,25 +1956,15 @@ def launch_tool_gui():
                 pane_orig['dwh_item_tags'] = tags
         except Exception:
             pass
-        # Save current combobox style so we can restore it later
-        try:
-            if 'tool_menu' in globals() and not pane_orig.get('tool_menu_style'):
-                try:
-                    pane_orig['tool_menu_style'] = tool_menu.cget('style')
-                except Exception:
-                    pane_orig['tool_menu_style'] = None
-        except Exception:
-            pass
-
         # Save master backgrounds
         try:
             if not pane_orig.get('user_master_bg'):
-                pane_orig['user_master_bg'] = user_tree.master.cget('bg')
+                pane_orig['user_master_bg'] = schema1_tree.master.cget('bg')
         except Exception:
             pass
         try:
             if not pane_orig.get('dwh_master_bg'):
-                pane_orig['dwh_master_bg'] = dwh_tree.master.cget('bg')
+                pane_orig['dwh_master_bg'] = schema2_tree.master.cget('bg')
         except Exception:
             pass
 
@@ -2464,8 +2034,8 @@ def launch_tool_gui():
                             except Exception:
                                 pass
                             try:
-                                # custom_view/custom_help are tuples: (mb, menu)
-                                for t in ('custom_view', 'custom_help'):
+                                # custom_file/custom_view/custom_help are tuples: (mb, menu)
+                                for t in ('custom_file', 'custom_view', 'custom_help'):
                                     try:
                                         mb, m = globals().get(t, (None, None))
                                         if mb:
@@ -2482,39 +2052,31 @@ def launch_tool_gui():
                                         pass
                             except Exception:
                                 pass
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-                # Recreate the combobox under Pane.TCombobox so backends that
-                # only honor style at creation time will show the dark colors.
-                try:
-                    _recreate_tool_menu(use_pane_style=True)
-                    # If our custom combobox is used, ensure it applies dark colors
-                    try:
-                        if 'tool_menu' in globals() and hasattr(tool_menu, 'set_colors'):
+                            # Style verse pane for dark mode (only inner text area, not frame/border)
                             try:
-                                tool_menu.set_colors(dark=True)
+                                if 'verse_text' in globals():
+                                    globals()['verse_text'].config(bg='#000000', fg='#ffffff')
+                                if 'verse_inner' in globals():
+                                    globals()['verse_inner'].config(bg='#000000')
+                                if 'verse_scrollbar' in globals():
+                                    globals()['verse_scrollbar'].config(bg='#333333', troughcolor='#000000')
                             except Exception:
                                 pass
                     except Exception:
                         pass
                 except Exception:
-                    try:
-                        tool_menu.configure(style='Pane.TCombobox')
-                    except Exception:
-                        pass
+                    pass
         except Exception:
             pass
 
         # Recreate trees under the new Pane.Treeview style so backend honors fieldbackground
         try:
             try:
-                user_tree = _recreate_tree(user_tree, use_pane_style=True)
+                schema1_tree = _recreate_tree(schema1_tree, use_pane_style=True)
             except Exception:
                 pass
             try:
-                dwh_tree = _recreate_tree(dwh_tree, use_pane_style=True)
+                schema2_tree = _recreate_tree(schema2_tree, use_pane_style=True)
             except Exception:
                 pass
         except Exception:
@@ -2523,11 +2085,11 @@ def launch_tool_gui():
         # Set master backgrounds and darken log
         try:
             try:
-                user_tree.master.config(bg='#000000')
+                schema1_tree.master.config(bg='#000000')
             except Exception:
                 pass
             try:
-                dwh_tree.master.config(bg='#000000')
+                schema2_tree.master.config(bg='#000000')
             except Exception:
                 pass
         except Exception:
@@ -2553,13 +2115,13 @@ def launch_tool_gui():
         try:
             dbg = base_path / 'theme_debug.log'
             with open(dbg, 'a', encoding='utf-8') as df:
-                df.write(f"SET DARK: user_tree.style={getattr(user_tree, 'cget', lambda k: None)('style')} bg={getattr(user_tree, 'cget', lambda k: None)('background')} fg={getattr(user_tree, 'cget', lambda k: None)('foreground')}\n")
+                df.write(f"SET DARK: schema1_tree.style={getattr(schema1_tree, 'cget', lambda k: None)('style')} bg={getattr(schema1_tree, 'cget', lambda k: None)('background')} fg={getattr(schema1_tree, 'cget', lambda k: None)('foreground')}\n")
                 try:
-                    its = list(user_tree.get_children())
-                    df.write(f"SET DARK: user_tree items={len(its)} sample_tags={[user_tree.item(its[0]).get('tags') if its else None]}\n")
+                    its = list(schema1_tree.get_children())
+                    df.write(f"SET DARK: schema1_tree items={len(its)} sample_tags={[schema1_tree.item(its[0]).get('tags') if its else None]}\n")
                 except Exception:
                     pass
-                df.write(f"SET DARK: dwh_tree.style={getattr(dwh_tree, 'cget', lambda k: None)('style')} bg={getattr(dwh_tree, 'cget', lambda k: None)('background')} fg={getattr(dwh_tree, 'cget', lambda k: None)('foreground')}\n")
+                df.write(f"SET DARK: schema2_tree.style={getattr(schema2_tree, 'cget', lambda k: None)('style')} bg={getattr(schema2_tree, 'cget', lambda k: None)('background')} fg={getattr(schema2_tree, 'cget', lambda k: None)('foreground')}\n")
         except Exception:
             pass
 
@@ -2581,18 +2143,18 @@ def launch_tool_gui():
         try:
             dbg = base_path / 'theme_debug.log'
             with open(dbg, 'a', encoding='utf-8') as df:
-                df.write(f"SET DARK: user_tree.style={getattr(user_tree, 'cget', lambda k: None)('style')} bg={getattr(user_tree, 'cget', lambda k: None)('background')} fg={getattr(user_tree, 'cget', lambda k: None)('foreground')}\n")
+                df.write(f"SET DARK: schema1_tree.style={getattr(schema1_tree, 'cget', lambda k: None)('style')} bg={getattr(schema1_tree, 'cget', lambda k: None)('background')} fg={getattr(schema1_tree, 'cget', lambda k: None)('foreground')}\n")
                 try:
-                    its = list(user_tree.get_children())
-                    df.write(f"SET DARK: user_tree items={len(its)} sample_tags={[user_tree.item(its[0]).get('tags') if its else None]}\n")
+                    its = list(schema1_tree.get_children())
+                    df.write(f"SET DARK: schema1_tree items={len(its)} sample_tags={[schema1_tree.item(its[0]).get('tags') if its else None]}\n")
                 except Exception:
                     pass
-                df.write(f"SET DARK: dwh_tree.style={getattr(dwh_tree, 'cget', lambda k: None)('style')} bg={getattr(dwh_tree, 'cget', lambda k: None)('background')} fg={getattr(dwh_tree, 'cget', lambda k: None)('foreground')}\n")
+                df.write(f"SET DARK: schema2_tree.style={getattr(schema2_tree, 'cget', lambda k: None)('style')} bg={getattr(schema2_tree, 'cget', lambda k: None)('background')} fg={getattr(schema2_tree, 'cget', lambda k: None)('foreground')}\n")
         except Exception:
             pass
 
     def set_panes_light():
-        nonlocal user_tree, dwh_tree
+        nonlocal schema1_tree, schema2_tree
         # First, if we recorded the original theme or style lookups, restore
         # them so newly-created Treeviews are created under the original rules.
         try:
@@ -2624,53 +2186,6 @@ def launch_tool_gui():
                             style.configure('Pane.Treeview', background=op.get('background') or '', fieldbackground=op.get('fieldbackground') or '', foreground=op.get('foreground') or '')
                         except Exception:
                             pass
-                    # Restore combobox style if we saved it
-                    try:
-                        tms = po.get('tool_menu_style')
-                        if tms and 'tool_menu' in globals():
-                            try:
-                                # Recreate under the saved style to ensure backend honors it
-                                _recreate_tool_menu(use_pane_style=(tms == 'Pane.TCombobox'))
-                            except Exception:
-                                try:
-                                    tool_menu.configure(style=tms)
-                                except Exception:
-                                    pass
-                        else:
-                            # ensure default (light) combobox style and recreate
-                            try:
-                                style.configure('TCombobox', fieldbackground='white', background='white', foreground='black')
-                                try:
-                                    _recreate_tool_menu(use_pane_style=False)
-                                    try:
-                                        # Move focus away from the combobox to avoid the
-                                        # focused color state remaining visible on some backends.
-                                        try:
-                                            if 'tool_menu' in globals() and hasattr(tool_menu, 'set_colors'):
-                                                try:
-                                                    tool_menu.set_colors(dark=False)
-                                                except Exception:
-                                                    pass
-                                            if 'run_btn' in globals() and run_btn:
-                                                run_btn.focus_set()
-                                            else:
-                                                root.focus_force()
-                                        except Exception:
-                                            try:
-                                                root.focus_force()
-                                            except Exception:
-                                                pass
-                                    except Exception:
-                                        pass
-                                except Exception:
-                                    try:
-                                        tool_menu.configure(style='TCombobox')
-                                    except Exception:
-                                        pass
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
                     # Restore Listbox option defaults to light values so native
                     # popups created after this will be white on black text
                     try:
@@ -2704,7 +2219,7 @@ def launch_tool_gui():
                             except Exception:
                                 pass
                             try:
-                                for t in ('custom_view', 'custom_help'):
+                                for t in ('custom_file', 'custom_view', 'custom_help'):
                                     try:
                                         mb, m = globals().get(t, (None, None))
                                         if mb:
@@ -2719,6 +2234,14 @@ def launch_tool_gui():
                                                 pass
                                     except Exception:
                                         pass
+                            except Exception:
+                                pass
+                            # Restore verse pane to light mode (only inner text area)
+                            try:
+                                if 'verse_text' in globals():
+                                    globals()['verse_text'].config(bg='white', fg='black')
+                                if 'verse_inner' in globals():
+                                    globals()['verse_inner'].config(bg='white')
                             except Exception:
                                 pass
                     except Exception:
@@ -2747,11 +2270,11 @@ def launch_tool_gui():
         # at creation time.
         try:
             try:
-                user_tree = _recreate_tree(user_tree, use_pane_style=False)
+                schema1_tree = _recreate_tree(schema1_tree, use_pane_style=False)
             except Exception:
                 pass
             try:
-                dwh_tree = _recreate_tree(dwh_tree, use_pane_style=False)
+                schema2_tree = _recreate_tree(schema2_tree, use_pane_style=False)
             except Exception:
                 pass
         except Exception:
@@ -2762,13 +2285,13 @@ def launch_tool_gui():
             try:
                 umbg = getattr(root, '_pane_orig', {}).get('user_master_bg', None)
                 if umbg is not None:
-                    user_tree.master.config(bg=umbg)
+                    schema1_tree.master.config(bg=umbg)
             except Exception:
                 pass
             try:
                 dmbg = getattr(root, '_pane_orig', {}).get('dwh_master_bg', None)
                 if dmbg is not None:
-                    dwh_tree.master.config(bg=dmbg)
+                    schema2_tree.master.config(bg=dmbg)
             except Exception:
                 pass
         except Exception:
@@ -2784,26 +2307,26 @@ def launch_tool_gui():
             bg = ot.get('fieldbackground') or ot.get('background') or 'white'
             fg = ot.get('foreground') or 'black'
             try:
-                user_tree.tag_configure('row', background=bg, foreground=fg)
+                schema1_tree.tag_configure('row', background=bg, foreground=fg)
             except Exception:
                 pass
             try:
-                for it in list(user_tree.get_children()):
+                for it in list(schema1_tree.get_children()):
                     try:
-                        user_tree.item(it, tags=('row',))
+                        schema1_tree.item(it, tags=('row',))
                     except Exception:
                         pass
             except Exception:
                 pass
 
             try:
-                dwh_tree.tag_configure('row', background=bg, foreground=fg)
+                schema2_tree.tag_configure('row', background=bg, foreground=fg)
             except Exception:
                 pass
             try:
-                for it in list(dwh_tree.get_children()):
+                for it in list(schema2_tree.get_children()):
                     try:
-                        dwh_tree.item(it, tags=('row',))
+                        schema2_tree.item(it, tags=('row',))
                     except Exception:
                         pass
             except Exception:
@@ -2836,13 +2359,13 @@ def launch_tool_gui():
         try:
             dbg = base_path / 'theme_debug.log'
             with open(dbg, 'a', encoding='utf-8') as df:
-                df.write(f"SET LIGHT: user_tree.style={getattr(user_tree, 'cget', lambda k: None)('style')} bg={getattr(user_tree, 'cget', lambda k: None)('background')} fg={getattr(user_tree, 'cget', lambda k: None)('foreground')}\n")
+                df.write(f"SET LIGHT: schema1_tree.style={getattr(schema1_tree, 'cget', lambda k: None)('style')} bg={getattr(schema1_tree, 'cget', lambda k: None)('background')} fg={getattr(schema1_tree, 'cget', lambda k: None)('foreground')}\n")
                 try:
-                    its = list(user_tree.get_children())
-                    df.write(f"SET LIGHT: user_tree items={len(its)} sample_tags={[user_tree.item(its[0]).get('tags') if its else None]}\n")
+                    its = list(schema1_tree.get_children())
+                    df.write(f"SET LIGHT: schema1_tree items={len(its)} sample_tags={[schema1_tree.item(its[0]).get('tags') if its else None]}\n")
                 except Exception:
                     pass
-                df.write(f"SET LIGHT: dwh_tree.style={getattr(dwh_tree, 'cget', lambda k: None)('style')} bg={getattr(dwh_tree, 'cget', lambda k: None)('background')} fg={getattr(dwh_tree, 'cget', lambda k: None)('foreground')}\n")
+                df.write(f"SET LIGHT: schema2_tree.style={getattr(schema2_tree, 'cget', lambda k: None)('style')} bg={getattr(schema2_tree, 'cget', lambda k: None)('background')} fg={getattr(schema2_tree, 'cget', lambda k: None)('foreground')}\n")
         except Exception:
             pass
 
@@ -2919,21 +2442,21 @@ def launch_tool_gui():
         try:
             s = []
             try:
-                s.append(f"user_tree {_tree_info(user_tree)}")
-                items = list(user_tree.get_children())
-                s.append(f"user_tree.items={len(items)}")
+                s.append(f"schema1_tree {_tree_info(schema1_tree)}")
+                items = list(schema1_tree.get_children())
+                s.append(f"schema1_tree.items={len(items)}")
                 if items:
-                    s.append(f"sample_item_tags={user_tree.item(items[0]).get('tags')}")
+                    s.append(f"sample_item_tags={schema1_tree.item(items[0]).get('tags')}")
             except Exception as e:
-                s.append(f"user_tree error: {e}")
+                s.append(f"schema1_tree error: {e}")
             try:
-                s.append(f"dwh_tree {_tree_info(dwh_tree)}")
-                items2 = list(dwh_tree.get_children())
-                s.append(f"dwh_tree.items={len(items2)}")
+                s.append(f"schema2_tree {_tree_info(schema2_tree)}")
+                items2 = list(schema2_tree.get_children())
+                s.append(f"schema2_tree.items={len(items2)}")
                 if items2:
-                    s.append(f"sample_item_tags2={dwh_tree.item(items2[0]).get('tags')}")
+                    s.append(f"sample_item_tags2={schema2_tree.item(items2[0]).get('tags')}")
             except Exception as e:
-                s.append(f"dwh_tree error: {e}")
+                s.append(f"schema2_tree error: {e}")
             try:
                 style = ttk.Style()
                 s.append(f"Pane.Treeview lookup background={style.lookup('Pane.Treeview','background')} fieldbackground={style.lookup('Pane.Treeview','fieldbackground')} foreground={style.lookup('Pane.Treeview','foreground')}")
@@ -2999,37 +2522,55 @@ def launch_tool_gui():
             mb.pack(side='left', padx=(6, 2))
             return mb, m
 
-        # Build View and Help menus using existing menu definitions
-        # View: copy items from view_menu
+        # Build File, View and Help menus
+        # File: M.View Manager
+        def _launch_mv_manager():
+            try:
+                from tools.mv_refresh_gui import run_mv_refresh_gui
+                run_mv_refresh_gui(parent)
+            except Exception as e:
+                try:
+                    from tkinter import messagebox
+                    messagebox.showerror("Error", f"Failed to launch M.View Manager: {e}")
+                except Exception:
+                    pass
+        
+        file_items = [
+            ('command', 'M.View Manager', _launch_mv_manager)
+        ]
+        
+        # View: Dark Mode toggle
         view_items = [
             ('check', 'Dark Mode', (_toggle_dark, dark_mode_var))
         ]
-        # Help: use existing functions
+        # Help: About and Updates
         help_items = [
             ('command', 'About', show_about_popup),
             ('command', 'Check for Updates', lambda: webbrowser.open("https://github.com/hoonywise/HoonyTools/releases"))
         ]
 
-        # Create menubuttons
+        # Create menubuttons (File first, then View, then Help)
+        mb_file, m_file = _mb('File', file_items)
         mb_view, m_view = _mb('View', view_items)
         mb_help, m_help = _mb('Help', help_items)
 
-        return f, (mb_view, m_view), (mb_help, m_help)
+        return f, (mb_file, m_file), (mb_view, m_view), (mb_help, m_help)
 
     # Create the custom in-window menu bar and hide the native one
     try:
         # Create custom bar and then unset native menubar so it doesn't show
-        custom_menu_frame, custom_view, custom_help = _create_custom_menu_bar(root)
+        custom_menu_frame, custom_file, custom_view, custom_help = _create_custom_menu_bar(root)
         # Expose references globally so nested theme functions can style them
         try:
             globals()['custom_menu_frame'] = custom_menu_frame
+            globals()['custom_file'] = custom_file
             globals()['custom_view'] = custom_view
             globals()['custom_help'] = custom_help
         except Exception:
             pass
         # Pack the custom menu before the verse row so it appears at the top
         try:
-            custom_menu_frame.pack(fill='x', side='top', before=verse_frame)
+            custom_menu_frame.pack(fill='x', side='top', before=globals().get('verse_outer_frame'))
         except Exception:
             try:
                 custom_menu_frame.pack(fill='x', side='top')
@@ -3043,35 +2584,6 @@ def launch_tool_gui():
         # Fallback: keep the native menu if anything fails
         try:
             root.config(menu=menu_bar)
-        except Exception:
-            pass
-
-    # Best-effort: style the combobox popup Listbox used by some backends
-    def _style_combobox_popup(tv, dark):
-        """Try to find the popup Listbox/Toplevel for a ttk.Combobox and
-        configure its background/foreground. This is backend-dependent and
-        best-effort — it attempts common window naming/conventions.
-        """
-        try:
-            # The popup is often a Toplevel child of the root with a widget
-            # name like 'tk_popup' or a Listbox child. We search recently
-            # created toplevels and look for Listbox children.
-            for w in root.winfo_children():
-                try:
-                    # Skip regular frames
-                    if isinstance(w, tk.Toplevel):
-                        for ch in w.winfo_children():
-                            try:
-                                # If there's a Listbox inside, style it
-                                if isinstance(ch, tk.Listbox):
-                                    if dark:
-                                        ch.config(bg='#000000', fg='#ffffff', selectbackground='#444444')
-                                    else:
-                                        ch.config(bg='white', fg='black', selectbackground='#2a6bd6')
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
         except Exception:
             pass
 
@@ -3093,22 +2605,6 @@ def launch_tool_gui():
         pass
 
     root.mainloop()
-
-TOOLS = {
-    "☑ Materialized View Manager": None,  # placeholder, will be wired if available
-    
-    # SQL View Loader, SQL MV Loader, and Designate PK moved to left pane buttons
-    # Object Dropper removed - functionality now integrated into Drop buttons in left pane
-}
-
-# Wire the MV refresh tool if present (keep the tool list construction separate
-# from runtime imports to avoid syntax issues inside the dict literal)
-try:
-    from tools.mv_refresh_gui import run_mv_refresh_gui
-    TOOLS["☑ Materialized View Manager"] = run_mv_refresh_gui
-except Exception:
-    # leave the placeholder if import fails
-    pass
 
 if __name__ == "__main__":
     try:

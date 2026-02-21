@@ -3,7 +3,6 @@ from tkinter import messagebox, scrolledtext
 import logging
 from libs.oracle_db_connector import get_db_connection
 from libs import session
-from libs import dwh_session
 import ctypes
 from libs.paths import ASSETS_PATH
 
@@ -20,6 +19,23 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
         parent = on_finish
         on_finish = None
     # use_dwh parameter determines whether to use DWH (shared) credentials
+    
+    # =========================================================================
+    # Get credentials FIRST, before showing the tool GUI
+    # =========================================================================
+    schema_key = 'schema2' if use_dwh else 'schema1'
+    conn = get_db_connection(schema=schema_key, root=parent)
+    if not conn:
+        # User cancelled or connection failed - don't show the GUI
+        # Don't call on_finish here - it would trigger a refresh which prompts again
+        return
+    
+    # Register connection for cleanup
+    try:
+        session.register_connection(parent if parent else _tk_default_root, conn, schema_key)
+    except Exception:
+        logger.debug('Failed to register connection', exc_info=True)
+    
     # Theme support for pane-only dark mode (polling fallback)
     try:
         import tkinter.ttk as _ttk
@@ -95,7 +111,6 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
     def on_submit():
         view_name = view_name_entry.get().strip()
         sql_query = sql_text.get("1.0", tk.END).strip()
-        # use_dwh is now a parameter passed to run_sql_view_loader
 
         if not view_name:
             _safe_messagebox('showerror', "Missing View Name", "❌ Please enter a view name.", dlg=builder_window)
@@ -113,18 +128,7 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
                 pass
             return
 
-        # Choose credentials source
-        conn = get_db_connection(force_shared=True) if use_dwh else get_db_connection()
-        if not conn:
-            return
-        if use_dwh:
-            # register against the global default root so cleanup can clear in-memory creds
-            try:
-                dwh_session.register_connection(_tk_default_root, conn)
-            except Exception:
-                # best-effort; don't block view creation on registration failure
-                logger.debug('Failed to register dwh connection', exc_info=True)
-
+        # Use the connection established at startup
         cursor = None
         try:
             cursor = conn.cursor()
@@ -160,16 +164,6 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
                     cursor.close()
             except Exception as e:
                 logger.warning(f"⚠️ Failed to close cursor: {e}")
-
-            try:
-                if conn:
-                    conn.close()
-                    try:
-                        dwh_session.cleanup(_tk_default_root)
-                    except Exception:
-                        logger.debug('DWH cleanup failed', exc_info=True)
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to close connection: {e}")
 
     def on_cancel():
         builder_window.destroy()

@@ -9,7 +9,7 @@ from tkinter import Toplevel, Listbox, Scrollbar, Button, Label, Entry, StringVa
 from tkinter.constants import MULTIPLE, END, LEFT, RIGHT, Y, BOTH, EXTENDED
 
 from libs.oracle_db_connector import get_db_connection
-from libs import dwh_session
+from libs import session
 
 logger = logging.getLogger(__name__)
 
@@ -155,17 +155,18 @@ def main(parent=None, schema=None, object_name=None, object_type=None, on_finish
 
     # Determine connection type based on schema
     is_dwh = schema.upper() == 'DWH'
-    conn = get_db_connection(force_shared=is_dwh, root=parent)
+    schema_key = 'schema2' if is_dwh else 'schema1'
+    conn = get_db_connection(schema=schema_key, root=parent)
     if not conn:
         logger.error('Failed to get DB connection for index tool')
         return
 
-    # Register DWH connection for cleanup
+    # Register connection for cleanup
     try:
-        if is_dwh and parent:
-            dwh_session.register_connection(parent, conn)
+        if parent:
+            session.register_connection(parent, conn, schema_key)
     except Exception:
-        logger.debug('Failed to register dwh connection', exc_info=True)
+        logger.debug('Failed to register connection', exc_info=True)
 
     owner = schema.upper()
 
@@ -631,12 +632,12 @@ def main(parent=None, schema=None, object_name=None, object_type=None, on_finish
         except tk.TclError:
             logger.info('Index manager mainloop terminated unexpectedly')
 
-    # Cleanup DWH session
+    # Cleanup session connections
     try:
         target = parent if parent else win
-        dwh_session.cleanup(target)
+        session.close_connections(target)
     except Exception:
-        logger.debug('DWH cleanup failed', exc_info=True)
+        logger.debug('Session cleanup failed', exc_info=True)
 
     # Call on_finish callback when window is closed
     if on_finish:

@@ -5,7 +5,7 @@ try:
 except Exception:
     ttk = None
 from libs.oracle_db_connector import get_db_connection
-from libs import dwh_session
+from libs import session
 import ctypes
 from libs.paths import ASSETS_PATH
 import re
@@ -343,15 +343,15 @@ def run_mv_refresh_gui(on_finish=None):
         # Prompt for DWH login only when user asks to refresh DWH list
         dconn = getattr(root, '_dwh_conn', None)
         if not dconn:
-            dconn = get_db_connection(force_shared=True, root=root)
+            dconn = get_db_connection(schema='schema2', root=root)
             if not dconn:
                 _safe_messagebox('showwarning', "DWH Login", "DWH login cancelled or failed.", dlg=root)
                 return
             setattr(root, '_dwh_conn', dconn)
             try:
-                dwh_session.register_connection(root, dconn)
+                session.register_connection(root, dconn, 'schema2')
             except Exception:
-                logger.debug('Failed to register dwh connection', exc_info=True)
+                logger.debug('Failed to register connection', exc_info=True)
             try:
                 dwh_status_label.config(text=f"(connected as {dconn.username})" if hasattr(dconn, 'username') else '(connected)')
             except Exception:
@@ -559,15 +559,15 @@ def run_mv_refresh_gui(on_finish=None):
                 # ensure we have a DWH connection
                 dconn = getattr(root, '_dwh_conn', None)
                 if not dconn:
-                    dconn = get_db_connection(force_shared=True, root=root)
+                    dconn = get_db_connection(schema='schema2', root=root)
                     if not dconn:
                         _safe_messagebox('showwarning', "DWH Login", "DWH login cancelled or failed.", dlg=root)
                         return
                     setattr(root, '_dwh_conn', dconn)
                     try:
-                        dwh_session.register_connection(root, dconn)
+                        session.register_connection(root, dconn, 'schema2')
                     except Exception:
-                        logger.debug('Failed to register dwh connection', exc_info=True)
+                        logger.debug('Failed to register connection', exc_info=True)
                     try:
                         dwh_status_label.config(text=f"(connected as {dconn.username})" if hasattr(dconn, 'username') else '(connected)')
                     except Exception:
@@ -605,15 +605,15 @@ def run_mv_refresh_gui(on_finish=None):
             # ensure DWH conn
             dconn = getattr(root, '_dwh_conn', None)
             if not dconn:
-                dconn = get_db_connection(force_shared=True, root=root)
+                dconn = get_db_connection(schema='schema2', root=root)
                 if not dconn:
                     _safe_messagebox('showwarning', "DWH Login", "DWH login cancelled or failed.", dlg=root)
                     return
                 setattr(root, '_dwh_conn', dconn)
                 try:
-                    dwh_session.register_connection(root, dconn)
+                    session.register_connection(root, dconn, 'schema2')
                 except Exception:
-                    logger.debug('Failed to register dwh connection', exc_info=True)
+                    logger.debug('Failed to register connection', exc_info=True)
                 try:
                     dwh_status_label.config(text=f"(connected as {dconn.username})" if hasattr(dconn, 'username') else '(connected)')
                 except Exception:
@@ -907,15 +907,11 @@ def run_mv_refresh_gui(on_finish=None):
         except Exception:
             pass
 
-        # Central DWH cleanup: close dwh connection and clear in-memory creds
+        # Session cleanup: close connections and clear credentials
         try:
-            from libs.dwh_session import cleanup as dwh_cleanup
-            try:
-                dwh_cleanup(root)
-            except Exception:
-                logger.exception("DWH cleanup failed")
+            session.close_connections(root)
         except Exception:
-            logger.debug("Could not import dwh_session cleanup", exc_info=True)
+            logger.debug("Session cleanup failed", exc_info=True)
 
         # Release modal grab if we set it
         try:
