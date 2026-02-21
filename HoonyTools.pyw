@@ -559,9 +559,124 @@ def launch_tool_gui():
         pass
     root.title("HoonyTools Launcher")
 
-    # === Bible Verse Row (centered across the entire window) ===
-    verse_frame = tk.Frame(root)
-    verse_frame.pack(fill="x", padx=10, pady=(0, 8))
+    # === Word of God - Bible Verse Row ===
+    verse_outer_frame = tk.Frame(root)
+    verse_outer_frame.pack(fill="x", padx=8, pady=(12, 12))
+    # Store reference for menu bar pack ordering
+    globals()['verse_outer_frame'] = verse_outer_frame
+
+    verse_labelframe = tk.LabelFrame(verse_outer_frame, text="Word of God", padx=7, pady=7)
+    # Match horizontal alignment: align with left edge of object list pane and right edge of log pane
+    # content_frame padx=10, left_pane padx=(6,10) -> left edge at 16px from window
+    # We need padx=(6, 0) but verse_outer already has padx=10, so total left = 16px
+    # Right side: log_text has padx=10 inside right_pane, so we need no extra right padding
+    verse_labelframe.pack(fill="x", padx=(21.5, 12))
+
+    # Top bar with Previous/Next buttons (like object pane)
+    verse_btn_bar = tk.Frame(verse_labelframe)
+    verse_btn_bar.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
+    
+    verse_prev_btn = tk.Button(verse_btn_bar, text="Previous", width=10)
+    verse_prev_btn.pack(side="left", padx=(0, 8))
+    verse_next_btn = tk.Button(verse_btn_bar, text="Next", width=10)
+    verse_next_btn.pack(side="left", padx=(0, 8))
+
+    # Verse history for Previous/Next navigation
+    verse_history = []  # List of shown verses
+    verse_history_index = [-1]  # Current position in history (use list for mutability in closures)
+
+    def _display_verse(verse_text_content):
+        """Display a verse in the text widget."""
+        try:
+            verse_text.config(state="normal")
+            verse_text.delete("1.0", tk.END)
+            verse_text.insert("1.0", verse_text_content)
+            verse_text.config(state="disabled")
+        except Exception:
+            pass
+
+    def _show_next_verse():
+        """Show next verse - either from history or get a new random one."""
+        if verse_history_index[0] < len(verse_history) - 1:
+            # Move forward in history
+            verse_history_index[0] += 1
+            _display_verse(verse_history[verse_history_index[0]])
+        else:
+            # Get a new random verse and add to history
+            new_verse = get_random_verse()
+            verse_history.append(new_verse)
+            verse_history_index[0] = len(verse_history) - 1
+            _display_verse(new_verse)
+
+    def _show_prev_verse():
+        """Show previous verse from history."""
+        if verse_history_index[0] > 0:
+            verse_history_index[0] -= 1
+            _display_verse(verse_history[verse_history_index[0]])
+
+    verse_prev_btn.config(command=_show_prev_verse)
+    verse_next_btn.config(command=_show_next_verse)
+
+    # Create a frame to hold the Text widget and scrollbar
+    # Set minimum height to accommodate scrollbar (about 50px)
+    verse_inner = tk.Frame(verse_labelframe, bg="white", height=50)
+    verse_inner.pack(fill="x", expand=True)
+    verse_inner.pack_propagate(False)  # Prevent shrinking below minimum height
+
+    # Scrollbar (initially hidden, shown on hover)
+    verse_scrollbar = tk.Scrollbar(verse_inner, orient="vertical")
+
+    # Fixed-height Text widget - black text for readability
+    # White background like the treeview areas in object list panes
+    verse_text = tk.Text(
+        verse_inner,
+        font=("Arial", 9, "italic"),
+        fg="black",
+        bg="white",
+        height=3,
+        wrap="word",
+        relief="flat",
+        state="disabled",
+        cursor="arrow",
+        highlightthickness=0,
+        borderwidth=0,
+        yscrollcommand=verse_scrollbar.set
+    )
+    verse_text.pack(side="left", fill="both", expand=True)
+    verse_scrollbar.config(command=verse_text.yview)
+
+    # Show/hide scrollbar on hover
+    def _show_verse_scrollbar(e=None):
+        try:
+            verse_scrollbar.pack(side="right", fill="y")
+        except Exception:
+            pass
+
+    def _hide_verse_scrollbar(e=None):
+        try:
+            verse_scrollbar.pack_forget()
+        except Exception:
+            pass
+
+    verse_inner.bind('<Enter>', _show_verse_scrollbar)
+    verse_inner.bind('<Leave>', _hide_verse_scrollbar)
+    verse_text.bind('<Enter>', _show_verse_scrollbar)
+    verse_text.bind('<Leave>', _hide_verse_scrollbar)
+
+    # Register for dark mode styling (only the inner text area, not the frame/border)
+    globals()['verse_labelframe'] = verse_labelframe
+    globals()['verse_text'] = verse_text
+    globals()['verse_scrollbar'] = verse_scrollbar
+    globals()['verse_inner'] = verse_inner
+
+    # Auto-rotate verse every ~78 seconds (adds to history like clicking Next)
+    def rotate_verse():
+        _show_next_verse()
+        root.after(77777, rotate_verse)
+
+    # Show first verse immediately and start auto-rotation timer
+    _show_next_verse()
+    root.after(77777, rotate_verse)
 
     # === Main content: two-column layout (left object lists, right main UI) ===
     content_frame = tk.Frame(root)
@@ -578,27 +693,6 @@ def launch_tool_gui():
     # Right pane for existing UI (tools, log, status)
     right_pane = tk.Frame(content_frame)
     right_pane.pack(side="left", fill="both", expand=True)
-
-    verse_label = tk.Label(
-        verse_frame,
-        text=get_random_verse(),
-        font=("Arial", 9, "italic"),
-        fg=getattr(root, "_dark_theme", {}).get("muted", "#444444"),
-        anchor="center",
-        justify="center",
-        wraplength=1000
-    )
-    verse_label.pack(fill="x")
-
-    # ðŸ” Optionally refresh verse every 60 seconds
-    def rotate_verse():
-        verse_label.config(text=get_random_verse())
-        root.after(77777, rotate_verse)  
-
-    rotate_verse()    
-        
-    # Horizontal divider below verse
-    tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10, pady=(5, 10))    
 
     # âœ… Set GUI icon (.ico for taskbar)
     icon_ico_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
@@ -1958,6 +2052,16 @@ def launch_tool_gui():
                                         pass
                             except Exception:
                                 pass
+                            # Style verse pane for dark mode (only inner text area, not frame/border)
+                            try:
+                                if 'verse_text' in globals():
+                                    globals()['verse_text'].config(bg='#000000', fg='#ffffff')
+                                if 'verse_inner' in globals():
+                                    globals()['verse_inner'].config(bg='#000000')
+                                if 'verse_scrollbar' in globals():
+                                    globals()['verse_scrollbar'].config(bg='#333333', troughcolor='#000000')
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                 except Exception:
@@ -2130,6 +2234,14 @@ def launch_tool_gui():
                                                 pass
                                     except Exception:
                                         pass
+                            except Exception:
+                                pass
+                            # Restore verse pane to light mode (only inner text area)
+                            try:
+                                if 'verse_text' in globals():
+                                    globals()['verse_text'].config(bg='white', fg='black')
+                                if 'verse_inner' in globals():
+                                    globals()['verse_inner'].config(bg='white')
                             except Exception:
                                 pass
                     except Exception:
@@ -2458,7 +2570,7 @@ def launch_tool_gui():
             pass
         # Pack the custom menu before the verse row so it appears at the top
         try:
-            custom_menu_frame.pack(fill='x', side='top', before=verse_frame)
+            custom_menu_frame.pack(fill='x', side='top', before=globals().get('verse_outer_frame'))
         except Exception:
             try:
                 custom_menu_frame.pack(fill='x', side='top')
