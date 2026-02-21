@@ -1403,73 +1403,61 @@ In `libs/settings.py`, the `set_credentials()` calls were moved **outside** the 
 
 ---
 
-### 🎨 Entry #15: Dark Mode Pattern for Tkinter Dialogs
+### 🎨 Entry #15: Dark Mode Pattern for Tkinter Dialogs (Pane-Only)
 
 #### Summary
 
-When applying dark mode to Tkinter dialogs (Toplevel windows with Labels, Frames, ScrolledText, Buttons, Checkboxes), use the centralized helpers in `libs/gui_utils.py`.
+Dark mode in HoonyTools follows a **pane-only** approach: only ScrolledText widgets (text content panes) get dark background styling. Dialog chrome (window background, labels, frames, buttons, checkboxes) stays in the system default grey.
+
+This matches how the main GUI's object panes work - the treeviews are dark, but the surrounding UI stays standard.
 
 #### Detection
 
+Use the centralized helper in `libs/gui_utils.py`:
+
 ```python
-from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, DARK_BTN_BG, DARK_BTN_ACTIVE_BG, DARK_INSERT_BG
+from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, DARK_INSERT_BG
 
 _is_dark = is_dark_mode_active()
 ```
 
 The detection checks ttk Style lookup for `Pane.Treeview` or `Treeview` background. Black background (#000000, #000, 'black') indicates dark mode.
 
-#### Pattern for Dialog Dark Mode
+#### Pattern for Dialog Dark Mode (Pane-Only)
 
 1. **Detect once** at dialog creation and store in `_is_dark` flag
-2. **Track widgets** in lists: `_dlg_labels`, `_dlg_frames`, `_dlg_btns`
-3. **Apply to dialog window**: `if _is_dark: dlg.config(bg=DARK_BG)`
-4. **Apply to ScrolledText immediately** after creation:
+2. **Apply ONLY to ScrolledText widgets** immediately after creation:
    ```python
    if _is_dark:
-       text_widget.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
+       deps_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
+       ddl_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
    ```
-5. **Apply to checkboxes** with selectcolor:
-   ```python
-   if _is_dark:
-       ack_cb.config(bg=DARK_BG, fg=DARK_FG, activebackground=DARK_BG, 
-                     activeforeground=DARK_FG, selectcolor=DARK_BG)
-   ```
-6. **Batch apply at end** before `dlg.update_idletasks()`:
-   ```python
-   if _is_dark:
-       for btn in _dlg_btns:
-           btn.config(bg=DARK_BTN_BG, fg=DARK_FG, activebackground=DARK_BTN_ACTIVE_BG, activeforeground=DARK_FG)
-       for lbl in _dlg_labels:
-           lbl.config(bg=DARK_BG, fg=DARK_FG)
-       for frm in _dlg_frames:
-           frm.config(bg=DARK_BG)
-   ```
+3. **Do NOT style**: dialog window, labels, frames, buttons, checkboxes - leave them in default grey
+
+#### What NOT to Do
+
+Do NOT apply dark mode to:
+- `dlg.config(bg=DARK_BG)` — dialog background
+- Label widgets — they stay default
+- Frame widgets — they stay default
+- Button widgets — they stay default
+- Checkbutton widgets — they stay default
 
 #### Color Constants
 
 | Constant | Value | Usage |
 |----------|-------|-------|
-| `DARK_BG` | `#000000` | Background for dialogs, frames, labels |
-| `DARK_FG` | `#ffffff` | Foreground text color |
-| `DARK_BTN_BG` | `#333333` | Button background |
-| `DARK_BTN_ACTIVE_BG` | `#222222` | Button hover/active background |
+| `DARK_BG` | `#000000` | Background for ScrolledText panes only |
+| `DARK_FG` | `#ffffff` | Foreground text color for panes |
 | `DARK_INSERT_BG` | `#ffffff` | Text cursor (insertbackground) |
+| `DARK_BTN_BG` | `#333333` | Reserved for future use |
+| `DARK_BTN_ACTIVE_BG` | `#222222` | Reserved for future use |
 
-#### Special Cases
+#### Future Customization
 
-- **Colored labels** (e.g., status indicators with green/red foreground): Set only `bg=DARK_BG`, preserve the colored `fg`
-- **Fallback import**: Always wrap imports with try/except and provide fallback values:
-  ```python
-  try:
-      from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, ...
-  except Exception:
-      def is_dark_mode_active(): return False
-      DARK_BG = '#000000'
-      # ... other constants
-  ```
+The `libs/gui_utils.py` module is kept for future flexibility. If we later decide to style dialog chrome (e.g., dark grey instead of default grey), the helpers and constants are ready to use.
 
 #### Files Using This Pattern
 
-- `loaders/sql_mv_loader.py` — "Existing MV Log" dialog
-- `tools/mv_refresh_gui.py` — Compact "Existing MV Log" dialog
+- `loaders/sql_mv_loader.py` — "Existing MV Log" dialog (deps_box, ddl_box)
+- `tools/mv_refresh_gui.py` — Compact "Existing MV Log" dialog (deps_box, ddl_box)
