@@ -1461,3 +1461,51 @@ The `libs/gui_utils.py` module is kept for future flexibility. If we later decid
 
 - `loaders/sql_mv_loader.py` — "Existing MV Log" dialog (deps_box, ddl_box)
 - `tools/mv_refresh_gui.py` — Compact "Existing MV Log" dialog (deps_box, ddl_box)
+
+---
+
+### 📋 Entry #16: Cleaner Error Logging (logger.error vs logger.exception)
+
+#### Summary
+
+Use `logger.error()` instead of `logger.exception()` when logging errors that will be displayed in the GUI log pane. This keeps error messages concise and user-friendly.
+
+#### The Problem
+
+`logger.exception()` automatically includes the full Python traceback, which clutters the log pane with verbose technical details that aren't helpful to users:
+
+```
+2026-02-21 03:43:48 - ERROR - ❌ Error creating materialized view: ORA-12006: ...
+Traceback (most recent call last):
+  File "C:\...\sql_mv_loader.py", line 965, in on_submit
+    cursor.execute(ddl)
+  ... (10+ more lines)
+```
+
+#### The Solution
+
+Use `logger.error()` instead - it logs only the error message:
+
+```python
+# Before (verbose traceback in log pane)
+logger.exception("❌ Error creating materialized view: %s", e)
+
+# After (clean single-line error)
+logger.error("❌ Error creating materialized view: %s", e)
+```
+
+Result:
+```
+2026-02-21 03:43:48 - ERROR - ❌ Error creating materialized view: ORA-12006: materialized view or zonemap "DWH"."MV_SETUP_SALES_TEST1" already exists
+```
+
+#### When to Use Each
+
+| Method | Use Case |
+|--------|----------|
+| `logger.error()` | User-facing errors shown in GUI log pane |
+| `logger.exception()` | Debug/development logs where full traceback is needed |
+
+#### Files Updated
+
+- `loaders/sql_mv_loader.py` — Changed 4 occurrences from `logger.exception()` to `logger.error()`
