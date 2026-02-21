@@ -756,3 +756,101 @@ Summary: This major release completely restructures HoonyTools' authentication a
 - Replace `session.dwh_credentials` with `session.get_credentials('schema2')`.
 - Replace `dwh_session.register_connection()` with `session.register_connection(root, conn, 'schema2')`.
 - Replace `dwh_session.cleanup()` with `session.close_connections(root, 'schema2')`.
+
+---
+
+### ⚙️ Entry #16: Settings Menu GUI Implementation (2026-02-20)
+
+This session focused on creating a comprehensive Settings GUI (`libs/settings.py`) with a category-based navigation pattern similar to IDE preferences dialogs.
+
+#### Architecture Decisions
+
+1. **Category-Content Pattern**: Left pane shows categories (Treeview), right pane dynamically loads content based on selection. Content builders are registered in a `CATEGORIES` dictionary, making it easy to add new categories later.
+
+2. **`entry_refs` Dictionary**: Central storage for widget references, allowing cross-function access to entry fields, theme callbacks, and parent window references. System keys are prefixed with `_` (e.g., `_parent`, `_status_label`, `_win`).
+
+3. **Preserved References on Category Switch**: When switching categories, `entry_refs.clear()` is called to reset widget references, but system references (`_parent`, `_status_label`, `_win`) are preserved to maintain functionality.
+
+#### Key Challenges & Solutions
+
+1. **Login Popup Still Appearing After Settings Save**
+   - **Problem**: User saves credentials in Settings, but tools still showed login popup.
+   - **Root Cause**: Settings saved to `config.ini` but didn't update `session.schemas` memory. `get_db_connection()` checks memory first, finds `None`, shows popup.
+   - **Solution**: After saving to config.ini, call `session.set_credentials()` to update memory, or `session.clear_credentials()` if fields are blanked.
+
+2. **Status Message Not Appearing**
+   - **Problem**: "Settings saved" message wasn't visible after clicking Apply.
+   - **Root Cause**: `entry_refs.clear()` in `_on_category_select()` was removing `_status_label` reference.
+   - **Solution**: Preserve system references when clearing entry_refs:
+   ```python
+   preserved = {
+       '_parent': entry_refs.get('_parent'),
+       '_status_label': entry_refs.get('_status_label'),
+       '_win': entry_refs.get('_win'),
+   }
+   entry_refs.clear()
+   entry_refs.update(preserved)
+   ```
+
+3. **Dark Mode Toggle Not Working in Appearance Panel**
+   - **Problem**: Checking/unchecking Dark Mode checkbox had no effect.
+   - **Root Cause**: `_on_dark_mode_toggle()` used local `parent` variable captured at function definition, but after category switch the reference was stale.
+   - **Solution**: Always retrieve parent from `entry_refs.get('_parent')` inside the callback function.
+
+4. **Dark Mode Syncing Between Settings and View Menu**
+   - **Challenge**: Dark Mode checkbox in Settings must sync bidirectionally with View → Dark Mode menu.
+   - **Solution**: 
+     - Exposed `root._dark_mode_var` and `root._toggle_dark` on the main window
+     - Settings reads initial state from `parent._dark_mode_var.get()`
+     - On toggle, Settings calls `parent._toggle_dark()` which updates the menu and triggers theme callbacks
+     - Theme callbacks notify Settings dialog to update its own appearance
+
+5. **Connection Fields Dark Mode — Too Much Black**
+   - **Problem**: Initial implementation made entire Connections pane black (labels, frames, checkbuttons).
+   - **Solution**: Simplified to only style Entry widgets (Username, Password, DSN fields), leaving labels and frames with default grey appearance.
+
+#### Implementation Details
+
+**Status Bar Pattern**:
+```python
+# Pack status bar FIRST with side='bottom' so it stays at bottom
+status_frame = tk.Frame(win, bg='SystemButtonFace')
+status_frame.pack(side='bottom', fill='x')
+
+# Then pack main content to fill remaining space
+main_paned.pack(fill='both', expand=True)
+```
+
+**Auto-Hide Status Message**:
+```python
+def _show_status_message(message, error=False):
+    status_label.config(text=message, fg='#005a9e')  # Bold blue
+    win.after(3000, lambda: status_label.config(text=''))  # Clear after 3s
+```
+
+**Theme Callback Chain**:
+1. User toggles Dark Mode in Settings
+2. `_on_dark_mode_toggle()` calls `parent._toggle_dark()`
+3. `_toggle_dark()` applies theme and notifies all registered callbacks
+4. Settings' `_apply_theme()` callback receives notification
+5. `_apply_theme()` updates category pane AND calls `_conn_apply_theme()` if Connections panel exists
+
+#### Files Created/Modified
+
+| File | Changes |
+|------|---------|
+| `libs/settings.py` | **NEW** — Complete Settings GUI (~800 lines) |
+| `HoonyTools.pyw` | Added `_launch_settings()`, `_exit_app()`, exposed theme vars, keyboard shortcut |
+
+#### Testing Checklist
+
+1. **Open Settings**: File → Settings or `Ctrl+Alt+S` — dialog should open centered
+2. **Category Navigation**: Click Connections, then Appearance — content should swap
+3. **Save Credentials**: Enter Schema 1 credentials, click Apply — "Settings saved" message should appear
+4. **Credentials Persist**: Close Settings, use a tool — should NOT show login popup
+5. **Dark Mode Toggle**: Check Dark Mode in Appearance — main GUI should update immediately
+6. **Bidirectional Sync**: Toggle View → Dark Mode — Settings checkbox should reflect change when reopened
+7. **Connection Fields Theme**: In dark mode, entry fields should be black with white text
+8. **Validation**: Enter partial credentials (e.g., only username) — should show validation error
+9. **Cancel Discards**: Make changes, click Cancel — changes should not be saved
+10. **Exit Menu**: File → Exit — application should close cleanly
