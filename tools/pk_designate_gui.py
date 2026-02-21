@@ -12,7 +12,7 @@ from tkinter.constants import MULTIPLE, END, LEFT, RIGHT, Y, BOTH
 from libs.paths import PROJECT_PATH as base_path
 
 from libs.oracle_db_connector import get_db_connection
-from libs import dwh_session
+from libs import session
 
 logger = logging.getLogger(__name__)
 
@@ -190,17 +190,17 @@ def main(parent=None, schema_choice=None):
             return
 
     # Acquire DB connection
-    conn = get_db_connection(force_shared=(schema_choice == 'dwh'), root=parent)
+    schema = 'schema2' if schema_choice == 'dwh' else 'schema1'
+    conn = get_db_connection(schema=schema, root=parent)
     if not conn:
         logger.error('Failed to get DB connection')
         return
     try:
         # register connection on parent if provided so cleanup can clear it
-        if schema_choice == 'dwh':
-            if parent:
-                dwh_session.register_connection(parent, conn)
+        if parent:
+            session.register_connection(parent, conn, schema)
     except Exception:
-        logger.debug('Failed to register dwh connection', exc_info=True)
+        logger.debug('Failed to register connection', exc_info=True)
 
     owner = 'DWH' if schema_choice == 'dwh' else conn.username.upper()
 
@@ -854,12 +854,12 @@ def main(parent=None, schema_choice=None):
         except tk.TclError:
             logger.info('PK mainloop terminated unexpectedly')
 
-    # Ensure DWH session cleanup for this window/parent
+    # Ensure session cleanup for this window/parent
     try:
         target = parent if parent else win
-        dwh_session.cleanup(target)
+        session.close_connections(target)
     except Exception:
-        logger.debug('DWH cleanup failed', exc_info=True)
+        logger.debug('Session cleanup failed', exc_info=True)
 
 if __name__ == '__main__':
     main()

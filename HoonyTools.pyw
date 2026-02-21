@@ -1,4 +1,4 @@
-import tkinter as tk
+﻿import tkinter as tk
 from tkinter import scrolledtext, ttk
 import tkinter.font as tkfont
 import logging
@@ -55,19 +55,15 @@ def apply_dark_theme(root, accent="white"):
         except Exception:
             pass
 
-    # Create the initial combobox so it's present at startup (light mode by default)
+    # Configure ttk styles for dark theme
     try:
-        _recreate_tool_menu(use_pane_style=False)
+        style.configure("Treeview", background=panel, fieldbackground=panel, foreground=fg, rowheight=20)
+        style.map("Treeview", background=[("selected", sel)], foreground=[("selected", "white")])
+        style.configure("TCombobox", fieldbackground=panel, background=panel, foreground=fg)
+        style.configure("TButton", background=panel, foreground=fg)
+        style.map("TButton", background=[("active", border)])
     except Exception:
         pass
-        try:
-            style.configure("Treeview", background=panel, fieldbackground=panel, foreground=fg, rowheight=20)
-            style.map("Treeview", background=[("selected", sel)], foreground=[("selected", "white")])
-            style.configure("TCombobox", fieldbackground=panel, background=panel, foreground=fg)
-            style.configure("TButton", background=panel, foreground=fg)
-            style.map("TButton", background=[("active", border)])
-        except Exception:
-            pass
 
     try:
         root.option_add('*Menu.background', panel)
@@ -234,7 +230,7 @@ else:
         pass
 
 def get_random_verse():
-    return random.choice(BIBLE_VERSES) if BIBLE_VERSES else "📖 Verse not available"
+    return random.choice(BIBLE_VERSES) if BIBLE_VERSES else "ðŸ“– Verse not available"
 
 def validate_required_folders():
     # Startup should be clean; loaders that need folders should create them when executed.
@@ -316,13 +312,13 @@ def center_window(window, width, height):
 
 def abort_process():
     abort_manager.set_abort(True)
-    logger.warning("⛔ Abort requested by user.")
+    logger.warning("â›” Abort requested by user.")
     # Best-effort UI updates and attempt to interrupt blocking DB calls.
     try:
         # Update status light if present
         if 'status_light' in globals() and getattr(status_light, 'winfo_exists', lambda: False)():
             try:
-                status_light.config(text="⏹️ Aborting...")
+                status_light.config(text="â¹ï¸ Aborting...")
             except Exception:
                 pass
 
@@ -345,15 +341,15 @@ def abort_process():
         # unblock DB calls. Close them in a background thread so the main GUI
         # does not freeze if the close operation blocks or is slow.
         try:
-            from libs import dwh_session
+            from libs import session as _sess
             import threading as _thr
-            def _close_dwh():
+            def _close_connections():
                 try:
                     if 'root' in globals():
-                        dwh_session.close_dwh_connection(root)
+                        _sess.close_connections(root)
                 except Exception:
-                    logger.debug('Failed to close DWH connection in background', exc_info=True)
-            _thr.Thread(target=_close_dwh, daemon=True).start()
+                    logger.debug('Failed to close connections in background', exc_info=True)
+            _thr.Thread(target=_close_connections, daemon=True).start()
         except Exception:
             pass
 
@@ -436,7 +432,7 @@ def abort_process():
             def _reenable():
                 try:
                     if 'status_light' in globals() and getattr(status_light, 'winfo_exists', lambda: False)():
-                        status_light.config(text="🟢")
+                        status_light.config(text="ðŸŸ¢")
                 except Exception:
                     pass
                 try:
@@ -475,20 +471,20 @@ def run_selected():
     tool_name = selected_tool.get()
     logger.info(f"Run button pressed for tool: {tool_name}")
     log_text.delete(1.0, tk.END)
-    status_light.config(text="⏳")     
+    status_light.config(text="â³")     
 
     def run_and_update_with_conn(conn):
         try:
-            logger.info(f"🚀 Running: {tool_name}")
+            logger.info(f"ðŸš€ Running: {tool_name}")
             try:
                 TOOLS[tool_name](conn)
             except TypeError:
                 # fallback: call without conn if callable doesn't accept it
                 TOOLS[tool_name]()
         except Exception as e:
-            logger.exception(f"❌ Error running {tool_name}: {e}")
+            logger.exception(f"âŒ Error running {tool_name}: {e}")
         finally:
-            status_light.config(text="🟢")
+            status_light.config(text="ðŸŸ¢")
 
     # If selected tool is missing or None, inform the user
     if tool_name not in TOOLS or TOOLS.get(tool_name) is None:
@@ -497,7 +493,7 @@ def run_selected():
             messagebox.showwarning("Tool Unavailable", f"Selected tool is not available: {tool_name}")
         except Exception:
             logger.warning(f"Selected tool is not available: {tool_name}")
-        status_light.config(text="🟢")
+        status_light.config(text="ðŸŸ¢")
         return
 
     
@@ -508,14 +504,14 @@ def run_selected():
             # Tools that accept an on_finish callback should be called with it so the launcher
             # can update its status light. Treat SQL View and SQL Materialized View loaders
             # the same way.
-            if tool_name in ("☑ SQL View Loader", "☑ SQL Materialized View Loader"):
+            if tool_name in ("â˜‘ SQL View Loader", "â˜‘ SQL Materialized View Loader"):
                 # Pass launcher root as parent so loaders can register theme callbacks
                 try:
-                    TOOLS[tool_name](root, on_finish=lambda: status_light.config(text="🟢"))
+                    TOOLS[tool_name](root, on_finish=lambda: status_light.config(text="ðŸŸ¢"))
                 except TypeError:
                     # fallback for older signatures
                     try:
-                        TOOLS[tool_name](on_finish=lambda: status_light.config(text="🟢"))
+                        TOOLS[tool_name](on_finish=lambda: status_light.config(text="ðŸŸ¢"))
                     except Exception:
                         TOOLS[tool_name]()
             else:
@@ -528,7 +524,7 @@ def run_selected():
                     except TypeError:
                         # Last resort: call without args
                         TOOLS[tool_name]()
-                status_light.config(text="🟢")
+                status_light.config(text="ðŸŸ¢")
         except KeyboardInterrupt:
             # User or system interrupted the tool; attempt graceful cleanup and avoid
             # letting KeyboardInterrupt propagate into Tk's callback machinery.
@@ -537,14 +533,14 @@ def run_selected():
             except Exception:
                 pass
             try:
-                status_light.config(text="🟢")
+                status_light.config(text="ðŸŸ¢")
             except Exception:
                 pass
             return
         except Exception as e:
-            logger.exception(f"❌ Error running {tool_name}: {e}")
+            logger.exception(f"âŒ Error running {tool_name}: {e}")
             try:
-                status_light.config(text="🟢")
+                status_light.config(text="ðŸŸ¢")
             except Exception:
                 pass
 
@@ -599,7 +595,7 @@ def show_splash():
     # === Created by hoonywise ===
     footer_top = tk.Label(
         splash,
-        text="Created by hoonywise · hoonywise@proton.me",
+        text="Created by hoonywise Â· hoonywise@proton.me",
         font=("Arial", 9, "italic"),
         fg="#444444"
     )
@@ -631,14 +627,11 @@ def show_splash():
     splash.mainloop()
 
 def launch_tool_gui():
-    from libs.oracle_db_connector import prompt_credentials
-    from libs import session  # 👈 NEW
-
-
+    from libs import session
     
     global root, selected_tool, log_text, log_stream, status_light, run_btn, tool_menu
 
-    # Create the main Tk root directly and keep it hidden while login dialog appears.
+    # Create the main Tk root
     root = tk.Tk()
     root.withdraw()
     # NOTE: Do not bind WM_DELETE_WINDOW here because safe_exit (defined later)
@@ -651,48 +644,16 @@ def launch_tool_gui():
             icon_ico_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
             root.iconbitmap(default=icon_ico_path)
         except Exception as e:
-            print(f"⚠️ Failed to set taskbar icon: {e}")
+            print(f"âš ï¸ Failed to set taskbar icon: {e}")
 
-    # Keep the main window hidden while the login dialog is shown
-    # This prevents geometry nudging issues on some systems. The main
-    # window will be deiconified and centered after a successful login.
-    root.withdraw()
-
-    # 4️⃣ 🔐 Prompt for login
-    session.stored_credentials = prompt_credentials()
-    # Also populate user_credentials so user-scoped tools don't re-prompt
-    if session.stored_credentials:
-        try:
-            session.user_credentials = session.stored_credentials
-        except Exception:
-            pass
-    # Load saved DWH creds from config.ini (if present) so refresh can use them immediately
+    # Load any saved credentials from config.ini (no mandatory login)
+    # Users will be prompted on-demand when they use tools or refresh
     try:
-        from libs import oracle_db_connector as _ob
-        if _ob.config and _ob.config.has_section("dwh"):
-            sec = _ob.config["dwh"]
-            try:
-                session.dwh_credentials = {"username": sec.get("username"), "password": sec.get("password"), "dsn": sec.get("dsn")}
-            except Exception:
-                pass
+        session.load_saved_credentials()
     except Exception:
         pass
-    if not session.stored_credentials:
-        try:
-            root.destroy()
-        except Exception:
-            pass
-        try:
-            if 'hidden_root' in globals() and getattr(hidden_root, 'winfo_exists', lambda: False)():
-                try:
-                    hidden_root.destroy()
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        return
     
-    # ✅ After login success: show and center the main window
+    # Show the main window
     root.deiconify()
     # Ensure the window is realized, then center it on the primary monitor
     try:
@@ -738,7 +699,7 @@ def launch_tool_gui():
     )
     verse_label.pack(fill="x")
 
-    # 🔁 Optionally refresh verse every 60 seconds
+    # ðŸ” Optionally refresh verse every 60 seconds
     def rotate_verse():
         verse_label.config(text=get_random_verse())
         root.after(77777, rotate_verse)  
@@ -748,11 +709,11 @@ def launch_tool_gui():
     # Horizontal divider below verse
     tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10, pady=(5, 10))    
 
-    # ✅ Set GUI icon (.ico for taskbar)
+    # âœ… Set GUI icon (.ico for taskbar)
     icon_ico_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
     root.iconbitmap(default=icon_ico_path)
 
-    # ✅ Set window icon (.png for title bar)
+    # âœ… Set window icon (.png for title bar)
     icon_path = ASSETS_PATH / "assets" / "hoonywise_300.png"
     icon_img = tk.PhotoImage(file=icon_path)
     root.iconphoto(False, icon_img)
@@ -760,24 +721,14 @@ def launch_tool_gui():
 
     # === Load Logo Assets ===
     assets_path = base_path / "assets"
-    # Initialize Oracle client early and load saved DWH creds into session if present
+    # Initialize Oracle client early (credentials loaded via session.load_saved_credentials())
     try:
-        from libs import oracle_db_connector as _ob, session as _session
-        if _ob.config and _ob.config.has_section("dwh"):
-            sec = _ob.config["dwh"]
-            try:
-                _session.dwh_credentials = {"username": sec.get("username"), "password": sec.get("password"), "dsn": sec.get("dsn")}
-            except Exception:
-                pass
+        import oracledb as _orac
         try:
-            import oracledb as _orac
-            try:
-                _orac.init_oracle_client()
-                logger.info("✅ Oracle client initialized (Thick mode if available)")
-            except Exception:
-                logger.info("ℹ️ Oracle client init skipped or unavailable; proceeding with Thin mode")
+            _orac.init_oracle_client()
+            logger.info("Oracle client initialized (Thick mode if available)")
         except Exception:
-            pass
+            logger.info("Oracle client init skipped or unavailable; proceeding with Thin mode")
     except Exception:
         pass
     
@@ -817,7 +768,7 @@ def launch_tool_gui():
             for c in tv['columns']:
                 base_title = col_titles.get(c, c.title())
                 if c == col:
-                    arrow = ' \u25bc' if reverse else ' \u25b2'  # ▼ or ▲
+                    arrow = ' \u25bc' if reverse else ' \u25b2'  # â–¼ or â–²
                     tv.heading(c, text=base_title + arrow)
                 else:
                     tv.heading(c, text=base_title)
@@ -840,19 +791,38 @@ def launch_tool_gui():
         tv.bind('<Control-A>', select_all)  # Handle caps lock
     
     # --- Helper: create object list frame in left pane
-    def _make_objects_frame(parent, title):
-        frame = tk.LabelFrame(parent, text=title, padx=6, pady=6)
+    def _make_objects_frame(parent, schema_key):
+        """Create an object pane frame for a schema.
+        
+        Args:
+            parent: Parent widget
+            schema_key: 'schema1' or 'schema2' for session integration
+        
+        Returns:
+            Tuple of (frame, treeview, buttons..., schema_label_widget)
+        """
+        from libs import session as _sess
+        
+        frame = tk.LabelFrame(parent, padx=6, pady=6)
         # allow frames to share available vertical space equally
         frame.pack(fill="both", pady=(0, 8), expand=True)
+        
+        # Create custom label with bold schema name and normal "Objects"
+        label_frame = tk.Frame(frame)
+        schema_label = tk.Label(label_frame, text=_sess.get_label(schema_key), font=("Arial", 9, "bold"))
+        schema_label.pack(side="left")
+        objects_label = tk.Label(label_frame, text=" Objects", font=("Arial", 9))
+        objects_label.pack(side="left")
+        frame.configure(labelwidget=label_frame)
+        
+        # Register the label widget with session for dynamic updates
+        _sess.register_label_widget(schema_key, schema_label)
 
-        # Top bar inside the LabelFrame: Refresh button near the left (next to title)
-        # Add left padding so the button is visually separated from the frame border
+        # Top bar: Refresh, Load, Drop buttons
         top_bar = tk.Frame(frame)
         top_bar.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
         refresh_btn = tk.Button(top_bar, text="Refresh", width=10)
         refresh_btn.pack(side="left", padx=(0, 8))
-        index_btn = tk.Button(top_bar, text="Index", width=10)
-        index_btn.pack(side="left", padx=(0, 8))
         load_btn = tk.Button(top_bar, text="Load", width=10)
         load_btn.pack(side="left", padx=(0, 8))
         drop_btn = tk.Button(top_bar, text="Drop", width=10)
@@ -860,7 +830,7 @@ def launch_tool_gui():
         status_lbl = tk.Label(top_bar, text="", font=("Arial", 8), fg=getattr(parent.master, "_dark_theme", {}).get("muted", "#444444"))
         status_lbl.pack(side="left")
 
-        # Second button row: View, M.View, P.Key
+        # Second button row: View, M.View, P.Key, Index
         btn_row2 = tk.Frame(frame)
         btn_row2.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
         view_btn = tk.Button(btn_row2, text="View", width=10)
@@ -869,14 +839,14 @@ def launch_tool_gui():
         mv_btn.pack(side="left", padx=(0, 8))
         pk_btn = tk.Button(btn_row2, text="P.Key", width=10)
         pk_btn.pack(side="left", padx=(0, 8))
+        index_btn = tk.Button(btn_row2, text="Index", width=10)
+        index_btn.pack(side="left", padx=(0, 8))
 
-        # Content area (treeview + scrollbar) sits below the top bar and expands
+        # Content area (treeview + scrollbar)
         content_area = tk.Frame(frame)
         content_area.pack(fill="both", expand=True)
 
-        # Lock treeview width to avoid auto-resize when labels change
-        # Third column `info` shows PK columns for tables or parent table for indexes
-        # selectmode="extended" enables multi-select with Ctrl+click and Shift+click
+        # Treeview with name, type, info columns
         tv = ttk.Treeview(content_area, columns=("name", "type", "info"), show="headings", selectmode="extended")
         tv.heading("name", text="Name")
         tv.heading("type", text="Type")
@@ -889,7 +859,7 @@ def launch_tool_gui():
         tv.pack(side="left", fill="both", expand=True)
         vs.pack(side="right", fill="y")
 
-        return frame, tv, refresh_btn, index_btn, load_btn, drop_btn, status_lbl, view_btn, mv_btn, pk_btn
+        return frame, tv, refresh_btn, load_btn, drop_btn, status_lbl, view_btn, mv_btn, pk_btn, index_btn
 
     # Ensure Treeview style is configured before creating tree widgets so
     # style settings are honored by backends (especially on Windows ttk).
@@ -910,39 +880,40 @@ def launch_tool_gui():
         pre_style = None
 
     # Create the two object panes in the left_pane (stacked, share vertical space)
-    user_frame, user_tree, user_refresh_btn, user_index_btn, user_load_btn, user_drop_btn, user_status, user_view_btn, user_mv_btn, user_pk_btn = _make_objects_frame(left_pane, "User Objects")
-    dwh_frame, dwh_tree, dwh_refresh_btn, dwh_index_btn, dwh_load_btn, dwh_drop_btn, dwh_status, dwh_view_btn, dwh_mv_btn, dwh_pk_btn = _make_objects_frame(left_pane, "DWH Objects")
+    # schema1 = user schema, schema2 = shared/DWH schema
+    schema1_frame, schema1_tree, schema1_refresh_btn, schema1_load_btn, schema1_drop_btn, schema1_status, schema1_view_btn, schema1_mv_btn, schema1_pk_btn, schema1_index_btn = _make_objects_frame(left_pane, 'schema1')
+    schema2_frame, schema2_tree, schema2_refresh_btn, schema2_load_btn, schema2_drop_btn, schema2_status, schema2_view_btn, schema2_mv_btn, schema2_pk_btn, schema2_index_btn = _make_objects_frame(left_pane, 'schema2')
     
     # Enable sortable column headers for both treeviews
-    _make_sortable_tree(user_tree)
-    _make_sortable_tree(dwh_tree)
+    _make_sortable_tree(schema1_tree)
+    _make_sortable_tree(schema2_tree)
     
     # Enable Ctrl+A to select all for both treeviews
-    _bind_select_all(user_tree)
-    _bind_select_all(dwh_tree)
+    _bind_select_all(schema1_tree)
+    _bind_select_all(schema2_tree)
 
     # Keep cached row data so we can recreate trees when toggling theme
-    user_rows = []
-    dwh_rows = []
+    schema1_rows = []
+    schema2_rows = []
 
     # Prevent the left pane from auto-resizing when internal labels change
     left_pane.pack_propagate(False)
 
     # Create external count labels aligned to the right of each object frame
     # Use grid placement so they don't affect the inner frame widths
-    user_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
-    dwh_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
+    schema1_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
+    schema2_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
     # start with a placeholder placement; we'll position these next to the LabelFrame titles
-    user_count_label.place(x=0, y=0)
-    dwh_count_label.place(x=0, y=0)
+    schema1_count_label.place(x=0, y=0)
+    schema2_count_label.place(x=0, y=0)
 
     # hide the internal status labels created inside each frame to avoid them resizing the frame
     try:
-        user_status.pack_forget()
+        schema1_status.pack_forget()
     except Exception:
         pass
     try:
-        dwh_status.pack_forget()
+        schema2_status.pack_forget()
     except Exception:
         pass
 
@@ -954,11 +925,11 @@ def launch_tool_gui():
     left_pane.grid_columnconfigure(0, weight=1)
     left_pane.grid_columnconfigure(1, weight=0)
     # Re-pack the frames using grid so they share the vertical space
-    user_frame.pack_forget()
-    dwh_frame.pack_forget()
+    schema1_frame.pack_forget()
+    schema2_frame.pack_forget()
     # add left padding so the object frames sit a few pixels in from the left border
-    user_frame.grid(row=0, column=0, sticky="nsew", pady=(0,8), padx=(14,0))
-    dwh_frame.grid(row=1, column=0, sticky="nsew", padx=(14,0))
+    schema1_frame.grid(row=0, column=0, sticky="nsew", pady=(0,8), padx=(14,0))
+    schema2_frame.grid(row=1, column=0, sticky="nsew", padx=(14,0))
 
     # Position the object-count labels next to each LabelFrame title (top-left header area)
     def position_count_labels(event=None):
@@ -968,19 +939,19 @@ def launch_tool_gui():
             default_font = tkfont.nametofont("TkDefaultFont")
 
             # User frame title placement
-            ux = user_frame.winfo_x()
-            uy = user_frame.winfo_y()
-            user_title = user_frame.cget("text")
+            ux = schema1_frame.winfo_x()
+            uy = schema1_frame.winfo_y()
+            user_title = schema1_frame.cget("text")
             title_w = default_font.measure(user_title)
             # small left offset inside the LabelFrame border (~8 px), then a small gap
-            user_count_label.place(x=ux + 8 + title_w + 8, y=uy - 2)
+            schema1_count_label.place(x=ux + 8 + title_w + 8, y=uy - 2)
 
             # DWH frame title placement
-            dx = dwh_frame.winfo_x()
-            dy = dwh_frame.winfo_y()
-            dwh_title = dwh_frame.cget("text")
+            dx = schema2_frame.winfo_x()
+            dy = schema2_frame.winfo_y()
+            dwh_title = schema2_frame.cget("text")
             dwh_title_w = default_font.measure(dwh_title)
-            dwh_count_label.place(x=dx + 8 + dwh_title_w + 8, y=dy - 2)
+            schema2_count_label.place(x=dx + 8 + dwh_title_w + 8, y=dy - 2)
         except Exception:
             pass
 
@@ -1009,12 +980,12 @@ def launch_tool_gui():
 
         # cache rows for possible rebuild
         try:
-            if tv is user_tree:
-                nonlocal user_rows
-                user_rows = list(rows)
-            elif tv is dwh_tree:
-                nonlocal dwh_rows
-                dwh_rows = list(rows)
+            if tv is schema1_tree:
+                nonlocal schema1_rows
+                schema1_rows = list(rows)
+            elif tv is schema2_tree:
+                nonlocal schema2_rows
+                schema2_rows = list(rows)
         except Exception:
             pass
 
@@ -1086,7 +1057,7 @@ def launch_tool_gui():
             new_tv.pack(fill="both", expand=True)
 
         try:
-            rows = user_rows if old_tv is user_tree else dwh_rows if old_tv is dwh_tree else []
+            rows = schema1_rows if old_tv is schema1_tree else schema2_rows if old_tv is schema2_tree else []
         except Exception:
             rows = []
 
@@ -1120,13 +1091,13 @@ def launch_tool_gui():
         return new_tv
 
     # Background refreshers
-    def refresh_user_objects():
-        user_status.config(text="Loading...")
+    def refresh_schema1_objects():
+        schema1_status.config(text="Loading...")
         def worker():
             from libs.oracle_db_connector import get_db_connection
-            conn = get_db_connection(force_shared=False)
+            conn = get_db_connection(schema='schema1', root=root)
             if not conn:
-                root.after(0, lambda: user_status.config(text="No connection"))
+                root.after(0, lambda: schema1_status.config(text="No connection"))
                 return
             try:
                 cur = conn.cursor()
@@ -1232,13 +1203,13 @@ def launch_tool_gui():
             # If no rows found, show friendly message in status
             if not rows:
                 # update external count label and tree
-                root.after(0, lambda: (_populate_treeview(user_tree, rows), user_count_label.config(text="No Objects")))
+                root.after(0, lambda: (_populate_treeview(schema1_tree, rows), schema1_count_label.config(text="No Objects")))
             else:
-                root.after(0, lambda: (_populate_treeview(user_tree, rows), user_count_label.config(text=f"{len(rows)} Objects")))
+                root.after(0, lambda: (_populate_treeview(schema1_tree, rows), schema1_count_label.config(text=f"{len(rows)} Objects")))
         threading.Thread(target=worker, daemon=True).start()
 
-    def refresh_dwh_objects():
-        dwh_status.config(text="Loading...")
+    def refresh_schema2_objects():
+        schema2_status.config(text="Loading...")
 
         # Helper: spawn a worker that connects using explicit credentials (no UI prompts)
         def _start_worker_with_creds(creds):
@@ -1254,7 +1225,7 @@ def launch_tool_gui():
                 cur = None
                 conn = None
                 try:
-                    conn = oracledb.connect(user=creds["username"], password=creds["password"], dsn=creds["dsn"])
+                    conn = oracledb.connect(user=creds["user"], password=creds["password"], dsn=creds["dsn"])
                     cur = conn.cursor()
                     
                     # Query for tables, views, materialized views with PK info
@@ -1351,7 +1322,7 @@ def launch_tool_gui():
                         # Update status label and schedule a single main-thread prompt to repair DWH creds/config if not already prompting
                         try:
                             try:
-                                root.after(0, lambda: dwh_status.config(text="Prompting for DWH login..."))
+                                root.after(0, lambda: schema2_status.config(text="Prompting for DWH login..."))
                             except Exception:
                                 pass
                             from libs import session as _session
@@ -1361,15 +1332,17 @@ def launch_tool_gui():
                                 def prompt_and_retry():
                                     try:
                                         from libs.oracle_db_connector import get_db_connection
-                                        conn2 = get_db_connection(force_shared=True, root=root)
+                                        from libs import session as _s
+                                        conn2 = get_db_connection(schema='schema2', root=root)
                                         if conn2:
                                             try:
                                                 conn2.close()
                                             except Exception:
                                                 pass
-                                            if _session.dwh_credentials:
+                                            new_creds = _s.get_credentials('schema2')
+                                            if new_creds:
                                                 # retry using new creds
-                                                _start_worker_with_creds(_session.dwh_credentials)
+                                                _start_worker_with_creds(new_creds)
                                     finally:
                                         try:
                                             # allow future prompts
@@ -1398,38 +1371,27 @@ def launch_tool_gui():
                         pass
 
                 if not rows:
-                    root.after(0, lambda: (_populate_treeview(dwh_tree, rows), dwh_count_label.config(text="No Objects"), dwh_status.config(text="")))
+                    root.after(0, lambda: (_populate_treeview(schema2_tree, rows), schema2_count_label.config(text="No Objects"), schema2_status.config(text="")))
                 else:
-                    root.after(0, lambda: (_populate_treeview(dwh_tree, rows), dwh_count_label.config(text=f"{len(rows)} Objects"), dwh_status.config(text="")))
+                    root.after(0, lambda: (_populate_treeview(schema2_tree, rows), schema2_count_label.config(text=f"{len(rows)} Objects"), schema2_status.config(text="")))
 
             threading.Thread(target=worker, daemon=True).start()
 
         # Decide whether we can use saved creds (no UI) or need to prompt on the main thread
         from libs import session
-        from libs import oracle_db_connector as ob
 
-        creds = None
-        if session.dwh_credentials and session.dwh_credentials.get("username", "").lower() == "dwh":
-            creds = session.dwh_credentials
-        elif ob.config.has_section("dwh"):
-            section = ob.config["dwh"]
-            if section.get("username") and section.get("password") and section.get("dsn"):
-                creds = {
-                    "username": section.get("username"),
-                    "password": section.get("password"),
-                    "dsn": section.get("dsn")
-                }
+        creds = session.get_credentials('schema2')
 
         if creds:
-            # Use the saved credentials from session or config.ini in a background thread
+            # Use the saved credentials in a background thread
             _start_worker_with_creds(creds)
             return
 
-        # No saved creds: prompt on the main thread (get_db_connection will schedule a dialog via root)
+        # No saved creds: prompt on the main thread (get_db_connection will handle prompting)
         from libs.oracle_db_connector import get_db_connection
-        conn = get_db_connection(force_shared=True, root=root)
+        conn = get_db_connection(schema='schema2', root=root)
         if not conn:
-            root.after(0, lambda: dwh_status.config(text="Not logged in"))
+            root.after(0, lambda: schema2_status.config(text="Not logged in"))
             return
 
         # If get_db_connection returned a connection, close it and use the stored session credentials
@@ -1438,17 +1400,17 @@ def launch_tool_gui():
         except Exception:
             pass
 
-        # session.dwh_credentials should have been set by get_db_connection when prompting
-        creds = session.dwh_credentials if session.dwh_credentials else None
+        # Credentials should have been set by get_db_connection when prompting
+        creds = session.get_credentials('schema2')
         if not creds:
-            root.after(0, lambda: dwh_status.config(text="No credentials"))
+            root.after(0, lambda: schema2_status.config(text="No credentials"))
             return
 
         _start_worker_with_creds(creds)
 
     # Wire buttons
-    user_refresh_btn.config(command=refresh_user_objects)
-    dwh_refresh_btn.config(command=refresh_dwh_objects)
+    schema1_refresh_btn.config(command=refresh_schema1_objects)
+    schema2_refresh_btn.config(command=refresh_schema2_objects)
 
     # --- Index button handlers ---
     def _get_selected_object(tree):
@@ -1462,8 +1424,8 @@ def launch_tool_gui():
             return None, None
         return str(vals[0]), str(vals[1])
 
-    def launch_index_user():
-        name, obj_type = _get_selected_object(user_tree)
+    def launch_index_schema1():
+        name, obj_type = _get_selected_object(schema1_tree)
         if not name:
             from tkinter import messagebox
             messagebox.showwarning('No Selection', 'Please select an object in the User Objects pane first.', parent=root)
@@ -1480,7 +1442,7 @@ def launch_tool_gui():
         if not owner:
             try:
                 from libs.oracle_db_connector import get_db_connection
-                conn = get_db_connection(force_shared=False, root=root)
+                conn = get_db_connection(schema='schema1', root=root)
                 if conn:
                     owner = conn.username.upper()
                     try:
@@ -1497,11 +1459,13 @@ def launch_tool_gui():
         _update_status_light('busy')
         def on_close():
             _update_status_light('idle')
-            refresh_user_objects()  # auto-refresh after closing
+            # Only refresh if user successfully logged in (has credentials)
+            if session.get_credentials('schema1'):
+                refresh_schema1_objects()
         index_main(parent=root, schema=owner, object_name=name, object_type=obj_type, on_finish=on_close)
 
-    def launch_index_dwh():
-        name, obj_type = _get_selected_object(dwh_tree)
+    def launch_index_schema2():
+        name, obj_type = _get_selected_object(schema2_tree)
         if not name:
             from tkinter import messagebox
             messagebox.showwarning('No Selection', 'Please select an object in the DWH Objects pane first.', parent=root)
@@ -1514,23 +1478,25 @@ def launch_tool_gui():
         _update_status_light('busy')
         def on_close():
             _update_status_light('idle')
-            refresh_dwh_objects()  # auto-refresh after closing
+            # Only refresh if user successfully logged in (has credentials)
+            if session.get_credentials('schema2'):
+                refresh_schema2_objects()
         index_main(parent=root, schema='DWH', object_name=name, object_type=obj_type, on_finish=on_close)
 
-    user_index_btn.config(command=launch_index_user)
-    dwh_index_btn.config(command=launch_index_dwh)
+    schema1_index_btn.config(command=launch_index_schema1)
+    schema2_index_btn.config(command=launch_index_schema2)
 
     # --- Load button handlers ---
-    def launch_load_user():
+    def launch_load_schema1():
         from loaders.excel_csv_loader import load_files_gui
         load_files_gui(parent=root, schema_choice='user', on_status_change=_update_status_light)
 
-    def launch_load_dwh():
+    def launch_load_schema2():
         from loaders.excel_csv_loader import load_files_gui
         load_files_gui(parent=root, schema_choice='dwh', on_status_change=_update_status_light)
 
-    user_load_btn.config(command=launch_load_user)
-    dwh_load_btn.config(command=launch_load_dwh)
+    schema1_load_btn.config(command=launch_load_schema1)
+    schema2_load_btn.config(command=launch_load_schema2)
 
     # --- Drop button handlers ---
     def _get_selected_objects(tree):
@@ -1555,20 +1521,20 @@ def launch_tool_gui():
         try:
             global status_light
             if status == 'busy':
-                status_light.config(text="🔴")
+                status_light.config(text="ðŸ”´")
             elif status == 'aborting':
-                status_light.config(text="⏳")  # amber/yellow
+                status_light.config(text="â³")  # amber/yellow
             else:  # idle
-                status_light.config(text="🟢")
+                status_light.config(text="ðŸŸ¢")
             # Force UI update during synchronous operations
             root.update_idletasks()
             root.update()
         except Exception:
             pass
 
-    def launch_drop_user():
+    def launch_drop_schema1():
         """Handle Drop button click for User schema."""
-        objects = _get_selected_objects(user_tree)
+        objects = _get_selected_objects(schema1_tree)
         if not objects:
             from tkinter import messagebox
             messagebox.showwarning('No Selection', 'Please select one or more objects to drop.', parent=root)
@@ -1582,7 +1548,7 @@ def launch_tool_gui():
         if not owner:
             try:
                 from libs.oracle_db_connector import get_db_connection
-                conn = get_db_connection(force_shared=False, root=root)
+                conn = get_db_connection(schema='schema1', root=root)
                 if conn:
                     owner = conn.username.upper()
                     try:
@@ -1603,13 +1569,13 @@ def launch_tool_gui():
             schema_name=owner,
             objects=objects,
             parent_window=root,
-            on_complete=lambda: refresh_user_objects(),
+            on_complete=lambda: refresh_schema1_objects(),
             on_status_change=_update_status_light
         )
 
-    def launch_drop_dwh():
+    def launch_drop_schema2():
         """Handle Drop button click for DWH schema."""
-        objects = _get_selected_objects(dwh_tree)
+        objects = _get_selected_objects(schema2_tree)
         if not objects:
             from tkinter import messagebox
             messagebox.showwarning('No Selection', 'Please select one or more objects to drop.', parent=root)
@@ -1622,70 +1588,82 @@ def launch_tool_gui():
             schema_name='DWH',
             objects=objects,
             parent_window=root,
-            on_complete=lambda: refresh_dwh_objects(),
+            on_complete=lambda: refresh_schema2_objects(),
             on_status_change=_update_status_light
         )
 
-    user_drop_btn.config(command=launch_drop_user)
-    dwh_drop_btn.config(command=launch_drop_dwh)
+    schema1_drop_btn.config(command=launch_drop_schema1)
+    schema2_drop_btn.config(command=launch_drop_schema2)
 
     # --- View button handlers ---
-    def launch_view_user():
+    def launch_view_schema1():
         from loaders.sql_view_loader import run_sql_view_loader
         _update_status_light('busy')
         def on_close():
             _update_status_light('idle')
-            refresh_user_objects()  # auto-refresh after closing
+            # Only refresh if user successfully logged in (has credentials)
+            if session.get_credentials('schema1'):
+                refresh_schema1_objects()
         run_sql_view_loader(parent=root, on_finish=on_close, use_dwh=False)
 
-    def launch_view_dwh():
+    def launch_view_schema2():
         from loaders.sql_view_loader import run_sql_view_loader
         _update_status_light('busy')
         def on_close():
             _update_status_light('idle')
-            refresh_dwh_objects()  # auto-refresh after closing
+            # Only refresh if user successfully logged in (has credentials)
+            if session.get_credentials('schema2'):
+                refresh_schema2_objects()
         run_sql_view_loader(parent=root, on_finish=on_close, use_dwh=True)
 
-    user_view_btn.config(command=launch_view_user)
-    dwh_view_btn.config(command=launch_view_dwh)
+    schema1_view_btn.config(command=launch_view_schema1)
+    schema2_view_btn.config(command=launch_view_schema2)
 
     # --- MV button handlers ---
-    def launch_mv_user():
+    def launch_mv_schema1():
         from loaders.sql_mv_loader import run_sql_mv_loader
         _update_status_light('busy')
         def on_close():
             _update_status_light('idle')
-            refresh_user_objects()  # auto-refresh after closing
+            # Only refresh if user successfully logged in (has credentials)
+            if session.get_credentials('schema1'):
+                refresh_schema1_objects()
         run_sql_mv_loader(parent=root, on_finish=on_close, use_dwh=False)
 
-    def launch_mv_dwh():
+    def launch_mv_schema2():
         from loaders.sql_mv_loader import run_sql_mv_loader
         _update_status_light('busy')
         def on_close():
             _update_status_light('idle')
-            refresh_dwh_objects()  # auto-refresh after closing
+            # Only refresh if user successfully logged in (has credentials)
+            if session.get_credentials('schema2'):
+                refresh_schema2_objects()
         run_sql_mv_loader(parent=root, on_finish=on_close, use_dwh=True)
 
-    user_mv_btn.config(command=launch_mv_user)
-    dwh_mv_btn.config(command=launch_mv_dwh)
+    schema1_mv_btn.config(command=launch_mv_schema1)
+    schema2_mv_btn.config(command=launch_mv_schema2)
 
     # --- PK button handlers ---
-    def launch_pk_user():
+    def launch_pk_schema1():
         from tools.pk_designate_gui import main as pk_main
         _update_status_light('busy')
         pk_main(parent=root, schema_choice='user')
         _update_status_light('idle')
-        refresh_user_objects()  # auto-refresh after closing
+        # Only auto-refresh if user successfully logged in (has credentials)
+        if session.get_credentials('schema1'):
+            refresh_schema1_objects()
 
-    def launch_pk_dwh():
+    def launch_pk_schema2():
         from tools.pk_designate_gui import main as pk_main
         _update_status_light('busy')
         pk_main(parent=root, schema_choice='dwh')
         _update_status_light('idle')
-        refresh_dwh_objects()  # auto-refresh after closing
+        # Only auto-refresh if user successfully logged in (has credentials)
+        if session.get_credentials('schema2'):
+            refresh_schema2_objects()
 
-    user_pk_btn.config(command=launch_pk_user)
-    dwh_pk_btn.config(command=launch_pk_dwh)
+    schema1_pk_btn.config(command=launch_pk_schema1)
+    schema2_pk_btn.config(command=launch_pk_schema2)
 
     # Top toolbar (centered): tool selector + buttons
     # Create the toolbar at the root level and pack it before the main content_frame
@@ -2073,7 +2051,7 @@ def launch_tool_gui():
                     pass
         except Exception:
             pass
-        # ❌ DO NOT rely on hidden_root being present in other modules — prefer
+        # âŒ DO NOT rely on hidden_root being present in other modules â€” prefer
         # explicit lifecycle management. Exit the process now.
         sys.exit()
 
@@ -2104,18 +2082,10 @@ def launch_tool_gui():
     except Exception:
         pass
     
-    # === Status Bar (under verse) ===
+    # === Status Bar (status light only - login status removed) ===
     tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#ccc")).pack(fill="x", padx=10)
     status_bar = tk.Frame(root)
     status_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
-
-    tk.Label(
-        status_bar,
-        text=f"Logged in as: {session.stored_credentials['username']} @ {session.stored_credentials['dsn']}",
-        font=("Arial", 8),
-        anchor="w",
-        justify="left"
-    ).pack(side="left")
 
     # Status indicator using a canvas circle for better visibility
     status_canvas = tk.Canvas(status_bar, width=16, height=16, highlightthickness=0)
@@ -2130,13 +2100,13 @@ def launch_tool_gui():
             self.circle_id = circle_id
         def config(self, text=None, **kwargs):
             # Map emoji text to colors
-            if text == "🔴":
+            if text == "ðŸ”´":
                 self.canvas.itemconfig(self.circle_id, fill="#ef4444", outline="#dc2626")
-            elif text == "🟢":
+            elif text == "ðŸŸ¢":
                 self.canvas.itemconfig(self.circle_id, fill="#22c55e", outline="#16a34a")
-            elif text == "⏳":
+            elif text == "â³":
                 self.canvas.itemconfig(self.circle_id, fill="#f59e0b", outline="#d97706")  # amber/yellow
-            elif text == "⏹️ Aborting...":
+            elif text == "â¹ï¸ Aborting...":
                 self.canvas.itemconfig(self.circle_id, fill="#f59e0b", outline="#d97706")
         def winfo_exists(self):
             try:
@@ -2227,7 +2197,7 @@ def launch_tool_gui():
 
     stream_logs()
     
-    # ✅ Validate after GUI + log area are ready
+    # âœ… Validate after GUI + log area are ready
     if not validate_required_folders():
         root.destroy()
         return
@@ -2243,12 +2213,12 @@ def launch_tool_gui():
             tray_icon = pystray.Icon("HoonyTools", tray_img, "HoonyTools", menu=(item("Exit", on_exit),))
             tray_icon.run()
 
-    # 🧠 Start it in the background so GUI stays responsive
+    # ðŸ§  Start it in the background so GUI stays responsive
     threading.Thread(target=setup_tray_icon, daemon=True).start()    
     
     import traceback
     def excepthook(type, value, tb):
-        print("💥 Uncaught Exception:")
+        print("ðŸ’¥ Uncaught Exception:")
         traceback.print_exception(type, value, tb)
 
     sys.excepthook = excepthook    
@@ -2303,7 +2273,7 @@ def launch_tool_gui():
             return f"error:{e}"
 
     def set_panes_dark():
-        nonlocal user_tree, dwh_tree
+        nonlocal schema1_tree, schema2_tree
         # Record original theme/style/lookups the first time so we can
         # reliably restore them later. Also capture per-item tags and
         # master background colors.
@@ -2352,9 +2322,9 @@ def launch_tool_gui():
             if not pane_orig.get('user_item_tags'):
                 tags = {}
                 try:
-                    for it in list(user_tree.get_children()):
+                    for it in list(schema1_tree.get_children()):
                         try:
-                            tags[it] = tuple(user_tree.item(it).get('tags') or ())
+                            tags[it] = tuple(schema1_tree.item(it).get('tags') or ())
                         except Exception:
                             tags[it] = ()
                 except Exception:
@@ -2366,9 +2336,9 @@ def launch_tool_gui():
             if not pane_orig.get('dwh_item_tags'):
                 tags = {}
                 try:
-                    for it in list(dwh_tree.get_children()):
+                    for it in list(schema2_tree.get_children()):
                         try:
-                            tags[it] = tuple(dwh_tree.item(it).get('tags') or ())
+                            tags[it] = tuple(schema2_tree.item(it).get('tags') or ())
                         except Exception:
                             tags[it] = ()
                 except Exception:
@@ -2389,12 +2359,12 @@ def launch_tool_gui():
         # Save master backgrounds
         try:
             if not pane_orig.get('user_master_bg'):
-                pane_orig['user_master_bg'] = user_tree.master.cget('bg')
+                pane_orig['user_master_bg'] = schema1_tree.master.cget('bg')
         except Exception:
             pass
         try:
             if not pane_orig.get('dwh_master_bg'):
-                pane_orig['dwh_master_bg'] = dwh_tree.master.cget('bg')
+                pane_orig['dwh_master_bg'] = schema2_tree.master.cget('bg')
         except Exception:
             pass
 
@@ -2510,11 +2480,11 @@ def launch_tool_gui():
         # Recreate trees under the new Pane.Treeview style so backend honors fieldbackground
         try:
             try:
-                user_tree = _recreate_tree(user_tree, use_pane_style=True)
+                schema1_tree = _recreate_tree(schema1_tree, use_pane_style=True)
             except Exception:
                 pass
             try:
-                dwh_tree = _recreate_tree(dwh_tree, use_pane_style=True)
+                schema2_tree = _recreate_tree(schema2_tree, use_pane_style=True)
             except Exception:
                 pass
         except Exception:
@@ -2523,11 +2493,11 @@ def launch_tool_gui():
         # Set master backgrounds and darken log
         try:
             try:
-                user_tree.master.config(bg='#000000')
+                schema1_tree.master.config(bg='#000000')
             except Exception:
                 pass
             try:
-                dwh_tree.master.config(bg='#000000')
+                schema2_tree.master.config(bg='#000000')
             except Exception:
                 pass
         except Exception:
@@ -2553,13 +2523,13 @@ def launch_tool_gui():
         try:
             dbg = base_path / 'theme_debug.log'
             with open(dbg, 'a', encoding='utf-8') as df:
-                df.write(f"SET DARK: user_tree.style={getattr(user_tree, 'cget', lambda k: None)('style')} bg={getattr(user_tree, 'cget', lambda k: None)('background')} fg={getattr(user_tree, 'cget', lambda k: None)('foreground')}\n")
+                df.write(f"SET DARK: schema1_tree.style={getattr(schema1_tree, 'cget', lambda k: None)('style')} bg={getattr(schema1_tree, 'cget', lambda k: None)('background')} fg={getattr(schema1_tree, 'cget', lambda k: None)('foreground')}\n")
                 try:
-                    its = list(user_tree.get_children())
-                    df.write(f"SET DARK: user_tree items={len(its)} sample_tags={[user_tree.item(its[0]).get('tags') if its else None]}\n")
+                    its = list(schema1_tree.get_children())
+                    df.write(f"SET DARK: schema1_tree items={len(its)} sample_tags={[schema1_tree.item(its[0]).get('tags') if its else None]}\n")
                 except Exception:
                     pass
-                df.write(f"SET DARK: dwh_tree.style={getattr(dwh_tree, 'cget', lambda k: None)('style')} bg={getattr(dwh_tree, 'cget', lambda k: None)('background')} fg={getattr(dwh_tree, 'cget', lambda k: None)('foreground')}\n")
+                df.write(f"SET DARK: schema2_tree.style={getattr(schema2_tree, 'cget', lambda k: None)('style')} bg={getattr(schema2_tree, 'cget', lambda k: None)('background')} fg={getattr(schema2_tree, 'cget', lambda k: None)('foreground')}\n")
         except Exception:
             pass
 
@@ -2581,18 +2551,18 @@ def launch_tool_gui():
         try:
             dbg = base_path / 'theme_debug.log'
             with open(dbg, 'a', encoding='utf-8') as df:
-                df.write(f"SET DARK: user_tree.style={getattr(user_tree, 'cget', lambda k: None)('style')} bg={getattr(user_tree, 'cget', lambda k: None)('background')} fg={getattr(user_tree, 'cget', lambda k: None)('foreground')}\n")
+                df.write(f"SET DARK: schema1_tree.style={getattr(schema1_tree, 'cget', lambda k: None)('style')} bg={getattr(schema1_tree, 'cget', lambda k: None)('background')} fg={getattr(schema1_tree, 'cget', lambda k: None)('foreground')}\n")
                 try:
-                    its = list(user_tree.get_children())
-                    df.write(f"SET DARK: user_tree items={len(its)} sample_tags={[user_tree.item(its[0]).get('tags') if its else None]}\n")
+                    its = list(schema1_tree.get_children())
+                    df.write(f"SET DARK: schema1_tree items={len(its)} sample_tags={[schema1_tree.item(its[0]).get('tags') if its else None]}\n")
                 except Exception:
                     pass
-                df.write(f"SET DARK: dwh_tree.style={getattr(dwh_tree, 'cget', lambda k: None)('style')} bg={getattr(dwh_tree, 'cget', lambda k: None)('background')} fg={getattr(dwh_tree, 'cget', lambda k: None)('foreground')}\n")
+                df.write(f"SET DARK: schema2_tree.style={getattr(schema2_tree, 'cget', lambda k: None)('style')} bg={getattr(schema2_tree, 'cget', lambda k: None)('background')} fg={getattr(schema2_tree, 'cget', lambda k: None)('foreground')}\n")
         except Exception:
             pass
 
     def set_panes_light():
-        nonlocal user_tree, dwh_tree
+        nonlocal schema1_tree, schema2_tree
         # First, if we recorded the original theme or style lookups, restore
         # them so newly-created Treeviews are created under the original rules.
         try:
@@ -2747,11 +2717,11 @@ def launch_tool_gui():
         # at creation time.
         try:
             try:
-                user_tree = _recreate_tree(user_tree, use_pane_style=False)
+                schema1_tree = _recreate_tree(schema1_tree, use_pane_style=False)
             except Exception:
                 pass
             try:
-                dwh_tree = _recreate_tree(dwh_tree, use_pane_style=False)
+                schema2_tree = _recreate_tree(schema2_tree, use_pane_style=False)
             except Exception:
                 pass
         except Exception:
@@ -2762,13 +2732,13 @@ def launch_tool_gui():
             try:
                 umbg = getattr(root, '_pane_orig', {}).get('user_master_bg', None)
                 if umbg is not None:
-                    user_tree.master.config(bg=umbg)
+                    schema1_tree.master.config(bg=umbg)
             except Exception:
                 pass
             try:
                 dmbg = getattr(root, '_pane_orig', {}).get('dwh_master_bg', None)
                 if dmbg is not None:
-                    dwh_tree.master.config(bg=dmbg)
+                    schema2_tree.master.config(bg=dmbg)
             except Exception:
                 pass
         except Exception:
@@ -2784,26 +2754,26 @@ def launch_tool_gui():
             bg = ot.get('fieldbackground') or ot.get('background') or 'white'
             fg = ot.get('foreground') or 'black'
             try:
-                user_tree.tag_configure('row', background=bg, foreground=fg)
+                schema1_tree.tag_configure('row', background=bg, foreground=fg)
             except Exception:
                 pass
             try:
-                for it in list(user_tree.get_children()):
+                for it in list(schema1_tree.get_children()):
                     try:
-                        user_tree.item(it, tags=('row',))
+                        schema1_tree.item(it, tags=('row',))
                     except Exception:
                         pass
             except Exception:
                 pass
 
             try:
-                dwh_tree.tag_configure('row', background=bg, foreground=fg)
+                schema2_tree.tag_configure('row', background=bg, foreground=fg)
             except Exception:
                 pass
             try:
-                for it in list(dwh_tree.get_children()):
+                for it in list(schema2_tree.get_children()):
                     try:
-                        dwh_tree.item(it, tags=('row',))
+                        schema2_tree.item(it, tags=('row',))
                     except Exception:
                         pass
             except Exception:
@@ -2836,13 +2806,13 @@ def launch_tool_gui():
         try:
             dbg = base_path / 'theme_debug.log'
             with open(dbg, 'a', encoding='utf-8') as df:
-                df.write(f"SET LIGHT: user_tree.style={getattr(user_tree, 'cget', lambda k: None)('style')} bg={getattr(user_tree, 'cget', lambda k: None)('background')} fg={getattr(user_tree, 'cget', lambda k: None)('foreground')}\n")
+                df.write(f"SET LIGHT: schema1_tree.style={getattr(schema1_tree, 'cget', lambda k: None)('style')} bg={getattr(schema1_tree, 'cget', lambda k: None)('background')} fg={getattr(schema1_tree, 'cget', lambda k: None)('foreground')}\n")
                 try:
-                    its = list(user_tree.get_children())
-                    df.write(f"SET LIGHT: user_tree items={len(its)} sample_tags={[user_tree.item(its[0]).get('tags') if its else None]}\n")
+                    its = list(schema1_tree.get_children())
+                    df.write(f"SET LIGHT: schema1_tree items={len(its)} sample_tags={[schema1_tree.item(its[0]).get('tags') if its else None]}\n")
                 except Exception:
                     pass
-                df.write(f"SET LIGHT: dwh_tree.style={getattr(dwh_tree, 'cget', lambda k: None)('style')} bg={getattr(dwh_tree, 'cget', lambda k: None)('background')} fg={getattr(dwh_tree, 'cget', lambda k: None)('foreground')}\n")
+                df.write(f"SET LIGHT: schema2_tree.style={getattr(schema2_tree, 'cget', lambda k: None)('style')} bg={getattr(schema2_tree, 'cget', lambda k: None)('background')} fg={getattr(schema2_tree, 'cget', lambda k: None)('foreground')}\n")
         except Exception:
             pass
 
@@ -2919,21 +2889,21 @@ def launch_tool_gui():
         try:
             s = []
             try:
-                s.append(f"user_tree {_tree_info(user_tree)}")
-                items = list(user_tree.get_children())
-                s.append(f"user_tree.items={len(items)}")
+                s.append(f"schema1_tree {_tree_info(schema1_tree)}")
+                items = list(schema1_tree.get_children())
+                s.append(f"schema1_tree.items={len(items)}")
                 if items:
-                    s.append(f"sample_item_tags={user_tree.item(items[0]).get('tags')}")
+                    s.append(f"sample_item_tags={schema1_tree.item(items[0]).get('tags')}")
             except Exception as e:
-                s.append(f"user_tree error: {e}")
+                s.append(f"schema1_tree error: {e}")
             try:
-                s.append(f"dwh_tree {_tree_info(dwh_tree)}")
-                items2 = list(dwh_tree.get_children())
-                s.append(f"dwh_tree.items={len(items2)}")
+                s.append(f"schema2_tree {_tree_info(schema2_tree)}")
+                items2 = list(schema2_tree.get_children())
+                s.append(f"schema2_tree.items={len(items2)}")
                 if items2:
-                    s.append(f"sample_item_tags2={dwh_tree.item(items2[0]).get('tags')}")
+                    s.append(f"sample_item_tags2={schema2_tree.item(items2[0]).get('tags')}")
             except Exception as e:
-                s.append(f"dwh_tree error: {e}")
+                s.append(f"schema2_tree error: {e}")
             try:
                 style = ttk.Style()
                 s.append(f"Pane.Treeview lookup background={style.lookup('Pane.Treeview','background')} fieldbackground={style.lookup('Pane.Treeview','fieldbackground')} foreground={style.lookup('Pane.Treeview','foreground')}")
@@ -3050,7 +3020,7 @@ def launch_tool_gui():
     def _style_combobox_popup(tv, dark):
         """Try to find the popup Listbox/Toplevel for a ttk.Combobox and
         configure its background/foreground. This is backend-dependent and
-        best-effort — it attempts common window naming/conventions.
+        best-effort â€” it attempts common window naming/conventions.
         """
         try:
             # The popup is often a Toplevel child of the root with a widget
@@ -3095,7 +3065,7 @@ def launch_tool_gui():
     root.mainloop()
 
 TOOLS = {
-    "☑ Materialized View Manager": None,  # placeholder, will be wired if available
+    "â˜‘ Materialized View Manager": None,  # placeholder, will be wired if available
     
     # SQL View Loader, SQL MV Loader, and Designate PK moved to left pane buttons
     # Object Dropper removed - functionality now integrated into Drop buttons in left pane
@@ -3105,7 +3075,7 @@ TOOLS = {
 # from runtime imports to avoid syntax issues inside the dict literal)
 try:
     from tools.mv_refresh_gui import run_mv_refresh_gui
-    TOOLS["☑ Materialized View Manager"] = run_mv_refresh_gui
+    TOOLS["â˜‘ Materialized View Manager"] = run_mv_refresh_gui
 except Exception:
     # leave the placeholder if import fails
     pass

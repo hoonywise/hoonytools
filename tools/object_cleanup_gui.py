@@ -6,7 +6,7 @@ import logging
 from tkinter import Toplevel, Label, Checkbutton, IntVar, Button, simpledialog, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, Y, BOTH
 from tkinter import _default_root
 from libs.oracle_db_connector import get_db_connection
-from libs import dwh_session
+from libs import session
 
 logger = logging.getLogger(__name__)
 
@@ -165,15 +165,16 @@ def drop_user_tables():
         return
 
     from tkinter import _default_root
-    conn = get_db_connection(force_shared=(schema_choice == "dwh"), root=_default_root)
+    schema_key = 'schema2' if schema_choice == "dwh" else 'schema1'
+    conn = get_db_connection(schema=schema_key, root=_default_root)
 
-    # Register the connection with the central DWH session manager so it can
+    # Register the connection with the session manager so it can
     # be cleaned up if the app/window requests it later.
     try:
-        if schema_choice == 'dwh' and conn:
-            dwh_session.register_connection(_default_root, conn)
+        if conn:
+            session.register_connection(_default_root, conn, schema_key)
     except Exception:
-        logger.debug('Failed to register dwh connection', exc_info=True)
+        logger.debug('Failed to register connection', exc_info=True)
 
     if not conn:
         logger.error("❌ Failed to connect.")
@@ -337,10 +338,10 @@ def drop_user_tables():
     cursor.close()
     conn.close()
     try:
-        # Ensure in-memory DWH credentials are cleared when appropriate
-        dwh_session.cleanup(_default_root)
+        # Ensure session connections are cleaned up appropriately
+        session.close_connections(_default_root)
     except Exception:
-        logger.debug('DWH cleanup failed', exc_info=True)
+        logger.debug('Session cleanup failed', exc_info=True)
     try:
         _safe_messagebox('showinfo', "Done", "✅ Cleanup complete.", dlg=_default_root)
     except Exception:
@@ -355,12 +356,12 @@ def drop_user_tables():
     logger.info("✅ Cleanup complete.")
 
 def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
-    conn = get_db_connection(force_shared=True, root=_default_root)
+    conn = get_db_connection(schema='schema2', root=_default_root)
     try:
         if conn:
-            dwh_session.register_connection(_default_root, conn)
+            session.register_connection(_default_root, conn, 'schema2')
     except Exception:
-        logger.debug('Failed to register dwh connection', exc_info=True)
+        logger.debug('Failed to register connection', exc_info=True)
     if not conn:
         logger.error("❌ Failed to connect to DWH.")
         return
@@ -481,9 +482,9 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     cursor.close()
     conn.close()
     try:
-        dwh_session.cleanup(_default_root)
+        session.close_connections(_default_root)
     except Exception:
-        logger.debug('DWH cleanup failed', exc_info=True)
+        logger.debug('Session cleanup failed', exc_info=True)
     try:
         _safe_messagebox('showinfo', "Done", f"✅ Deleted rows where {label} = {value}", dlg=(parent_window if parent_window is not None else _default_root))
     except Exception:
@@ -684,17 +685,18 @@ def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_com
         return False
     
     # Get database connection
-    conn = get_db_connection(force_shared=(schema_choice == 'dwh'), root=parent_window)
+    schema_key = 'schema2' if schema_choice == 'dwh' else 'schema1'
+    conn = get_db_connection(schema=schema_key, root=parent_window)
     if not conn:
         messagebox.showerror("Connection Error", "Failed to connect to database.", parent=parent_window)
         return False
     
     # Register connection for cleanup
     try:
-        if schema_choice == 'dwh' and conn:
-            dwh_session.register_connection(parent_window, conn)
+        if conn:
+            session.register_connection(parent_window, conn, schema_key)
     except Exception:
-        logger.debug('Failed to register dwh connection', exc_info=True)
+        logger.debug('Failed to register connection', exc_info=True)
     
     schema = schema_name
     cursor = conn.cursor()
@@ -816,12 +818,11 @@ def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_com
     except Exception:
         pass
     
-    # Cleanup DWH session if applicable
+    # Cleanup session connections
     try:
-        if schema_choice == 'dwh':
-            dwh_session.cleanup(parent_window)
+        session.close_connections(parent_window)
     except Exception:
-        logger.debug('DWH cleanup failed', exc_info=True)
+        logger.debug('Session cleanup failed', exc_info=True)
     
     # Set status back to idle (green indicator)
     set_status('idle')

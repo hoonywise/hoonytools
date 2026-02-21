@@ -214,12 +214,12 @@ def cleanup_on_abort(conn, cursor):
                 # Determine whether any created table looks like DWH.<TABLE>
                 needs_dwh = any(isinstance(t, str) and t.upper().startswith('DWH.') for t in created_tables)
                 creds = None
-                # Prefer DWH credentials for DWH-targeted drops
+                # Prefer schema2 credentials for DWH-targeted drops
                 try:
-                    if needs_dwh and getattr(session, 'dwh_credentials', None):
-                        creds = session.dwh_credentials
-                    elif getattr(session, 'user_credentials', None):
-                        creds = session.user_credentials
+                    if needs_dwh:
+                        creds = session.get_credentials('schema2')
+                    else:
+                        creds = session.get_credentials('schema1')
                 except Exception:
                     creds = None
 
@@ -228,7 +228,7 @@ def cleanup_on_abort(conn, cursor):
                         logger.debug(f"Attempting fallback cleanup connection to drop remaining tables: {created_tables}")
                         try:
                             # use oracledb directly to avoid UI prompts
-                            fb_conn = oracledb.connect(user=creds.get('username'), password=creds.get('password'), dsn=creds.get('dsn'))
+                            fb_conn = oracledb.connect(user=creds.get('user'), password=creds.get('password'), dsn=creds.get('dsn'))
                         except Exception as e:
                             logger.debug(f"Could not open fallback connection for abort cleanup: {e}")
                             fb_conn = None
