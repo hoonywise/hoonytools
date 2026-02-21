@@ -1656,9 +1656,157 @@ def configure_root_options(root) -> None:
         root.option_add('*Checkbutton.background', get_color('checkbox_bg'))
         root.option_add('*Checkbutton.foreground', get_color('checkbox_fg'))
         root.option_add('*Checkbutton.selectColor', get_color('checkbox_select'))
+        root.option_add('*Checkbutton.activeBackground', get_color('checkbox_bg'))
+        root.option_add('*Checkbutton.activeForeground', get_color('checkbox_fg'))
+        
+        # Radiobutton (uses same colors as Checkbutton)
+        root.option_add('*Radiobutton.background', get_color('checkbox_bg'))
+        root.option_add('*Radiobutton.foreground', get_color('checkbox_fg'))
+        root.option_add('*Radiobutton.selectColor', get_color('checkbox_select'))
+        root.option_add('*Radiobutton.activeBackground', get_color('checkbox_bg'))
+        root.option_add('*Radiobutton.activeForeground', get_color('checkbox_fg'))
+        
+        # LabelFrame
+        root.option_add('*Labelframe.background', get_color('labelframe_bg'))
+        root.option_add('*Labelframe*Label.background', get_color('labelframe_bg'))
+        root.option_add('*Labelframe*Label.foreground', get_color('labelframe_fg'))
+        
+        # Toplevel
+        root.option_add('*Toplevel.background', get_color('window_bg'))
+        
+        # Canvas (for scrollable frames)
+        root.option_add('*Canvas.background', get_color('window_bg'))
+        root.option_add('*Canvas.highlightBackground', get_color('window_bg'))
+        root.option_add('*Canvas.highlightThickness', '0')
+        
+        # Scrollbar
+        root.option_add('*Scrollbar.background', get_color('scrollbar_bg'))
+        root.option_add('*Scrollbar.troughColor', get_color('window_bg'))
+        root.option_add('*Scrollbar.activeBackground', get_color('scrollbar_fg'))
+        
+        # Text (for ScrolledText and Text widgets)
+        root.option_add('*Text.background', get_color('pane_bg'))
+        root.option_add('*Text.foreground', get_color('pane_fg'))
+        root.option_add('*Text.insertBackground', get_color('insert_bg'))
+        root.option_add('*Text.selectBackground', get_color('select_bg'))
         
     except Exception as e:
         logger.debug(f"Could not configure root options: {e}")
+
+
+def apply_theme_to_dialog(win) -> None:
+    """
+    Apply full theme to a dialog window.
+    
+    This is a convenience function that:
+    1. Sets the window's own background color
+    2. Configures the option database so all NEW child widgets inherit theme colors
+    
+    Call this immediately after creating a Toplevel, BEFORE creating child widgets.
+    For existing widgets, use apply_theme_to_existing_widgets() for live updates.
+    
+    Args:
+        win: A Toplevel or Tk window
+    
+    Example:
+        dlg = tk.Toplevel(parent)
+        gui_utils.apply_theme_to_dialog(dlg)
+        # Now create widgets - they'll inherit theme colors
+        tk.Label(dlg, text="Hello").pack()
+    """
+    try:
+        win.config(bg=get_color('window_bg'))
+    except Exception as e:
+        logger.debug(f"Could not set window background: {e}")
+    configure_root_options(win)
+
+
+def apply_theme_to_existing_widgets(win, _default_fg: str = None) -> None:
+    """
+    Recursively apply theme to all existing widgets in a window hierarchy.
+    
+    Use this for live theme updates when the theme changes while a dialog is open.
+    
+    Labels with non-default foreground colors (semantic colors like red/green for
+    status indicators) are preserved - only their background is updated.
+    
+    Args:
+        win: A Toplevel, Tk, or Frame widget to start from
+        _default_fg: Internal use - the default label foreground color to detect semantic colors
+    """
+    # Determine default label fg color for semantic color detection
+    if _default_fg is None:
+        _default_fg = get_color('label_fg')
+    
+    def _apply_to_widget(widget):
+        """Apply theme to a single widget based on its class."""
+        try:
+            class_name = widget.winfo_class()
+            
+            if class_name in ('Toplevel', 'Frame', 'Tk'):
+                widget.config(bg=get_color('window_bg'))
+                
+            elif class_name == 'Label':
+                # Check if this label has a semantic foreground color (e.g., red/green status)
+                try:
+                    current_fg = widget.cget('fg')
+                    # Normalize color for comparison - skip semantic colors
+                    if current_fg and current_fg.lower() not in (
+                        _default_fg.lower(), 'black', '#000000', 'white', '#ffffff',
+                        'gray', 'grey', '#808080', 'systemwindowtext', 'systembuttontext'
+                    ):
+                        # Semantic color - only update background, preserve foreground
+                        widget.config(bg=get_color('label_bg'))
+                    else:
+                        # Normal label - update both
+                        widget.config(bg=get_color('label_bg'), fg=get_color('label_fg'))
+                except Exception:
+                    widget.config(bg=get_color('label_bg'), fg=get_color('label_fg'))
+                    
+            elif class_name == 'Labelframe':
+                widget.config(bg=get_color('labelframe_bg'), fg=get_color('labelframe_fg'))
+                
+            elif class_name == 'Button':
+                apply_theme_to_button(widget)
+                
+            elif class_name == 'Entry':
+                apply_theme_to_entry(widget)
+                
+            elif class_name == 'Checkbutton':
+                apply_theme_to_checkbox(widget)
+                
+            elif class_name == 'Radiobutton':
+                apply_theme_to_checkbox(widget)  # Same styling as checkbox
+                
+            elif class_name in ('Text', 'Scrolledtext'):
+                apply_theme_to_pane(widget)
+                
+            elif class_name == 'Listbox':
+                widget.config(
+                    bg=get_color('pane_bg'),
+                    fg=get_color('pane_fg'),
+                    selectbackground=get_color('select_bg')
+                )
+                
+            elif class_name == 'Scrollbar':
+                apply_theme_to_scrollbar(widget)
+                
+            elif class_name == 'Canvas':
+                widget.config(bg=get_color('window_bg'), highlightthickness=0)
+                
+        except Exception as e:
+            logger.debug(f"Could not apply theme to {widget}: {e}")
+    
+    def _recurse(widget):
+        """Recursively apply theme to widget and all children."""
+        _apply_to_widget(widget)
+        try:
+            for child in widget.winfo_children():
+                _recurse(child)
+        except Exception:
+            pass
+    
+    _recurse(win)
 
 
 # =============================================================================
