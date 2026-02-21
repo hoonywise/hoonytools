@@ -122,6 +122,10 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
         view_name = view_name_entry.get().strip()
         sql_query = sql_text.get("1.0", tk.END).strip()
 
+        # Remove trailing semicolon if present (common when copying from SQL editors)
+        if sql_query.endswith(";"):
+            sql_query = sql_query.rstrip("; \n")
+
         if not view_name:
             _safe_messagebox('showerror', "Missing View Name", "❌ Please enter a view name.", dlg=builder_window)
             try:
