@@ -115,7 +115,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             dlg.grab_set()
         except Exception as e:
             # If creating the Toplevel fails (threading/root issues), fallback to a simple confirmation
-            logger.exception("Failed to open Create Logs dialog: %s", e)
+            logger.error("Failed to open Create Logs dialog: %s", e)
             try:
                 try:
                     pb = builder_window
@@ -295,7 +295,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
                 pass
             dlg.grab_set()
         except Exception as e:
-            logger.exception("Failed to open Existing Log dialog: %s", e)
+            logger.error("Failed to open Existing Log dialog: %s", e)
             try:
                 deps = get_dependent_mviews(cursor, table)
             except Exception:
@@ -715,7 +715,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
                     else:
                         results.append((t, False, err))
             except Exception as e:
-                logger.exception("Unexpected error creating MV log on %s: %s", t, e)
+                logger.error("Unexpected error creating MV log on %s: %s", t, e)
                 results.append((t, False, str(e)))
         return results
     def on_submit():
@@ -982,7 +982,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
                 # Window stays open - user closes manually; on_finish called when window closes
             except Exception as e:
                 # Log full traceback to help debugging
-                logger.exception("❌ Error creating materialized view: %s", e)
+                logger.error("❌ Error creating materialized view: %s", e)
                 # Provide helpful hint for common MV issues
                 hint = "\n\nTip: REFRESH FAST/ON COMMIT may require materialized view logs or PKs on source tables."
                 # Show dialog with concise message but include trace in log file
