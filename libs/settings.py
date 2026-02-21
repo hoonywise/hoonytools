@@ -557,20 +557,27 @@ def show_settings(parent=None):
         s1_dsn = entry_refs.get('schema1_dsn')
 
         if s1_user and s1_pass and s1_dsn:
+            # Entry widgets exist (on Connections tab) - read from them
             s1_user_val = s1_user.get().strip()
             s1_pass_val = s1_pass.get().strip()
             s1_dsn_val = s1_dsn.get().strip()
+        else:
+            # Entry widgets don't exist (on different tab) - preserve existing config.ini values
+            if cfg.has_section('schema1'):
+                s1_user_val = cfg.get('schema1', 'user', fallback='')
+                s1_pass_val = cfg.get('schema1', 'password', fallback='')
+                s1_dsn_val = cfg.get('schema1', 'dsn', fallback='')
 
-            if s1_user_val or s1_pass_val or s1_dsn_val:
-                if not cfg.has_section('schema1'):
-                    cfg.add_section('schema1')
-                cfg.set('schema1', 'user', s1_user_val)
-                cfg.set('schema1', 'password', s1_pass_val)
-                cfg.set('schema1', 'dsn', s1_dsn_val)
-            else:
-                # Clear section if all empty
-                if cfg.has_section('schema1'):
-                    cfg.remove_section('schema1')
+        if s1_user_val or s1_pass_val or s1_dsn_val:
+            if not cfg.has_section('schema1'):
+                cfg.add_section('schema1')
+            cfg.set('schema1', 'user', s1_user_val)
+            cfg.set('schema1', 'password', s1_pass_val)
+            cfg.set('schema1', 'dsn', s1_dsn_val)
+        else:
+            # Clear section if all empty
+            if cfg.has_section('schema1'):
+                cfg.remove_section('schema1')
 
         # Save Schema 2
         s2_user = entry_refs.get('schema2_user')
@@ -578,20 +585,27 @@ def show_settings(parent=None):
         s2_dsn = entry_refs.get('schema2_dsn')
 
         if s2_user and s2_pass and s2_dsn:
+            # Entry widgets exist (on Connections tab) - read from them
             s2_user_val = s2_user.get().strip()
             s2_pass_val = s2_pass.get().strip()
             s2_dsn_val = s2_dsn.get().strip()
+        else:
+            # Entry widgets don't exist (on different tab) - preserve existing config.ini values
+            if cfg.has_section('schema2'):
+                s2_user_val = cfg.get('schema2', 'user', fallback='')
+                s2_pass_val = cfg.get('schema2', 'password', fallback='')
+                s2_dsn_val = cfg.get('schema2', 'dsn', fallback='')
 
-            if s2_user_val or s2_pass_val or s2_dsn_val:
-                if not cfg.has_section('schema2'):
-                    cfg.add_section('schema2')
-                cfg.set('schema2', 'user', s2_user_val)
-                cfg.set('schema2', 'password', s2_pass_val)
-                cfg.set('schema2', 'dsn', s2_dsn_val)
-            else:
-                # Clear section if all empty
-                if cfg.has_section('schema2'):
-                    cfg.remove_section('schema2')
+        if s2_user_val or s2_pass_val or s2_dsn_val:
+            if not cfg.has_section('schema2'):
+                cfg.add_section('schema2')
+            cfg.set('schema2', 'user', s2_user_val)
+            cfg.set('schema2', 'password', s2_pass_val)
+            cfg.set('schema2', 'dsn', s2_dsn_val)
+        else:
+            # Clear section if all empty
+            if cfg.has_section('schema2'):
+                cfg.remove_section('schema2')
 
         # Save Appearance settings (Dark Mode)
         dark_mode_var = entry_refs.get('dark_mode_var')

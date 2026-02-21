@@ -4,9 +4,13 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
-## 🔧 v2.1.7 — MV Loader Logging Cleanup (2026-02-21)
+## 🔧 v2.1.7 — Settings Bug Fix & Logging Cleanup (2026-02-21)
 
-This patch release cleans up error logging in the MV Loader for a better user experience.
+This patch release fixes a critical bug where toggling dark mode in Settings would clear saved credentials, causing login popups to appear for all tools.
+
+### Fixed
+
+- **Settings Credentials Bug**: Fixed bug where clicking OK/Apply in Settings after switching to the Appearance tab (e.g., toggling dark mode) would clear in-memory credentials, causing login popups to appear for all tools. The fix preserves existing config.ini credential values when entry widgets don't exist (i.e., when on a different Settings tab).
 
 ### Changed
 
@@ -16,11 +20,15 @@ This patch release cleans up error logging in the MV Loader for a better user ex
 
 - **Debug Trace File**: Removed `mv_debug_trace.txt` file generation that was used during development troubleshooting. Errors are still logged via the standard logger.
 
+- **Theme Debug File**: Removed `theme_debug.log` file generation and related `_debug_panes()` function from main GUI.
+
 ### Files Modified
 
 | File | Changes |
 |------|---------|
+| `libs/settings.py` | Fixed credential clearing bug when saving from non-Connections tab |
 | `loaders/sql_mv_loader.py` | Removed debug trace file writes, changed 4x `logger.exception()` to `logger.error()` |
+| `HoonyTools.pyw` | Removed theme debug logging and `_debug_panes()` function |
 
 ---
 

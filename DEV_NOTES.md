@@ -1509,3 +1509,70 @@ Result:
 #### Files Updated
 
 - `loaders/sql_mv_loader.py` — Changed 4 occurrences from `logger.exception()` to `logger.error()`
+
+---
+
+### 🐛 Entry #17: Settings Tab-Switching Credential Bug
+
+#### Summary
+
+When the Settings dialog switches between category tabs (e.g., from Connections to Appearance), the entry widget references are cleared. If `_save()` is then called (via OK or Apply), it would incorrectly treat credentials as empty and clear them from session memory.
+
+#### The Bug
+
+In `_on_category_select()` at lines 714-721:
+```python
+# Clear entry refs for fresh build, but preserve system references
+preserved = {
+    '_parent': entry_refs.get('_parent'),
+    '_status_label': entry_refs.get('_status_label'),
+    '_win': entry_refs.get('_win'),
+}
+entry_refs.clear()  # <-- Clears schema1_user, schema1_pass, etc!
+entry_refs.update(preserved)
+```
+
+Then in `_save()`:
+```python
+s1_user = entry_refs.get('schema1_user')  # Returns None!
+if s1_user and s1_pass and s1_dsn:
+    s1_user_val = s1_user.get().strip()
+else:
+    # s1_user_val stays as ''
+    pass
+
+# Later...
+if s1_user_val and s1_pass_val and s1_dsn_val:
+    session.set_credentials(...)
+else:
+    session.clear_credentials('schema1')  # <-- BUG: Credentials wiped!
+```
+
+#### Symptoms
+
+1. User opens Settings (Connections panel loads)
+2. User switches to Appearance tab (entry refs cleared)
+3. User toggles dark mode and clicks OK/Apply
+4. `session.clear_credentials()` is called for both schemas
+5. All tools now show login popup
+
+#### The Fix
+
+In `_save()`, when entry widgets don't exist, read current values from `config.ini` instead of treating them as empty:
+
+```python
+if s1_user and s1_pass and s1_dsn:
+    # Entry widgets exist (on Connections tab) - read from them
+    s1_user_val = s1_user.get().strip()
+    ...
+else:
+    # Entry widgets don't exist (on different tab) - preserve existing config.ini values
+    if cfg.has_section('schema1'):
+        s1_user_val = cfg.get('schema1', 'user', fallback='')
+        s1_pass_val = cfg.get('schema1', 'password', fallback='')
+        s1_dsn_val = cfg.get('schema1', 'dsn', fallback='')
+```
+
+#### Files Updated
+
+- `libs/settings.py` — Fixed `_save()` to preserve credentials when entry widgets don't exist
