@@ -4,6 +4,26 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🔧 v2.1.7 — MV Loader Logging Cleanup (2026-02-21)
+
+This patch release cleans up error logging in the MV Loader for a better user experience.
+
+### Changed
+
+- **Cleaner Error Logging**: Changed `logger.exception()` to `logger.error()` in MV Loader to show concise ORA error messages without verbose Python tracebacks in the log pane.
+
+### Removed
+
+- **Debug Trace File**: Removed `mv_debug_trace.txt` file generation that was used during development troubleshooting. Errors are still logged via the standard logger.
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `loaders/sql_mv_loader.py` | Removed debug trace file writes, changed 4x `logger.exception()` to `logger.error()` |
+
+---
+
 ## 🔧 v2.1.6 — Dual Schema Clean-Up & Dark Mode Improvements (2026-02-21)
 
 This release removes all hardcoded schema references (previously 'DWH' and 'User') and introduces clean dual schema support with consistent "Schema 1" / "Schema 2" terminology. Also adds dark mode support to additional dialogs.
