@@ -4,6 +4,66 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🔧 v2.1.5 — Auto-Refresh, Tool UX Improvements & View Options (2026-02-21)
+
+This release adds automatic object pane refresh on startup and tool close, fixes MV Loader connection handling for consecutive creations, and introduces several UI/UX improvements across the View Loader, MV Loader, and MV Manager.
+
+### Added
+
+- **Auto-Refresh on Startup**: Object panes now automatically refresh when the main GUI launches if saved credentials exist (not on brand new launch without credentials).
+
+- **Refresh on Tool Close**: Both object panes now refresh when any tool GUI is closed (via Close button, X, or Cancel). Applies to:
+  - SQL View Loader
+  - SQL MV Loader
+  - Excel/CSV Loader
+  - PK Designator
+  - Index Manager
+  - MV Manager
+
+- **View Options**: Added two new checkboxes to SQL View Loader:
+  - `WITH READ ONLY` — Prevents DML operations through the view
+  - `WITH CHECK OPTION` — Ensures INSERTs/UPDATEs satisfy the view's WHERE clause
+
+- **Close Button in MV Manager**: Added a "Close" button at bottom-right with visual spacing from action buttons (`[Create Logs] [Refresh MV]     [Close]`).
+
+### Changed
+
+- **Button Labels**: Changed "Cancel" to "Close" in SQL View Loader and SQL MV Loader for consistency.
+
+- **Button Labels**: Changed "Create View" and "Create Materialized View" to just "Create" with matching width=10.
+
+- **SQL View Loader UI**: Window size, SQL text area, and control layout now match SQL MV Loader for visual consistency:
+  - Window geometry: 1300x740
+  - SQL text area: width=120, height=25
+  - Centered name entry field with width=33
+
+- **SQL MV Loader UI**:
+  - Centered "Materialized View Name" label and entry field
+  - Centered parameter groups (Build, Refresh Method, Refresh Trigger)
+  - Moved "Enable Query Rewrite" checkbox to its own centered row below parameters
+  - Entry field width=33 to match View Loader
+
+- **Alignment**: Both View and MV Loader now use a shared container approach to ensure the name entry field aligns symmetrically with the button row below.
+
+### Fixed
+
+- **MV Loader Connection Handling**: Removed `conn.close()` from `on_submit()` finally block. Connection now stays open for consecutive MV creations, matching SQL View Loader behavior.
+
+- **Threading Error on Force Quit**: Wrapped `root.after()` calls in worker threads with `is_gui_running` check to prevent "main thread is not in main loop" RuntimeError when force-quitting during object refresh.
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `HoonyTools.pyw` | Auto-refresh on startup, `on_finish` callbacks for all tools, threading error fix |
+| `loaders/sql_view_loader.py` | UI overhaul (size, layout, centering), "Close" button, "Create" button, WITH READ ONLY/CHECK OPTION |
+| `loaders/sql_mv_loader.py` | Connection fix, UI centering, "Close" button, "Create" button, Query Rewrite on new row |
+| `loaders/excel_csv_loader.py` | Added `on_finish` parameter |
+| `tools/pk_designate_gui.py` | Added `on_finish` parameter |
+| `tools/mv_refresh_gui.py` | Added "Close" button |
+
+---
+
 ## 🔧 v2.1.1 — MV Manager Multi-Select & UX Improvements (2026-02-20)
 
 This patch release enhances the Materialized View Manager with improved multi-select UX, Reset buttons, single-click refresh, and better result display.

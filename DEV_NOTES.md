@@ -1063,3 +1063,124 @@ sql_text.insert(tk.END, '\n'.join(details))
 - **Grouped list format**: Indented bullet format (`  - MV_NAME`) provides clear visual hierarchy and easy scanning
 - **Blank line separator**: Empty line between User MVs and DWH MVs sections improves readability
 - **Brief top / detailed bottom**: Follows common log viewer pattern where summary is at top and details below
+
+---
+
+### 🔄 Entry #19: Auto-Refresh, Tool Callbacks & UI Consistency (2026-02-21)
+
+Summary: This session focused on improving user experience with automatic object pane refresh, ensuring tools trigger refresh on close, fixing MV Loader connection handling, and achieving UI consistency between View and MV Loaders. Also added view options (WITH READ ONLY / WITH CHECK OPTION) and fixed a threading error on force quit.
+
+#### Findings
+
+1. **View DML Operations**: Regular Oracle views (not materialized views) can support INSERT, UPDATE, DELETE operations that modify the underlying base table(s). This works for simple views (single table, no aggregates/GROUP BY). `WITH READ ONLY` blocks this, `WITH CHECK OPTION` validates results stay visible in the view.
+
+2. **Tkinter `root.after()` in Threads**: When a background thread calls `root.after()` after the main Tk loop has been destroyed (e.g., during force quit), it raises `RuntimeError: main thread is not in main loop`. The fix is to check a flag (`is_gui_running`) before attempting to schedule UI updates.
+
+3. **MV Loader vs View Loader Connection Handling**: The MV Loader was closing the connection in `on_submit()` finally block, preventing consecutive MV creations. View Loader only closes the cursor, not the connection. The connection is properly cleaned up when the window is destroyed via `session.register_connection()`.
+
+4. **Tkinter Pack Centering**: To align multiple rows (e.g., name entry + buttons) so they share the same visual center, they must be packed into a common parent container. Each row is then centered within that container.
+
+5. **Forward Reference in Button Command**: When a button is created before the function it should call is defined (e.g., `btn_close` before `on_close()`), you can either:
+   - Create button without command, then call `btn.config(command=on_close)` after the function is defined
+   - Use a lambda that captures by name (late binding): `command=lambda: on_close()`
+
+#### Challenges
+
+1. **`on_finish` Callback Placement**: Different tools had different structures for their main loop (`wait_window()` vs `mainloop()`). The `on_finish` callback needed to be called in a `finally` block after the main loop completes, or when `on_close()` is called for the MV Manager pattern.
+
+2. **MV Manager Close Button**: The `on_close()` function is defined late in the file (after all UI setup). Had to create the button without a command first, then configure it after `on_close()` is defined.
+
+3. **Entry Field Alignment**: The user wanted the entry field (black bar) to align symmetrically with the two buttons below. Simply centering both rows independently didn't achieve this because the label ("View Name:") added asymmetry. Solution: use a shared container frame for both rows.
+
+4. **Threading Race Condition**: The `is_gui_running` flag must be set to `False` in `safe_exit()` before `root.destroy()` is called. Worker threads check this flag before calling `root.after()`. However, there's still a small race window where a thread could pass the check and then have `root` destroyed before `after()` completes. Wrapping in `try/except` handles this edge case.
+
+#### Implementation Details
+
+**Auto-Refresh on Startup**:
+```python
+def _auto_refresh_on_startup():
+    """Auto-refresh object panes if saved credentials exist (not a brand new launch)."""
+    if session.get_credentials('schema1'):
+        refresh_schema1_objects()
+    if session.get_credentials('schema2'):
+        refresh_schema2_objects()
+
+root.after(100, _auto_refresh_on_startup)
+```
+The 100ms delay ensures the window is fully realized before starting background refresh threads.
+
+**Threading Error Fix Pattern**:
+```python
+# Before (crashes on force quit):
+root.after(0, lambda: _populate_treeview(schema1_tree, rows))
+
+# After (safe):
+if is_gui_running:
+    try:
+        root.after(0, lambda: _populate_treeview(schema1_tree, rows))
+    except Exception:
+        pass
+```
+
+**Shared Container for Alignment**:
+```python
+# Both rows inside same container ensures symmetric centering
+control_container = tk.Frame(builder_window)
+control_container.pack(pady=8)
+
+name_row = tk.Frame(control_container)
+name_row.pack(pady=(0, 15))
+# ... label and entry ...
+
+btn_frame = tk.Frame(control_container)
+btn_frame.pack()
+# ... buttons ...
+```
+
+**Late Button Command Configuration**:
+```python
+# Create button without command
+btn_close = tk.Button(btn_frame, text="Close", width=10)
+btn_close.pack(side="right", padx=6)
+
+# ... later, after on_close() is defined ...
+
+btn_close.config(command=on_close)
+```
+
+#### Oracle View Options Explained
+
+| Option | Purpose | Use Case |
+|--------|---------|----------|
+| `WITH READ ONLY` | Blocks all DML (INSERT/UPDATE/DELETE) through the view | Reporting views, security |
+| `WITH CHECK OPTION` | Allows DML but validates results stay visible in view | Data integrity, partitioned access |
+
+These are mutually exclusive - a view cannot have both. The implementation gives precedence to READ ONLY if somehow both are checked.
+
+#### Files Modified
+
+| File | Changes |
+|------|---------|
+| `HoonyTools.pyw` | `_auto_refresh_on_startup()`, `on_finish` callbacks for load/pk tools, `is_gui_running` checks in worker threads |
+| `loaders/sql_view_loader.py` | UI overhaul (geometry, centering, shared container), "Close" label, "Create" label, `read_only_var`/`check_option_var` checkboxes |
+| `loaders/sql_mv_loader.py` | Removed `conn.close()` from finally, UI centering, shared container, "Close" label, "Create" label, Query Rewrite on separate row |
+| `loaders/excel_csv_loader.py` | Added `on_finish=None` parameter, `finally` block to call it |
+| `tools/pk_designate_gui.py` | Added `on_finish=None` parameter, call after session cleanup |
+| `tools/mv_refresh_gui.py` | Added `btn_close`, late-bound command configuration |
+
+#### Testing Checklist
+
+1. **Auto-refresh on startup**: Save credentials via Settings, restart app — both panes should auto-populate
+2. **Fresh launch**: Delete `config.ini`, launch app — panes should remain empty (no auto-refresh)
+3. **Tool close refresh**: Open any tool, close it — relevant pane(s) should refresh
+4. **Consecutive MV creation**: Open MV Loader, create MV, create another MV without reopening — should work
+5. **Force quit during refresh**: Click refresh, immediately close window — no traceback in console
+6. **View options**: Create view with READ ONLY checked — verify DML fails; create with CHECK OPTION — verify constraint works
+7. **UI alignment**: Open View Loader and MV Loader — entry fields should align with button rows below
+
+#### UX Rationale
+
+- **Close vs Cancel**: "Close" better communicates that the dialog can be reopened; "Cancel" implies aborting an in-progress operation
+- **Create vs Create View/MV**: Shorter label reduces button width, and context is already clear from the dialog title
+- **Centered layouts**: Provides a cleaner, more professional appearance; easier to scan visually
+- **Query Rewrite on separate row**: Separates the "optional enhancement" from the core MV parameters (Build/Refresh/Trigger)
