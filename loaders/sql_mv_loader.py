@@ -4,7 +4,7 @@ import logging
 import re
 from libs.oracle_db_connector import get_db_connection
 from libs import session
-from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, DARK_BTN_BG, DARK_BTN_ACTIVE_BG, DARK_SELECT_BG, DARK_INSERT_BG
+from libs import gui_utils
 import ctypes
 from libs.paths import ASSETS_PATH
 from pathlib import Path
@@ -108,6 +108,10 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             except NameError:
                 dlg = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
             dlg.title("Create Materialized View Logs")
+            
+            # Apply theme immediately after creating dialog, before adding widgets
+            gui_utils.apply_theme_to_dialog(dlg)
+            
             try:
                 dlg.transient(builder_window)
             except Exception:
@@ -130,6 +134,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             if not create_choice:
                 return (False, [], None, None)
             return (True, tables, 'ROWID', True)
+        
         tk.Label(dlg, text="The selected MV options require materialized view logs for fast refresh/ON COMMIT.\nSelect tables to create logs on:", justify="left").pack(padx=12, pady=(8, 6))
         checks = []
         frame = tk.Frame(dlg)
@@ -167,23 +172,30 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
 
         btnf = tk.Frame(dlg)
         btnf.pack(pady=8)
-        # Create buttons with dark mode styling if needed
-        _dlg_btns = []
         btn1 = tk.Button(btnf, text="Create Logs & Continue", command=on_ok, width=18)
         btn2 = tk.Button(btnf, text="Skip Logs & Continue", command=on_skip, width=18)
         btn3 = tk.Button(btnf, text="Cancel", command=on_cancel, width=10)
         btn1.pack(side="left", padx=6)
         btn2.pack(side="left", padx=6)
         btn3.pack(side="left", padx=6)
-        _dlg_btns.extend([btn1, btn2, btn3])
-        # Detect dark mode and style buttons
+
+        # Live theme update callback
+        def _on_theme_change(theme_key):
+            try:
+                gui_utils.apply_theme_to_existing_widgets(dlg)
+            except Exception:
+                pass
+        
+        # Register theme callback and unregister on destroy
         try:
-            import tkinter.ttk as _ttk_dlg
-            st = _ttk_dlg.Style()
-            bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-            if isinstance(bg, str) and bg.strip().lower() in ('#000000', '#000', 'black'):
-                for btn in _dlg_btns:
-                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+            gui_utils.register_theme_callback(_on_theme_change)
+            def _on_destroy(event=None):
+                if event and event.widget == dlg:
+                    try:
+                        gui_utils.unregister_theme_callback(_on_theme_change)
+                    except Exception:
+                        pass
+            dlg.bind('<Destroy>', _on_destroy)
         except Exception:
             pass
 
@@ -289,6 +301,10 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             except NameError:
                 dlg = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
             dlg.title(f"Existing MV Log on {table}")
+            
+            # Apply theme immediately after creating dialog, before adding widgets
+            gui_utils.apply_theme_to_dialog(dlg)
+            
             try:
                 dlg.transient(builder_window)
             except Exception:
@@ -398,9 +414,6 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             # keep defaults if helper fails
             pass
 
-        # Detect dark mode once for pane-only styling (ScrolledText widgets)
-        _is_dark = is_dark_mode_active()
-
         lbl_title = tk.Label(dlg, text=f"A materialized view log already exists on {table}.", font=("Arial", 10, "bold"))
         lbl_title.pack(padx=12, pady=(8, 4), anchor='w')
         
@@ -435,9 +448,8 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             deps_box.insert('1.0', '(none detected)')
         deps_box.config(state='disabled')
         
-        # Apply dark mode to deps_box
-        if _is_dark:
-            deps_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
+        # Apply current theme to deps_box
+        gui_utils.apply_theme_to_pane(deps_box)
 
         def copy_deps():
             try:
@@ -464,59 +476,6 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         btn_save = tk.Button(btns_deps, text='Save list', command=save_deps, width=10)
         btn_copy.pack(side='left', padx=(0,6))
         btn_save.pack(side='left')
-
-        # Gather low-level diagnostic counts to help debug false positives
-        diag = {}
-        mlog_name = None
-        try:
-            master_name = table.split('.')[-1].upper()
-            try:
-                cursor.execute("SELECT COUNT(*) FROM USER_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
-                diag['user_mview_logs_count'] = cursor.fetchone()[0]
-            except Exception:
-                diag['user_mview_logs_count'] = None
-            try:
-                cursor.execute("SELECT COUNT(*) FROM ALL_MVIEW_LOGS WHERE MASTER = :m", (master_name,))
-                diag['all_mview_logs_count'] = cursor.fetchone()[0]
-            except Exception:
-                diag['all_mview_logs_count'] = None
-            try:
-                mlog_name = f"MLOG$_{master_name}"
-                cursor.execute("SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
-                diag['user_tables_mlog_count'] = cursor.fetchone()[0]
-            except Exception:
-                diag['user_tables_mlog_count'] = None
-            try:
-                cursor.execute("SELECT COUNT(*) FROM ALL_TABLES WHERE TABLE_NAME = :tn", (mlog_name,))
-                diag['all_tables_mlog_count'] = cursor.fetchone()[0]
-            except Exception:
-                diag['all_tables_mlog_count'] = None
-        except Exception:
-            diag = {}
-
-        # Debug info button (helps surface permission/stale-dictionary cases)
-        def show_diag():
-            try:
-                meta_text = ''
-                try:
-                    meta_text = str(meta)
-                except Exception:
-                    meta_text = '(no meta)'
-                lines = [f"detect_existing_mlog meta: {meta_text}"]
-                for k in ('user_mview_logs_count','all_mview_logs_count','user_tables_mlog_count','all_tables_mlog_count'):
-                    lines.append(f"{k}: {diag.get(k)!r}")
-                try:
-                    _safe_messagebox('showinfo', 'Debug Info', '\n'.join(lines), dlg=dlg)
-                except Exception:
-                    _safe_messagebox('showwarning', 'Debug Failed', f'Could not show debug info: (failed to display debug info)', dlg=dlg)
-            except Exception:
-                # swallow any unexpected errors while preparing debug text
-                try:
-                    _safe_messagebox('showwarning', 'Debug Failed', 'Could not produce debug info.', dlg=dlg)
-                except Exception:
-                    pass
-        btn_debug = tk.Button(btns_deps, text='Show debug info', command=show_diag, width=14)
-        btn_debug.pack(side='left', padx=(6,0))
 
         # acknowledgement checkbox variable (checkbox will be placed next to the confirmation entry)
         ack_var = tk.BooleanVar(value=False)
@@ -558,9 +517,8 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         ddl_box.insert("1.0", desired_sql)
         ddl_box.config(state='disabled')
         
-        # Apply dark mode to ddl_box
-        if _is_dark:
-            ddl_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
+        # Apply current theme to ddl_box
+        gui_utils.apply_theme_to_pane(ddl_box)
 
         # Note: Run Explain / MV_CAPABILITIES_TABLE support removed to keep the dialog simple.
         # Advanced EXPLAIN functionality was intentionally removed per UX decision.
@@ -635,6 +593,29 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             ack_var.trace_add('write', lambda *_: update_buttons())
         except Exception:
             ack_var.trace('w', lambda *_: update_buttons())
+
+        # Live theme update callback
+        def _on_theme_change(theme_key):
+            try:
+                gui_utils.apply_theme_to_existing_widgets(dlg)
+                # Re-apply pane theming for ScrolledText widgets
+                gui_utils.apply_theme_to_pane(deps_box)
+                gui_utils.apply_theme_to_pane(ddl_box)
+            except Exception:
+                pass
+        
+        # Register theme callback and unregister on destroy
+        try:
+            gui_utils.register_theme_callback(_on_theme_change)
+            def _on_destroy(event=None):
+                if event and event.widget == dlg:
+                    try:
+                        gui_utils.unregister_theme_callback(_on_theme_change)
+                    except Exception:
+                        pass
+            dlg.bind('<Destroy>', _on_destroy)
+        except Exception:
+            pass
 
         dlg.update_idletasks()
         w = dlg.winfo_width(); h = dlg.winfo_height()
@@ -1016,6 +997,9 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     builder_window.title("SQL Materialized View Loader")
     # widen builder window so bottom option row isn't squished on smaller displays
     builder_window.geometry("1300x740")
+    
+    # Apply theme immediately after creating dialog, before adding widgets
+    gui_utils.apply_theme_to_dialog(builder_window)
 
     # If launched from the main launcher, make the window transient and modal
     grabbed = False
@@ -1036,134 +1020,30 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     except Exception:
         pass
 
-    # Pane-only dark mode support (polling fallback)
-    try:
-        import tkinter.ttk as _ttk
-    except Exception:
-        _ttk = None
-    _last_dark = None
-    _poll_id = None
-    _all_buttons = []  # Will be populated when buttons are created
-
-    def _detect_dark_from_style():
+    # Live theme update callback
+    def _on_theme_change(theme_key):
+        """Theme change callback - applies theme to all existing widgets."""
         try:
-            if _ttk:
-                st = _ttk.Style()
-                bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-                if isinstance(bg, str) and bg.strip():
-                    b = bg.strip().lower()
-                    if b in ('#000000', '#000') or 'black' in b:
-                        return True
-        except Exception:
-            pass
-        return False
-
-    def _apply_theme(dark: bool):
-        # Only apply dark colors to the SQL text pane and the MV name entry.
-        # Do not darken frames, labelframes, or control panels — keep chrome
-        # light so only the content panes change.
-        try:
-            if dark:
-                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
-                try:
-                    mv_name_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
-                except Exception:
-                    pass
-            else:
-                sql_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
-                try:
-                    mv_name_entry.config(bg='white', fg='black', insertbackground='black')
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # Apply button styling for dark/light mode
-        try:
-            for btn in _all_buttons:
-                try:
-                    if dark:
-                        btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-                    else:
-                        btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    def _poll_theme():
-        nonlocal _last_dark, _poll_id
-        try:
-            dark = _detect_dark_from_style()
-            if dark is not _last_dark:
-                _last_dark = dark
-                _apply_theme(dark)
-        except Exception:
-            pass
-        try:
-            _poll_id = builder_window.after(600, _poll_theme)
-        except Exception:
-            _poll_id = None
-
-    def _stop_polling(event=None):
-        nonlocal _poll_id
-        try:
-            if _poll_id:
-                builder_window.after_cancel(_poll_id)
-                _poll_id = None
-        except Exception:
-            pass
-
-    # Determine initial dark state before creating content widgets to avoid
-    # visible white -> black flip when dark mode is already enabled.
-    try:
-        _initial_dark = _detect_dark_from_style()
-    except Exception:
-        _initial_dark = False
-
-    try:
-        # apply current style immediately to ensure internal state is consistent
-        _apply_theme(_initial_dark)
-    except Exception:
-        pass
-
-    # Register theme callback with parent when available; otherwise start polling
-    def _theme_cb(enable_dark: bool):
-        try:
-            _apply_theme(bool(enable_dark))
-        except Exception:
-            pass
-
-    try:
-        if parent is not None and hasattr(parent, 'register_theme_callback'):
+            gui_utils.apply_theme_to_existing_widgets(builder_window)
+            # Re-apply pane theming for ScrolledText (may need explicit call)
             try:
-                parent.register_theme_callback(_theme_cb)
-                # ensure we unregister when this window is destroyed
-                def _on_destroy(event=None):
-                    try:
-                        if parent and hasattr(parent, 'unregister_theme_callback'):
-                            parent.unregister_theme_callback(_theme_cb)
-                    except Exception:
-                        pass
-                try:
-                    builder_window.bind('<Destroy>', _on_destroy)
-                except Exception:
-                    pass
-                # apply current style immediately via callback
-                try:
-                    _theme_cb(_detect_dark_from_style())
-                except Exception:
-                    pass
+                gui_utils.apply_theme_to_pane(sql_text)
             except Exception:
                 pass
-        else:
-            try:
-                builder_window.after(600, _poll_theme)
-            except Exception:
-                pass
-            try:
-                builder_window.bind('<Destroy>', _stop_polling)
-            except Exception:
-                pass
+        except Exception:
+            pass
+
+    # Register theme callback and unregister on destroy
+    try:
+        gui_utils.register_theme_callback(_on_theme_change)
+        
+        def _on_destroy(event=None):
+            if event and event.widget == builder_window:
+                try:
+                    gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
+        builder_window.bind('<Destroy>', _on_destroy)
     except Exception:
         pass
 
@@ -1217,15 +1097,11 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
 
     tk.Label(builder_window, text="Enter SQL to turn into a MATERIALIZED VIEW:", font=("Arial", 11, "bold")).pack(pady=(10, 5))
 
-    # Create SQL text with initial theme to avoid visible white -> black flip
-    try:
-        if _initial_dark:
-            sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
-        else:
-            sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
-    except Exception:
-        sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10))
+    # Create SQL text - theme colors are inherited from option database
+    sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10))
     sql_text.pack(padx=10, pady=(0, 10), fill="both", expand=False)
+    # Apply pane theming explicitly for best results
+    gui_utils.apply_theme_to_pane(sql_text)
 
     # Shared container for name row and buttons to ensure alignment
     control_container = tk.Frame(builder_window)
@@ -1236,20 +1112,13 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     name_row.pack(pady=(0, 10))
 
     tk.Label(name_row, text="Materialized View Name:").pack(side="left", padx=(0, 5))
-    # Create MV name entry with initial theme to avoid flash
-    try:
-        if _initial_dark:
-            mv_name_entry = tk.Entry(name_row, width=33, bg='#000000', fg='#ffffff', insertbackground='#ffffff')
-        else:
-            mv_name_entry = tk.Entry(name_row, width=33)
-    except Exception:
-        mv_name_entry = tk.Entry(name_row, width=33)
+    # Create MV name entry - theme colors are inherited from option database
+    mv_name_entry = tk.Entry(name_row, width=33)
     mv_name_entry.pack(side="left")
 
-    # Import SQL button
+    # Import SQL button - theme colors are inherited from option database
     btn_import_sql = tk.Button(name_row, text="Import SQL", command=load_sql_from_file, width=10)
     btn_import_sql.pack(side="left", padx=(10, 0))
-    _all_buttons.append(btn_import_sql)
 
     # Row 1: Parameter frames (centered)
     param_frame = tk.Frame(control_container)
@@ -1291,20 +1160,11 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     btn_frame = tk.Frame(control_container)
     btn_frame.pack()
 
-    # Create buttons with references for dark mode styling
+    # Create buttons - theme colors are inherited from option database
     btn_create_mv = tk.Button(btn_frame, text="Create", command=on_submit, width=10)
     btn_cancel_mv = tk.Button(btn_frame, text="Close", command=on_cancel, width=10)
     btn_create_mv.pack(side="left", padx=10)
     btn_cancel_mv.pack(side="left", padx=10)
-    _all_buttons.extend([btn_create_mv, btn_cancel_mv])
-    
-    # Apply initial button theme if dark mode is active
-    if _initial_dark:
-        for btn in _all_buttons:
-            try:
-                btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-            except Exception:
-                pass
 
     # Center on screen
     builder_window.update_idletasks()

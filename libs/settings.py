@@ -88,9 +88,8 @@ def _center_window(window, width, height):
 def _is_dark_mode():
     """Check if dark mode is currently active."""
     try:
-        style = ttk.Style()
-        bg = style.lookup('Pane.Treeview', 'background') or ''
-        return bg.lower() in ('#000000', '#000', 'black')
+        from libs import gui_utils
+        return gui_utils.is_dark_theme()
     except Exception:
         return False
 
@@ -224,34 +223,54 @@ def _build_connections_panel(parent_frame, entry_refs, button_frame):
         s2_pass_entry.insert(0, cfg.get('schema2', 'password', fallback=''))
         s2_dsn_entry.insert(0, cfg.get('schema2', 'dsn', fallback=''))
 
-    # Collect entry fields that need theme styling (only the input fields, not labels/frames)
+    # Collect all widgets for theme styling
     entries = [s1_user_entry, s1_pass_entry, s1_dsn_entry, s2_user_entry, s2_pass_entry, s2_dsn_entry]
+    labels = [s1_user_label, s1_pass_label, s1_dsn_label, s2_user_label, s2_pass_label, s2_dsn_label]
+    labelframes = [schema1_frame, schema2_frame]
+    checkboxes = [s1_show_check, s2_show_check]
 
     # Store widgets for theme callback
     entry_refs['_conn_entries'] = entries
+    entry_refs['_conn_labels'] = labels
+    entry_refs['_conn_labelframes'] = labelframes
+    entry_refs['_conn_checkboxes'] = checkboxes
+    entry_refs['_conn_container'] = container
 
-    # Apply initial theme based on current dark mode state
-    parent = entry_refs.get('_parent')
-    is_dark = False
-    if parent and hasattr(parent, '_dark_mode_var'):
+    def _apply_connections_theme(is_dark_unused=None):
+        """Apply current theme to all connection panel widgets."""
+        from libs import gui_utils
+        
+        # Apply to container frame
         try:
-            is_dark = parent._dark_mode_var.get()
+            gui_utils.apply_theme_to_window(container)
         except Exception:
             pass
-
-    def _apply_connections_theme(dark):
-        """Apply dark or light theme to connection panel entry fields only."""
-        if dark:
-            entry_bg = '#000000'
-            entry_fg = '#ffffff'
-        else:
-            entry_bg = 'white'
-            entry_fg = 'black'
-
-        # Apply to entry fields only
+        
+        # Apply to LabelFrames
+        for lf in labelframes:
+            try:
+                gui_utils.apply_theme_to_labelframe(lf)
+            except Exception:
+                pass
+        
+        # Apply to labels
+        for label in labels:
+            try:
+                gui_utils.apply_theme_to_label(label)
+            except Exception:
+                pass
+        
+        # Apply to entry fields
         for entry in entries:
             try:
-                entry.config(bg=entry_bg, fg=entry_fg, insertbackground=entry_fg)
+                gui_utils.apply_theme_to_entry(entry)
+            except Exception:
+                pass
+        
+        # Apply to checkboxes
+        for cb in checkboxes:
+            try:
+                gui_utils.apply_theme_to_checkbox(cb)
             except Exception:
                 pass
 
@@ -259,7 +278,7 @@ def _build_connections_panel(parent_frame, entry_refs, button_frame):
     entry_refs['_conn_apply_theme'] = _apply_connections_theme
 
     # Apply initial theme
-    _apply_connections_theme(is_dark)
+    _apply_connections_theme()
 
     # Pack button frame at bottom with right alignment
     button_frame.pack(side='bottom', fill='x', padx=10, pady=(10, 10))
@@ -279,51 +298,284 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
     Returns:
         The built frame
     """
+    from libs import gui_utils
+    
     # Main container
     container = tk.Frame(parent_frame, bg='SystemButtonFace')
     container.pack(fill='both', expand=True, padx=10, pady=10)
 
     # Theme LabelFrame
-    theme_frame = tk.LabelFrame(container, text="Theme", padx=10, pady=10)
+    theme_frame = tk.LabelFrame(container, text="Themes", padx=10, pady=10)
     theme_frame.pack(fill='x', pady=(0, 10))
 
-    # Get current dark mode state - prefer live state from parent, fallback to config.ini
-    current_dark_mode = False
-    parent = entry_refs.get('_parent')
-    if parent and hasattr(parent, '_dark_mode_var'):
+    # Theme selection row
+    theme_row = tk.Frame(theme_frame)
+    theme_row.pack(fill='x', pady=5)
+    
+    tk.Label(theme_row, text="Theme Preset:").pack(side='left', padx=(0, 10))
+    
+    # Get display names for dropdown (ordered from dark to light)
+    theme_names = gui_utils.get_theme_names()
+    display_names = [gui_utils.get_theme_display_name(k) for k in theme_names]
+    
+    # Get current theme
+    current_theme_key = gui_utils.get_current_theme()
+    current_display_name = gui_utils.get_theme_display_name(current_theme_key)
+    
+    # Create dropdown
+    theme_var = tk.StringVar(value=current_display_name)
+    entry_refs['theme_var'] = theme_var
+    
+    theme_dropdown = ttk.Combobox(
+        theme_row,
+        textvariable=theme_var,
+        values=display_names,
+        state='readonly',
+        width=20
+    )
+    theme_dropdown.pack(side='left')
+    
+    def _on_theme_change(event=None):
+        """Apply theme immediately when selection changes (live preview)."""
+        selected_display_name = theme_var.get()
+        # Convert display name to theme key
+        name_to_key = gui_utils.get_display_name_to_key()
+        theme_key = name_to_key.get(selected_display_name, 'system_light')
+        # Set theme (this saves to config and triggers callbacks)
+        gui_utils.set_theme(theme_key)
+    
+    theme_dropdown.bind('<<ComboboxSelected>>', _on_theme_change)
+    
+    # Store reference to theme_var for customize dialog
+    entry_refs['_theme_dropdown'] = theme_dropdown
+    
+    def _on_customize():
+        """Open the Customize Colors dialog."""
+        # Get the base preset to start from (current theme, including 'custom')
+        # get_colors_for_preset() handles 'custom' by loading saved custom colors
+        current_key = gui_utils.get_current_theme()
+        base_preset = current_key
+        
+        # Open customize dialog
+        # Theme dropdown update is handled automatically by _apply_theme() callback
+        # which is triggered via gui_utils.register_theme_callback() system
+        dialog = CustomizeColorsDialog(parent_frame.winfo_toplevel(), base_preset)
+    
+    # Customize button (now enabled)
+    customize_btn = tk.Button(
+        theme_row,
+        text="Customize...",
+        command=_on_customize
+    )
+    customize_btn.pack(side='left', padx=(10, 0))
+    
+    # Theme description
+    desc_label = tk.Label(
+        theme_frame,
+        text="Choose a preset or click Customize to create your own theme.",
+        fg='gray'
+    )
+    desc_label.pack(anchor='w', pady=(10, 0))
+    
+    # Get reference to the "Theme Preset:" label (it was created anonymously)
+    theme_preset_label = theme_row.winfo_children()[0]  # First child is the label
+
+    # --- Splash Screen Settings ---
+    splash_frame = tk.LabelFrame(container, text="Splash Screen", padx=10, pady=10)
+    splash_frame.pack(fill='x', pady=(0, 10))
+    
+    # Load splash settings from config
+    cfg = _load_config()
+    try:
+        splash_enabled = cfg.getboolean('Appearance', 'splash_enabled')
+    except Exception:
+        splash_enabled = True  # Default enabled
+    try:
+        current_opacity = cfg.getfloat('Appearance', 'splash_opacity')
+    except Exception:
+        current_opacity = 1.0
+    
+    # Splash enabled checkbox
+    splash_enabled_var = tk.BooleanVar(value=splash_enabled)
+    entry_refs['splash_enabled_var'] = splash_enabled_var
+    
+    splash_checkbox = tk.Checkbutton(
+        splash_frame,
+        text="Show splash screen on startup",
+        variable=splash_enabled_var
+    )
+    splash_checkbox.pack(anchor='w', pady=(0, 8))
+    
+    # Splash opacity row
+    opacity_row = tk.Frame(splash_frame)
+    opacity_row.pack(fill='x', pady=5)
+    
+    opacity_label = tk.Label(opacity_row, text="Opacity:")
+    opacity_label.pack(side='left', padx=(0, 10))
+    
+    # Opacity slider (Scale widget)
+    opacity_var = tk.DoubleVar(value=current_opacity)
+    entry_refs['splash_opacity_var'] = opacity_var
+    
+    opacity_slider = tk.Scale(
+        opacity_row,
+        from_=0.0,
+        to=1.0,
+        resolution=0.05,
+        orient='horizontal',
+        variable=opacity_var,
+        length=200,
+        showvalue=True
+    )
+    opacity_slider.pack(side='left', padx=(0, 10))
+    
+    # Opacity value label showing percentage
+    opacity_pct_label = tk.Label(opacity_row, text=f"{int(current_opacity * 100)}%", width=5)
+    opacity_pct_label.pack(side='left')
+    
+    # Splash opacity description
+    opacity_desc_label = tk.Label(
+        splash_frame,
+        text="Controls the maximum opacity of the startup splash screen.",
+        fg='gray'
+    )
+    opacity_desc_label.pack(anchor='w', pady=(5, 0))
+    
+    def _update_opacity_widgets_state():
+        """Enable/disable opacity widgets based on splash enabled state."""
+        enabled = splash_enabled_var.get()
+        state = 'normal' if enabled else 'disabled'
         try:
-            current_dark_mode = parent._dark_mode_var.get()
+            opacity_slider.config(state=state)
+            opacity_label.config(state=state)
+            opacity_pct_label.config(state=state)
+            opacity_desc_label.config(state=state)
         except Exception:
             pass
-    else:
-        # Fallback: load from config.ini
-        cfg = _load_config()
-        current_dark_mode = cfg.getboolean('preferences', 'dark_mode', fallback=False)
+    
+    def _on_splash_enabled_change():
+        """Save splash enabled state to config and update widget states."""
+        try:
+            enabled = splash_enabled_var.get()
+            cfg = _load_config()
+            if not cfg.has_section('Appearance'):
+                cfg.add_section('Appearance')
+            cfg.set('Appearance', 'splash_enabled', str(enabled))
+            _save_config(cfg)
+            _update_opacity_widgets_state()
+        except Exception:
+            pass
+    
+    splash_checkbox.config(command=_on_splash_enabled_change)
+    
+    def _on_opacity_change(value):
+        """Update percentage label and save to config immediately."""
+        try:
+            val = float(value)
+            opacity_pct_label.config(text=f"{int(val * 100)}%")
+            # Save to config immediately
+            cfg = _load_config()
+            if not cfg.has_section('Appearance'):
+                cfg.add_section('Appearance')
+            cfg.set('Appearance', 'splash_opacity', str(val))
+            _save_config(cfg)
+        except Exception:
+            pass
+    
+    opacity_slider.config(command=_on_opacity_change)
+    
+    # Apply initial state
+    _update_opacity_widgets_state()
+    
+    # Store splash widgets for theme callback
+    entry_refs['_appearance_splash_frame'] = splash_frame
+    entry_refs['_appearance_splash_checkbox'] = splash_checkbox
+    entry_refs['_appearance_opacity_row'] = opacity_row
+    entry_refs['_appearance_opacity_label'] = opacity_label
+    entry_refs['_appearance_opacity_slider'] = opacity_slider
+    entry_refs['_appearance_opacity_pct_label'] = opacity_pct_label
+    entry_refs['_appearance_opacity_desc_label'] = opacity_desc_label
+    entry_refs['_update_opacity_widgets_state'] = _update_opacity_widgets_state
 
-    # Dark Mode checkbox
-    dark_mode_var = tk.BooleanVar(value=current_dark_mode)
-    entry_refs['dark_mode_var'] = dark_mode_var
-
-    def _on_dark_mode_toggle():
-        """Immediately apply dark mode toggle without requiring OK/Apply."""
-        dark_mode_enabled = dark_mode_var.get()
-        # Get parent from entry_refs in case it was updated
-        _parent = entry_refs.get('_parent')
-        if _parent and hasattr(_parent, '_dark_mode_var'):
-            parent_var = _parent._dark_mode_var
-            # Update parent's var and trigger toggle
-            parent_var.set(dark_mode_enabled)
-            # Trigger the toggle callback if it exists
-            if hasattr(_parent, '_toggle_dark'):
-                _parent._toggle_dark()
-
-    dark_mode_check = tk.Checkbutton(
-        theme_frame,
-        text="Dark Mode (applies to panes and menu bar)",
-        variable=dark_mode_var,
-        command=_on_dark_mode_toggle
-    )
-    dark_mode_check.pack(anchor='w', pady=5)
+    # Store widgets for theme callback
+    entry_refs['_appearance_container'] = container
+    entry_refs['_appearance_theme_frame'] = theme_frame
+    entry_refs['_appearance_theme_row'] = theme_row
+    entry_refs['_appearance_desc_label'] = desc_label
+    entry_refs['_appearance_customize_btn'] = customize_btn
+    entry_refs['_appearance_preset_label'] = theme_preset_label
+    
+    def _apply_appearance_theme():
+        """Apply current theme to all appearance panel widgets."""
+        from libs import gui_utils
+        
+        try:
+            gui_utils.apply_theme_to_window(container)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_labelframe(theme_frame)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_window(theme_row)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_label(theme_preset_label)
+        except Exception:
+            pass
+        try:
+            # desc_label keeps gray fg for muted appearance
+            desc_label.config(bg=gui_utils.get_color('labelframe_bg'))
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(customize_btn)
+        except Exception:
+            pass
+        # Splash screen section theming
+        try:
+            gui_utils.apply_theme_to_labelframe(splash_frame)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_checkbox(splash_checkbox)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_window(opacity_row)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_label(opacity_label)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_label(opacity_pct_label)
+        except Exception:
+            pass
+        try:
+            # opacity_desc_label keeps gray fg for muted appearance
+            opacity_desc_label.config(bg=gui_utils.get_color('labelframe_bg'))
+        except Exception:
+            pass
+        try:
+            # Theme the Scale widget
+            opacity_slider.config(
+                bg=gui_utils.get_color('labelframe_bg'),
+                fg=gui_utils.get_color('label_fg'),
+                troughcolor=gui_utils.get_color('entry_bg'),
+                highlightbackground=gui_utils.get_color('labelframe_bg'),
+                activebackground=gui_utils.get_color('button_active_bg')
+            )
+        except Exception:
+            pass
+    
+    entry_refs['_appearance_apply_theme'] = _apply_appearance_theme
+    
+    # Apply initial theme
+    _apply_appearance_theme()
 
     # Pack button frame at bottom with right alignment
     button_frame.pack(side='bottom', fill='x', padx=10, pady=(10, 10))
@@ -336,6 +588,420 @@ CATEGORIES = {
     "Connections": _build_connections_panel,
     "Appearance": _build_appearance_panel,
 }
+
+
+# --------------------------------------------------------------------------
+# Customize Colors Dialog
+# --------------------------------------------------------------------------
+
+# Human-readable labels for color keys, grouped by category
+COLOR_KEY_LABELS = {
+    # Content Panes
+    'pane_bg': ('Content Panes', 'Background'),
+    'pane_fg': ('Content Panes', 'Text'),
+    'select_bg': ('Content Panes', 'Selection'),
+    'insert_bg': ('Content Panes', 'Cursor'),
+    # Window Chrome
+    'window_bg': ('Window Chrome', 'Background'),
+    'border_bg': ('Window Chrome', 'Borders'),
+    # Labels
+    'label_bg': ('Labels', 'Background'),
+    'label_fg': ('Labels', 'Text'),
+    # LabelFrame
+    'labelframe_bg': ('LabelFrame', 'Background'),
+    'labelframe_fg': ('LabelFrame', 'Title Text'),
+    # Buttons
+    'button_bg': ('Buttons', 'Background'),
+    'button_fg': ('Buttons', 'Text'),
+    'button_active_bg': ('Buttons', 'Active Background'),
+    'button_active_fg': ('Buttons', 'Active Text'),
+    # Entry Fields
+    'entry_bg': ('Entry Fields', 'Background'),
+    'entry_fg': ('Entry Fields', 'Text'),
+    # Menus
+    'menu_bg': ('Menus', 'Background'),
+    'menu_fg': ('Menus', 'Text'),
+    'menu_active_bg': ('Menus', 'Hover Background'),
+    'menu_active_fg': ('Menus', 'Hover Text'),
+    # Checkboxes
+    'checkbox_bg': ('Checkboxes', 'Background'),
+    'checkbox_fg': ('Checkboxes', 'Text'),
+    'checkbox_select': ('Checkboxes', 'Checkmark Area'),
+    # Scrollbars
+    'scrollbar_bg': ('Scrollbars', 'Track'),
+    'scrollbar_fg': ('Scrollbars', 'Thumb'),
+    # Splash Screen
+    'splash_bg': ('Splash Screen', 'Background'),
+    'splash_fg': ('Splash Screen', 'Title Text'),
+    'splash_muted_fg': ('Splash Screen', 'Footer Text'),
+}
+
+# Order of groups for display
+COLOR_GROUP_ORDER = [
+    'Content Panes',
+    'Window Chrome',
+    'Labels',
+    'LabelFrame',
+    'Buttons',
+    'Entry Fields',
+    'Menus',
+    'Checkboxes',
+    'Scrollbars',
+    'Splash Screen',
+]
+
+
+class CustomizeColorsDialog:
+    """
+    Dialog for customizing theme colors.
+    
+    Shows all 22 color keys in a scrollable list with color swatches
+    and color picker buttons. Changes can be previewed live.
+    """
+    
+    def __init__(self, parent, base_preset_key='charcoal'):
+        """
+        Initialize the Customize Colors dialog.
+        
+        Args:
+            parent: Parent window
+            base_preset_key: Starting preset to copy colors from
+        """
+        from libs import gui_utils
+        
+        self.parent = parent
+        self.gui_utils = gui_utils
+        
+        # Get starting colors from base preset
+        self.colors = gui_utils.get_colors_for_preset(base_preset_key)
+        self.original_theme = gui_utils.get_current_theme()
+        self.swatch_widgets = {}  # key -> Label widget for color swatch
+        
+        # Create dialog window
+        self.win = tk.Toplevel(parent)
+        self.win.title("Customize Theme Colors")
+        self.win.resizable(True, True)
+        self.win.minsize(450, 500)
+        
+        # Set icon
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("hoonywise.hoonytools")
+            icon_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
+            self.win.iconbitmap(default=icon_path)
+        except Exception:
+            pass
+        
+        # Center on screen
+        _center_window(self.win, 480, 600)
+        
+        # Make modal
+        try:
+            self.win.transient(parent)
+            self.win.grab_set()
+        except Exception:
+            pass
+        
+        self._build_ui()
+        
+        # Focus
+        try:
+            self.win.focus_force()
+            self.win.lift()
+        except Exception:
+            pass
+    
+    def _build_ui(self):
+        """Build the dialog UI."""
+        # Main frame
+        main_frame = tk.Frame(self.win)
+        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Instructions
+        instr_label = tk.Label(
+            main_frame,
+            text="Click a swatch to change its color. Click Apply to preview.",
+            fg='gray'
+        )
+        instr_label.pack(anchor='w', pady=(0, 10))
+        
+        # Scrollable canvas for color rows
+        canvas_frame = tk.Frame(main_frame)
+        canvas_frame.pack(fill='both', expand=True)
+        
+        self.canvas = tk.Canvas(canvas_frame, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(canvas_frame, orient='vertical', command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        
+        scrollbar.pack(side='right', fill='y')
+        self.canvas.pack(side='left', fill='both', expand=True)
+        
+        # Inner frame for content
+        self.inner_frame = tk.Frame(self.canvas)
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.inner_frame, anchor='nw')
+        
+        def _on_configure(event=None):
+            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+            self.canvas.itemconfig(self.canvas_window, width=self.canvas.winfo_width())
+        
+        self.inner_frame.bind('<Configure>', _on_configure)
+        self.canvas.bind('<Configure>', lambda e: self.canvas.itemconfig(self.canvas_window, width=e.width))
+        
+        # Mousewheel scrolling - bind to specific widgets, not globally
+        def _on_mousewheel(event):
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        
+        self.canvas.bind('<MouseWheel>', _on_mousewheel)
+        self.inner_frame.bind('<MouseWheel>', _on_mousewheel)
+        canvas_frame.bind('<MouseWheel>', _on_mousewheel)
+        
+        # Build color rows grouped by category
+        self._build_color_rows()
+        
+        # Force widget realization and update swatches
+        # (winfo_rgb needs widgets to be mapped before it can resolve colors)
+        self.inner_frame.update_idletasks()
+        self.win.after(50, self._update_all_swatches)  # Small delay ensures full realization
+        
+        # Button frame
+        btn_frame = tk.Frame(main_frame)
+        btn_frame.pack(fill='x', pady=(10, 0))
+        
+        # Reset button on left
+        reset_btn = tk.Button(
+            btn_frame,
+            text="Reset to Preset",
+            command=self._on_reset
+        )
+        reset_btn.pack(side='left')
+        
+        # OK, Cancel, Apply on right
+        apply_btn = tk.Button(btn_frame, text="Apply", width=8, command=self._on_apply)
+        apply_btn.pack(side='right', padx=(5, 0))
+        
+        cancel_btn = tk.Button(btn_frame, text="Cancel", width=8, command=self._on_cancel)
+        cancel_btn.pack(side='right', padx=(5, 0))
+        
+        ok_btn = tk.Button(btn_frame, text="OK", width=8, command=self._on_ok)
+        ok_btn.pack(side='right', padx=(5, 0))
+        
+        # Store button refs for theming
+        self._buttons = [reset_btn, apply_btn, cancel_btn, ok_btn]
+        self._instr_label = instr_label
+        
+        # Apply initial theme to dialog
+        self._apply_dialog_theme()
+        
+        # Clean up on close
+        self.win.protocol("WM_DELETE_WINDOW", self._on_cancel)
+    
+    def _build_color_rows(self):
+        """Build rows for each color key, grouped by category."""
+        current_group = None
+        row = 0
+        
+        # Group colors by category
+        for group_name in COLOR_GROUP_ORDER:
+            # Find all keys in this group
+            keys_in_group = [
+                (key, label[1]) 
+                for key, label in COLOR_KEY_LABELS.items() 
+                if label[0] == group_name
+            ]
+            
+            if not keys_in_group:
+                continue
+            
+            # Group header
+            header = tk.Label(
+                self.inner_frame,
+                text=group_name,
+                font=('TkDefaultFont', 9, 'bold'),
+                anchor='w'
+            )
+            header.grid(row=row, column=0, columnspan=3, sticky='w', pady=(10 if row > 0 else 0, 5))
+            row += 1
+            
+            # Color rows
+            for key, label_text in keys_in_group:
+                self._build_color_row(row, key, label_text)
+                row += 1
+    
+    def _build_color_row(self, row, key, label_text):
+        """Build a single color row with label, swatch, and pick button."""
+        # Label
+        label = tk.Label(self.inner_frame, text=f"  {label_text}:", anchor='w', width=20)
+        label.grid(row=row, column=0, sticky='w', padx=(10, 5), pady=2)
+        
+        # Color swatch (clickable)
+        color_value = self.colors.get(key, '#000000')
+        
+        swatch = tk.Label(
+            self.inner_frame,
+            width=8,
+            height=1,
+            relief='solid',
+            borderwidth=1,
+            cursor='hand2'
+        )
+        swatch.grid(row=row, column=1, sticky='w', padx=5, pady=2)
+        
+        # Set swatch color
+        self._set_swatch_color(swatch, color_value)
+        
+        # Store reference
+        self.swatch_widgets[key] = swatch
+        
+        # Click handler for swatch
+        def _on_swatch_click(event, k=key):
+            self._pick_color(k)
+        
+        swatch.bind('<Button-1>', _on_swatch_click)
+        
+        # Hex value label
+        hex_label = tk.Label(self.inner_frame, text=color_value, width=12, anchor='w')
+        hex_label.grid(row=row, column=2, sticky='w', padx=5, pady=2)
+        
+        # Store hex label for updating
+        swatch._hex_label = hex_label
+    
+    def _set_swatch_color(self, swatch, color_value):
+        """Set the background color of a swatch, handling system colors."""
+        # For system color names (like "SystemWindow"), we need to resolve them
+        # to actual hex values since tk Labels don't always render them correctly
+        if color_value.startswith('System'):
+            try:
+                # Use winfo_rgb to resolve system color to RGB
+                rgb = swatch.winfo_rgb(color_value)
+                hex_color = '#{:02x}{:02x}{:02x}'.format(rgb[0]//256, rgb[1]//256, rgb[2]//256)
+                swatch.config(bg=hex_color)
+            except Exception:
+                swatch.config(bg='#808080')  # Fallback gray
+        else:
+            try:
+                swatch.config(bg=color_value)
+            except Exception:
+                swatch.config(bg='#808080')  # Fallback gray
+    
+    def _update_all_swatches(self):
+        """Update all swatch colors after widgets are fully realized."""
+        for key, swatch in self.swatch_widgets.items():
+            color_value = self.colors.get(key, '#000000')
+            self._set_swatch_color(swatch, color_value)
+            # Also update hex label if it exists
+            if hasattr(swatch, '_hex_label'):
+                try:
+                    swatch._hex_label.config(text=color_value)
+                except Exception:
+                    pass
+    
+    def _pick_color(self, key):
+        """Open color picker for a specific key."""
+        current_color = self.colors.get(key, '#000000')
+        
+        # Handle system color names
+        if current_color.startswith('System'):
+            try:
+                swatch = self.swatch_widgets.get(key)
+                if swatch:
+                    rgb = swatch.winfo_rgb(current_color)
+                    current_color = '#{:02x}{:02x}{:02x}'.format(rgb[0]//256, rgb[1]//256, rgb[2]//256)
+            except Exception:
+                current_color = '#808080'
+        
+        # Open color chooser with persistent custom colors
+        title = f"Choose color for {COLOR_KEY_LABELS.get(key, ('', key))[1]}"
+        new_color = self.gui_utils.ask_color_with_persistence(
+            initial_color=current_color,
+            title=title,
+            parent=self.win
+        )
+        
+        if new_color:
+            self.colors[key] = new_color
+            
+            # Update swatch
+            swatch = self.swatch_widgets.get(key)
+            if swatch:
+                self._set_swatch_color(swatch, new_color)
+                if hasattr(swatch, '_hex_label'):
+                    swatch._hex_label.config(text=new_color)
+    
+    def _apply_dialog_theme(self):
+        """Apply current theme colors to the dialog itself."""
+        # Since we're customizing, use the colors being edited
+        bg = self.colors.get('window_bg', '#252525')
+        fg = self.colors.get('label_fg', '#e0e0e0')
+        
+        try:
+            self.win.config(bg=bg)
+            self.canvas.config(bg=bg)
+            self.inner_frame.config(bg=bg)
+            self._instr_label.config(bg=bg, fg='gray')
+            
+            # Apply to all children in inner_frame
+            for widget in self.inner_frame.winfo_children():
+                try:
+                    widget.config(bg=bg, fg=fg)
+                except Exception:
+                    pass
+            
+            # Apply to buttons
+            btn_bg = self.colors.get('button_bg', '#3a3a3a')
+            btn_fg = self.colors.get('button_fg', '#e0e0e0')
+            for btn in self._buttons:
+                try:
+                    btn.config(bg=btn_bg, fg=btn_fg)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    
+    def _on_apply(self):
+        """Apply colors as preview without closing."""
+        # Save all custom colors
+        self.gui_utils.save_all_custom_colors(self.colors)
+        
+        # Set theme to 'custom' to use these colors
+        self.gui_utils.set_theme('custom', save=True)
+    
+    def _on_ok(self):
+        """Save and close."""
+        self._on_apply()
+        self._cleanup_and_close()
+    
+    def _on_cancel(self):
+        """Cancel and restore original theme."""
+        # Restore original theme
+        self.gui_utils.set_theme(self.original_theme, save=True)
+        self._cleanup_and_close()
+    
+    def _on_reset(self):
+        """Reset colors to current preset base."""
+        from tkinter import messagebox
+        
+        # Ask which preset to reset to
+        result = messagebox.askyesno(
+            "Reset Colors",
+            "Reset all colors to the current preset's defaults?\n\n"
+            "This will discard your customizations.",
+            parent=self.win
+        )
+        
+        if result:
+            # Get colors from original theme (before customization started)
+            base_preset = self.original_theme if self.original_theme != 'custom' else 'charcoal'
+            self.colors = self.gui_utils.get_colors_for_preset(base_preset)
+            
+            # Update all swatches
+            for key, swatch in self.swatch_widgets.items():
+                color_value = self.colors.get(key, '#000000')
+                self._set_swatch_color(swatch, color_value)
+                if hasattr(swatch, '_hex_label'):
+                    swatch._hex_label.config(text=color_value)
+    
+    def _cleanup_and_close(self):
+        """Clean up and close the dialog."""
+        self.win.destroy()
 
 
 # --------------------------------------------------------------------------
@@ -379,6 +1045,21 @@ def show_settings(parent=None):
 
     # Store parent reference so panel builders can access it
     entry_refs['_parent'] = parent
+
+    # Store original values for Cancel restoration
+    from libs import gui_utils
+    entry_refs['_original_theme'] = gui_utils.get_current_theme()
+    
+    # Load original splash settings from config
+    _orig_cfg = _load_config()
+    try:
+        entry_refs['_original_splash_enabled'] = _orig_cfg.getboolean('Appearance', 'splash_enabled')
+    except Exception:
+        entry_refs['_original_splash_enabled'] = True
+    try:
+        entry_refs['_original_splash_opacity'] = _orig_cfg.getfloat('Appearance', 'splash_opacity')
+    except Exception:
+        entry_refs['_original_splash_opacity'] = 1.0
 
     # Track current content frame for category switching
     current_content = {'frame': None}
@@ -462,11 +1143,40 @@ def show_settings(parent=None):
 
     content_canvas.bind('<Configure>', _on_canvas_configure)
 
-    # Enable mousewheel scrolling
+    # Enable mousewheel scrolling - bind to specific widgets, not globally
+    # This prevents capturing scroll events meant for combobox dropdowns
+    # Only scroll when content exceeds viewport height
     def _on_mousewheel(event):
-        content_canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        # Only scroll if content is larger than viewport
+        try:
+            content_height = content_inner_frame.winfo_height()
+            viewport_height = content_canvas.winfo_height()
+            if content_height > viewport_height:
+                content_canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        except Exception:
+            pass
 
-    content_canvas.bind_all('<MouseWheel>', _on_mousewheel)
+    def _bind_mousewheel_recursive(widget):
+        """Bind mousewheel to widget and all its children recursively."""
+        try:
+            # Skip binding to Combobox widgets to avoid conflicts
+            if widget.winfo_class() not in ('TCombobox', 'Listbox'):
+                widget.bind('<MouseWheel>', _on_mousewheel)
+        except Exception:
+            pass
+        for child in widget.winfo_children():
+            _bind_mousewheel_recursive(child)
+    
+    # Bind to canvas and outer frame
+    content_canvas.bind('<MouseWheel>', _on_mousewheel)
+    content_outer_frame.bind('<MouseWheel>', _on_mousewheel)
+    content_inner_frame.bind('<MouseWheel>', _on_mousewheel)
+    
+    # Re-bind mousewheel when content changes (new widgets added)
+    def _rebind_mousewheel_on_configure(event=None):
+        _bind_mousewheel_recursive(content_inner_frame)
+    
+    content_inner_frame.bind('<Map>', _rebind_mousewheel_on_configure)
 
     # Pack canvas and scrollbar
     content_scrollbar.pack(side='right', fill='y')
@@ -607,13 +1317,8 @@ def show_settings(parent=None):
             if cfg.has_section('schema2'):
                 cfg.remove_section('schema2')
 
-        # Save Appearance settings (Dark Mode)
-        dark_mode_var = entry_refs.get('dark_mode_var')
-        if dark_mode_var is not None:
-            dark_mode_enabled = dark_mode_var.get()
-            if not cfg.has_section('preferences'):
-                cfg.add_section('preferences')
-            cfg.set('preferences', 'dark_mode', str(dark_mode_enabled).lower())
+        # Note: Theme settings are saved automatically via gui_utils.set_theme()
+        # when the user changes the dropdown (live preview)
 
         if _save_config(cfg):
             # Update session memory so login dialog won't appear unnecessarily
@@ -652,23 +1357,8 @@ def show_settings(parent=None):
             except Exception:
                 pass
 
-            # Sync Dark Mode with parent window's View menu toggle
-            dark_mode_var = entry_refs.get('dark_mode_var')
-            _parent = entry_refs.get('_parent')
-            if dark_mode_var is not None and _parent:
-                try:
-                    dark_mode_enabled = dark_mode_var.get()
-                    # Check if parent has the dark_mode_var attribute (set by HoonyTools)
-                    if hasattr(_parent, '_dark_mode_var'):
-                        parent_var = _parent._dark_mode_var
-                        # Only toggle if state is different
-                        if parent_var.get() != dark_mode_enabled:
-                            parent_var.set(dark_mode_enabled)
-                            # Trigger the toggle callback if it exists
-                            if hasattr(_parent, '_toggle_dark'):
-                                _parent._toggle_dark()
-                except Exception:
-                    pass
+            # Note: Theme changes are applied live via gui_utils.set_theme()
+            # No sync needed here anymore
 
             # Show non-invasive confirmation message in status bar
             _show_status_message("Settings saved")
@@ -680,19 +1370,23 @@ def show_settings(parent=None):
     def _on_ok():
         if _validate():
             if _save():
-                # Unbind mousewheel before destroying
-                try:
-                    content_canvas.unbind_all('<MouseWheel>')
-                except Exception:
-                    pass
                 win.destroy()
 
     def _on_cancel():
-        # Unbind mousewheel before destroying
-        try:
-            content_canvas.unbind_all('<MouseWheel>')
-        except Exception:
-            pass
+        # Restore original theme if it was changed
+        from libs import gui_utils
+        original_theme = entry_refs.get('_original_theme')
+        if original_theme:
+            gui_utils.set_theme(original_theme, save=True)
+        
+        # Restore original splash settings
+        cfg = _load_config()
+        if not cfg.has_section('Appearance'):
+            cfg.add_section('Appearance')
+        cfg.set('Appearance', 'splash_enabled', str(entry_refs.get('_original_splash_enabled', True)))
+        cfg.set('Appearance', 'splash_opacity', str(entry_refs.get('_original_splash_opacity', 1.0)))
+        _save_config(cfg)
+        
         win.destroy()
 
     def _on_apply():
@@ -725,11 +1419,14 @@ def show_settings(parent=None):
             if widget != button_frame:
                 widget.destroy()
 
-        # Clear entry refs for fresh build, but preserve system references
+        # Clear entry refs for fresh build, but preserve system references and original values
         preserved = {
             '_parent': entry_refs.get('_parent'),
             '_status_label': entry_refs.get('_status_label'),
             '_win': entry_refs.get('_win'),
+            '_original_theme': entry_refs.get('_original_theme'),
+            '_original_splash_enabled': entry_refs.get('_original_splash_enabled'),
+            '_original_splash_opacity': entry_refs.get('_original_splash_opacity'),
         }
         entry_refs.clear()
         entry_refs.update(preserved)
@@ -747,68 +1444,107 @@ def show_settings(parent=None):
     # --------------------------------------------------------------------------
     # Theme callback for dark mode support
     # --------------------------------------------------------------------------
-    def _apply_theme(dark: bool):
-        """Apply dark or light theme to the category pane and content panels."""
-        if dark:
-            try:
-                # Configure dark style for category tree
-                style.configure('Settings.Treeview',
-                                background='#000000',
-                                fieldbackground='#000000',
-                                foreground='#ffffff',
-                                rowheight=24)
-                style.map('Settings.Treeview',
-                          background=[('selected', '#2a6bd6')],
-                          foreground=[('selected', '#ffffff')])
-                category_frame.configure(bg='#000000')
-                # Apply dark mode to buttons
-                for btn in (btn_ok, btn_cancel, btn_apply):
-                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-            except Exception:
-                pass
-        else:
-            try:
-                # Restore light style
-                style.configure('Settings.Treeview',
-                                background='white',
-                                fieldbackground='white',
-                                foreground='black',
-                                rowheight=24)
-                style.map('Settings.Treeview',
-                          background=[('selected', '#0078d7')],
-                          foreground=[('selected', 'white')])
-                category_frame.configure(bg='SystemButtonFace')
-                # Restore light mode to buttons
-                for btn in (btn_ok, btn_cancel, btn_apply):
-                    btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
-            except Exception:
-                pass
-
+    def _apply_theme(theme_key=None):
+        """Apply current theme from gui_utils to the Settings dialog."""
+        from libs import gui_utils
+        
+        try:
+            # Configure Settings.Treeview style
+            style.configure('Settings.Treeview',
+                            background=gui_utils.get_color('pane_bg'),
+                            fieldbackground=gui_utils.get_color('pane_bg'),
+                            foreground=gui_utils.get_color('pane_fg'),
+                            rowheight=24)
+            style.map('Settings.Treeview',
+                      background=[('selected', gui_utils.get_color('select_bg'))],
+                      foreground=[('selected', gui_utils.get_color('menu_active_fg'))])
+        except Exception:
+            pass
+        
+        # Apply theme to dialog window
+        try:
+            gui_utils.apply_theme_to_window(win)
+        except Exception:
+            pass
+        
+        # Apply theme to category frame
+        try:
+            gui_utils.apply_theme_to_window(category_frame)
+        except Exception:
+            pass
+        
+        # Apply theme to main paned window
+        try:
+            main_paned.config(bg=gui_utils.get_color('border_bg'))
+        except Exception:
+            pass
+        
+        # Apply theme to status bar
+        try:
+            status_frame.config(bg=gui_utils.get_color('window_bg'))
+            status_label.config(bg=gui_utils.get_color('window_bg'), fg=gui_utils.get_color('label_fg'))
+            status_separator.config(bg=gui_utils.get_color('border_bg'))
+        except Exception:
+            pass
+        
+        # Apply theme to buttons
+        try:
+            for btn in (btn_ok, btn_cancel, btn_apply):
+                gui_utils.apply_theme_to_button(btn)
+        except Exception:
+            pass
+        
+        # Apply theme to content canvas and inner frame
+        try:
+            content_canvas.config(bg=gui_utils.get_color('window_bg'))
+            content_inner_frame.config(bg=gui_utils.get_color('window_bg'))
+            content_outer_frame.config(bg=gui_utils.get_color('window_bg'))
+        except Exception:
+            pass
+        
         # Apply theme to connections panel if it exists
         conn_apply_theme = entry_refs.get('_conn_apply_theme')
         if conn_apply_theme:
             try:
-                conn_apply_theme(dark)
+                conn_apply_theme()
             except Exception:
                 pass
+        
+        # Apply theme to appearance panel if it exists
+        appearance_apply_theme = entry_refs.get('_appearance_apply_theme')
+        if appearance_apply_theme:
+            try:
+                appearance_apply_theme()
+            except Exception:
+                pass
+        
+        # Apply theme to button frame
+        try:
+            button_frame.config(bg=gui_utils.get_color('window_bg'))
+        except Exception:
+            pass
+        
+        # Update theme dropdown to reflect current theme (e.g., after Apply in Customize dialog)
+        try:
+            current_theme = gui_utils.get_current_theme()
+            current_display = gui_utils.get_theme_display_name(current_theme)
+            theme_var = entry_refs.get('theme_var')
+            if theme_var and theme_var.get() != current_display:
+                theme_var.set(current_display)
+        except Exception:
+            pass
 
-    # Register with parent's theme callback system
-    if parent and hasattr(parent, 'register_theme_callback'):
-        parent.register_theme_callback(_apply_theme)
+    # Register with gui_utils theme callback system
+    from libs import gui_utils
+    gui_utils.register_theme_callback(_apply_theme)
 
     def _on_destroy(event=None):
         if event.widget == win:  # Only on main window destroy
-            # Unbind mousewheel
+            # Unregister theme callback from gui_utils
             try:
-                content_canvas.unbind_all('<MouseWheel>')
+                gui_utils.unregister_theme_callback(_apply_theme)
             except Exception:
                 pass
-            # Unregister theme callback
-            if parent and hasattr(parent, 'unregister_theme_callback'):
-                try:
-                    parent.unregister_theme_callback(_apply_theme)
-                except Exception:
-                    pass
 
     win.bind('<Destroy>', _on_destroy)
 

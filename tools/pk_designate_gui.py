@@ -13,6 +13,7 @@ from libs.paths import PROJECT_PATH as base_path
 
 from libs.oracle_db_connector import get_db_connection
 from libs import session
+from libs import gui_utils
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,10 @@ def prompt_schema_choice(parent=None):
 
     win = _ensure_dialog_parent(parent)
     win.title('Select Schema Scope')
+    
+    # Apply theme immediately after creating dialog
+    gui_utils.apply_theme_to_dialog(win)
+    
     center_window(win, 320, 140)
     win.resizable(False, False)
 
@@ -106,23 +111,30 @@ def prompt_schema_choice(parent=None):
 
     frm = tk.Frame(win)
     frm.pack(pady=6)
-    # Create buttons with dark mode styling
-    _schema_btns = []
     btn_user = Button(frm, text='Schema 1', width=12, command=pick_user)
     btn_dwh = Button(frm, text='Schema 2', width=12, command=pick_dwh)
     btn_cancel = Button(frm, text='Cancel', width=10, command=on_close)
     btn_user.pack(side=LEFT, padx=6)
     btn_dwh.pack(side=LEFT, padx=6)
     btn_cancel.pack(side=LEFT, padx=6)
-    _schema_btns.extend([btn_user, btn_dwh, btn_cancel])
-    # Apply dark mode styling to buttons
+
+    # Live theme update callback
+    def _on_theme_change(theme_key):
+        try:
+            gui_utils.apply_theme_to_existing_widgets(win)
+        except Exception:
+            pass
+    
+    # Register theme callback and unregister on destroy
     try:
-        if ttk:
-            st = ttk.Style()
-            bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-            if isinstance(bg, str) and bg.strip().lower() in ('#000000', '#000', 'black'):
-                for btn in _schema_btns:
-                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+        gui_utils.register_theme_callback(_on_theme_change)
+        def _on_destroy(event=None):
+            if event and event.widget == win:
+                try:
+                    gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
+        win.bind('<Destroy>', _on_destroy)
     except Exception:
         pass
 
@@ -223,6 +235,10 @@ def main(parent=None, schema_choice=None, on_finish=None):
 
     win = _ensure_dialog_parent(parent)
     win.title(f'Designate PRIMARY KEY - {owner}')
+    
+    # Apply theme immediately after creating dialog
+    gui_utils.apply_theme_to_dialog(win)
+    
     # Centering is done after all widgets are packed (see below)
 
     try:
@@ -238,9 +254,6 @@ def main(parent=None, schema_choice=None, on_finish=None):
     # Layout: main horizontal frame with left, center, right columns
     main_frame = tk.Frame(win)
     main_frame.pack(fill=BOTH, expand=True, padx=8, pady=8)
-
-    # List to track all buttons for dark mode styling
-    _all_buttons = []
 
     # cache for table statistics to avoid repeated heavy queries
     table_stats = {}
@@ -306,149 +319,27 @@ def main(parent=None, schema_choice=None, on_finish=None):
     Label(ctrl, text='Constraint name:').pack(pady=(0,4))
     cname_entry = Entry(ctrl, textvariable=constraint_name_var, width=28)
     cname_entry.pack()
-    # Apply pane-aware colors: if the parent/dialog background is dark,
-    # make the entry dark background with light text so it matches launcher
-    # pane-only dark mode. This detects the window background brightness
-    # at creation time and adjusts the entry accordingly.
-    def _apply_entry_theme():
+
+    # Live theme update callback
+    def _on_theme_change(theme_key):
         try:
-            dark = False
-            # Prefer checking the ttk style lookup (launcher toggles this).
-            try:
-                if ttk:
-                    st = ttk.Style()
-                    sbg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-                    if isinstance(sbg, str) and sbg.strip():
-                        sb = sbg.strip().lower()
-                        if sb in ('#000000', '#000') or 'black' in sb:
-                            dark = True
-            except Exception:
-                dark = False
-
-            # Fallback: inspect window bg only if style lookup wasn't decisive
-            if not dark:
-                try:
-                    bg = win.cget('bg')
-                    if isinstance(bg, str):
-                        b = bg.strip()
-                        if b.startswith('#') and len(b) >= 7:
-                            try:
-                                r = int(b[1:3], 16)
-                                g = int(b[3:5], 16)
-                                bl = int(b[5:7], 16)
-                                lum = 0.2126 * r + 0.7152 * g + 0.0722 * bl
-                                dark = lum < 128
-                            except Exception:
-                                dark = b.lower() in ('#000000', 'black')
-                        else:
-                            dark = b.lower() in ('black',)
-                except Exception:
-                    pass
-
-            if dark:
-                try:
-                    cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
-                except Exception:
-                    pass
-            else:
-                try:
-                    cname_entry.config(bg='white', fg='black', insertbackground='black')
-                except Exception:
-                    pass
+            gui_utils.apply_theme_to_existing_widgets(win)
         except Exception:
             pass
-
-    _apply_entry_theme()
-
-    # Theme detection helper
-    last_dark = None
-    def _detect_dark_from_style():
-        try:
-            if ttk:
-                st = ttk.Style()
-                bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-                if isinstance(bg, str) and bg.strip():
-                    sb = bg.strip().lower()
-                    if sb in ('#000000', '#000') or 'black' in sb:
-                        return True
-        except Exception:
-            pass
-        return False
-
-    def _theme_cb(enable_dark: bool):
-        try:
-            if enable_dark:
-                cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
-            else:
-                cname_entry.config(bg='white', fg='black', insertbackground='black')
-        except Exception:
-            pass
-        # Apply button styling for dark/light mode
-        try:
-            for btn in _all_buttons:
-                try:
-                    if enable_dark:
-                        btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-                    else:
-                        btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    # If parent provides registration API, use it for instant callbacks.
-    # Otherwise, fall back to polling.
+    
+    # Register theme callback and unregister on destroy
     try:
-        if parent and hasattr(parent, 'register_theme_callback'):
-            try:
-                parent.register_theme_callback(_theme_cb)
-            except Exception:
-                pass
-
-            # ensure we unregister when this dialog is destroyed
-            def _on_destroy(event=None):
+        gui_utils.register_theme_callback(_on_theme_change)
+        def _on_destroy(event=None):
+            if event and event.widget == win:
                 try:
-                    if parent and hasattr(parent, 'unregister_theme_callback'):
-                        parent.unregister_theme_callback(_theme_cb)
+                    gui_utils.unregister_theme_callback(_on_theme_change)
                 except Exception:
                     pass
-            try:
-                win.bind('<Destroy>', _on_destroy)
-            except Exception:
-                pass
-        else:
-            # fallback polling implementation
-            def _poll_theme():
-                nonlocal last_dark
-                try:
-                    dark = _detect_dark_from_style()
-                    if dark is not last_dark:
-                        last_dark = dark
-                        if dark:
-                            cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
-                        else:
-                            cname_entry.config(bg='white', fg='black', insertbackground='black')
-                        # Apply button styling
-                        for btn in _all_buttons:
-                            try:
-                                if dark:
-                                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-                                else:
-                                    btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-                try:
-                    win.after(600, _poll_theme)
-                except Exception:
-                    pass
-            try:
-                win.after(600, _poll_theme)
-            except Exception:
-                pass
+        win.bind('<Destroy>', _on_destroy)
     except Exception:
         pass
+
     # Button to restore full column list after detect filtered it
     def show_all_columns():
         try:
@@ -462,7 +353,6 @@ def main(parent=None, schema_choice=None, on_finish=None):
 
     btn_show_all = Button(ctrl, text='Show All Columns', command=show_all_columns, width=20)
     btn_show_all.pack(pady=(6,0))
-    _all_buttons.append(btn_show_all)
     # Help text explaining threshold logic
     help_text = (
         "Threshold behavior: when 'Use row threshold' is checked, DISTINCT checks run only if table rows <= threshold.\n"
@@ -857,7 +747,6 @@ def main(parent=None, schema_choice=None, on_finish=None):
     # Move Detect button to center ctrl area (near threshold)
     detect_button = Button(ctrl, text='Detect PK Candidates', command=detect_candidates, width=28)
     detect_button.pack(pady=(8,2))
-    _all_buttons.append(detect_button)
     # Force detect button (runs detect even when threshold would skip it)
     def force_detect():
         # Temporarily disable threshold enforcement and run detect
@@ -870,7 +759,6 @@ def main(parent=None, schema_choice=None, on_finish=None):
 
     btn_force = Button(ctrl, text='Force Detect (override threshold)', command=force_detect, width=28)
     btn_force.pack(pady=(0,8))
-    _all_buttons.append(btn_force)
 
     btn_frame = tk.Frame(win)
     btn_frame.pack(fill='x', pady=6)
@@ -880,18 +768,6 @@ def main(parent=None, schema_choice=None, on_finish=None):
     btn_reload.pack(side=LEFT, padx=6)
     btn_add_pk.pack(side=LEFT, padx=6)
     btn_close.pack(side=RIGHT, padx=6)
-    _all_buttons.extend([btn_reload, btn_add_pk, btn_close])
-
-    # Apply initial dark mode styling to buttons
-    try:
-        if _detect_dark_from_style():
-            for btn in _all_buttons:
-                try:
-                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-                except Exception:
-                    pass
-    except Exception:
-        pass
 
     load_tables()
 
