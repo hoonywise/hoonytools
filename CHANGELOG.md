@@ -4,16 +4,27 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
-## 🎨 v2.1.8 — Theme System (Phase 1: Preset Themes) (2026-02-21)
+## 🎨 v2.1.8 — Theme System with Full Chrome Theming (2026-02-21)
 
-This release introduces a comprehensive theme system with 7 preset themes, replacing the simple Dark Mode toggle. Themes are now selected via a dropdown in Settings > Appearance with live preview.
+This release introduces a comprehensive theme system with 7 preset themes and **full chrome theming** - not just content panes, but the entire UI including buttons, labels, frames, menus, and borders. Themes are selected via a dropdown in Settings > Appearance with live preview.
 
 ### Added
 
 - **Theme System Infrastructure** (`libs/gui_utils.py`):
   - 7 preset themes: Pure Black, Midnight, Charcoal, Slate, Graphite, Silver, System Light
-  - Theme colors: `pane_bg`, `pane_fg`, `select_bg`, `insert_bg` for each preset
-  - Functions: `get_theme_names()`, `set_theme()`, `get_color()`, `load_theme_from_config()`, `save_theme_to_config()`
+  - **22 color keys** for full UI customization:
+    - Content panes: `pane_bg`, `pane_fg`, `select_bg`, `insert_bg`
+    - Window chrome: `window_bg`, `border_bg`
+    - Labels: `label_bg`, `label_fg`
+    - LabelFrames: `labelframe_bg`, `labelframe_fg`
+    - Buttons: `button_bg`, `button_fg`, `button_active_bg`, `button_active_fg`
+    - Entry fields: `entry_bg`, `entry_fg`
+    - Menus: `menu_bg`, `menu_fg`, `menu_active_bg`, `menu_active_fg`
+    - Checkboxes: `checkbox_bg`, `checkbox_fg`, `checkbox_select`
+    - Scrollbars: `scrollbar_bg`, `scrollbar_fg`
+  - Per-widget styling functions: `apply_theme_to_pane()`, `apply_theme_to_window()`, `apply_theme_to_button()`, `apply_theme_to_label()`, `apply_theme_to_entry()`, `apply_theme_to_menu()`, `apply_theme_to_checkbox()`, `apply_theme_to_scrollbar()`, `apply_theme_to_widget()`
+  - TTK style configuration: `configure_ttk_styles()`
+  - Root option database configuration: `configure_root_options()`
   - Callback registration for live theme updates across all windows
   - Automatic migration from legacy `dark_mode` setting to new `theme.preset`
 
@@ -22,11 +33,22 @@ This release introduces a comprehensive theme system with 7 preset themes, repla
   - Live preview - changes apply immediately when selecting
   - "Customize..." button (disabled, coming in future update)
 
+- **Unified `apply_full_theme()` function**: Replaces separate `set_panes_dark()`/`set_panes_light()` functions with a single function that reads all colors from the theme system
+
 ### Changed
+
+- **Full Chrome Theming**: All preset themes now apply colors to the **entire UI**, including:
+  - Window backgrounds
+  - All buttons (verse navigation, schema pane buttons)
+  - Menu bar and menu items
+  - Labels and LabelFrames
+  - Entry fields
+  - Scrollbars
+  - Borders and separators
 
 - **Config Structure**: Theme is now stored in `[theme]` section with `preset` key. Legacy `[preferences]` → `dark_mode` is auto-migrated and removed.
 
-- **Pane-Only Theming**: All preset themes apply colors only to content panes (ScrolledText, Treeview), keeping dialog chrome (buttons, labels, frames) in system default colors.
+- **System Light uses Windows system colors**: The System Light theme uses Windows system color names (e.g., `SystemButtonFace`, `SystemButtonText`) to respect user's Windows theme and high contrast settings
 
 ### Removed
 
@@ -34,14 +56,16 @@ This release introduces a comprehensive theme system with 7 preset themes, repla
 
 - **Dark Mode Checkbox**: Replaced by Theme dropdown in Settings. "Dark Mode" is now the "Pure Black" preset theme.
 
+- **Separate dark/light theme functions**: Replaced `apply_current_theme()` + `_restore_light_theme()` with unified `apply_full_theme()`
+
 ### Files Modified
 
 | File | Changes |
 |------|---------|
-| `libs/gui_utils.py` | Complete rewrite: added theme presets, theme management functions, config I/O, callbacks |
-| `libs/settings.py` | Replaced Dark Mode checkbox with Theme dropdown, live preview |
-| `HoonyTools.pyw` | Removed View menu, integrated theme loading on startup, updated styling functions to use theme colors |
-| `loaders/sql_mv_loader.py` | Updated to use `gui_utils` theme API |
+| `libs/gui_utils.py` | Complete rewrite: 22 color keys, 7 fully-defined presets, per-widget styling functions, TTK style configuration |
+| `libs/settings.py` | Theme dropdown, full chrome theming for Settings dialog, registered with gui_utils callbacks |
+| `HoonyTools.pyw` | Removed View menu, new unified `apply_full_theme()`, full chrome theming |
+| `loaders/sql_mv_loader.py` | Full chrome theming for MV Builder dialog |
 | `tools/mv_refresh_gui.py` | Updated to use `gui_utils` theme API |
 
 ---

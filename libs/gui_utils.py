@@ -7,7 +7,7 @@ Provides theme management, widget styling, and common helpers.
 import configparser
 import logging
 import os
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -37,50 +37,308 @@ THEME_DISPLAY_NAMES = {
     'system_light': 'System Light',
 }
 
-# Preset theme color definitions
-# Keys: pane_bg, pane_fg, select_bg, insert_bg
+# Complete list of color keys for full chrome theming
+COLOR_KEYS = [
+    # Content panes (ScrolledText, Text, Treeview)
+    'pane_bg',            # Background color for content panes
+    'pane_fg',            # Text/foreground color in panes
+    'select_bg',          # Selection highlight background
+    'insert_bg',          # Cursor/insertion point color
+    
+    # Window chrome
+    'window_bg',          # Frame, Toplevel, root window backgrounds
+    'border_bg',          # Border/separator color
+    
+    # Labels
+    'label_bg',           # Label background
+    'label_fg',           # Label text color
+    
+    # LabelFrame
+    'labelframe_bg',      # LabelFrame background
+    'labelframe_fg',      # LabelFrame title text color
+    
+    # Buttons
+    'button_bg',          # Button background
+    'button_fg',          # Button text
+    'button_active_bg',   # Button when pressed/hovered
+    'button_active_fg',   # Button text when pressed/hovered
+    
+    # Entry fields
+    'entry_bg',           # Entry/input field background
+    'entry_fg',           # Entry text color
+    
+    # Menu
+    'menu_bg',            # Menu background
+    'menu_fg',            # Menu text
+    'menu_active_bg',     # Menu item hover/selected
+    'menu_active_fg',     # Menu item text when selected
+    
+    # Checkbox/Radio
+    'checkbox_bg',        # Checkbox background
+    'checkbox_fg',        # Checkbox text
+    'checkbox_select',    # Checkmark/indicator color
+    
+    # Scrollbar
+    'scrollbar_bg',       # Scrollbar track/trough
+    'scrollbar_fg',       # Scrollbar thumb/slider
+]
+
+# =============================================================================
+# Preset Theme Definitions (Full Chrome)
+# =============================================================================
+
 PRESET_THEMES = {
     'pure_black': {
+        # Content panes
         'pane_bg': '#000000',
         'pane_fg': '#ffffff',
-        'select_bg': '#333333',
+        'select_bg': '#2a6bd6',
         'insert_bg': '#ffffff',
+        # Window chrome
+        'window_bg': '#000000',
+        'border_bg': '#333333',
+        # Labels
+        'label_bg': '#000000',
+        'label_fg': '#ffffff',
+        # LabelFrame
+        'labelframe_bg': '#000000',
+        'labelframe_fg': '#ffffff',
+        # Buttons
+        'button_bg': '#1a1a1a',
+        'button_fg': '#ffffff',
+        'button_active_bg': '#333333',
+        'button_active_fg': '#ffffff',
+        # Entry fields
+        'entry_bg': '#000000',
+        'entry_fg': '#ffffff',
+        # Menu
+        'menu_bg': '#000000',
+        'menu_fg': '#ffffff',
+        'menu_active_bg': '#333333',
+        'menu_active_fg': '#ffffff',
+        # Checkbox/Radio
+        'checkbox_bg': '#000000',
+        'checkbox_fg': '#ffffff',
+        'checkbox_select': '#333333',
+        # Scrollbar
+        'scrollbar_bg': '#1a1a1a',
+        'scrollbar_fg': '#444444',
     },
     'midnight': {
+        # Content panes
         'pane_bg': '#0d1117',
         'pane_fg': '#c9d1d9',
         'select_bg': '#264f78',
         'insert_bg': '#c9d1d9',
+        # Window chrome
+        'window_bg': '#010409',
+        'border_bg': '#30363d',
+        # Labels
+        'label_bg': '#010409',
+        'label_fg': '#c9d1d9',
+        # LabelFrame
+        'labelframe_bg': '#010409',
+        'labelframe_fg': '#c9d1d9',
+        # Buttons
+        'button_bg': '#21262d',
+        'button_fg': '#c9d1d9',
+        'button_active_bg': '#30363d',
+        'button_active_fg': '#ffffff',
+        # Entry fields
+        'entry_bg': '#0d1117',
+        'entry_fg': '#c9d1d9',
+        # Menu
+        'menu_bg': '#161b22',
+        'menu_fg': '#c9d1d9',
+        'menu_active_bg': '#30363d',
+        'menu_active_fg': '#ffffff',
+        # Checkbox/Radio
+        'checkbox_bg': '#010409',
+        'checkbox_fg': '#c9d1d9',
+        'checkbox_select': '#21262d',
+        # Scrollbar
+        'scrollbar_bg': '#161b22',
+        'scrollbar_fg': '#30363d',
     },
     'charcoal': {
+        # Content panes
         'pane_bg': '#1e1e1e',
         'pane_fg': '#d4d4d4',
         'select_bg': '#264f78',
         'insert_bg': '#d4d4d4',
+        # Window chrome
+        'window_bg': '#181818',
+        'border_bg': '#3c3c3c',
+        # Labels
+        'label_bg': '#181818',
+        'label_fg': '#d4d4d4',
+        # LabelFrame
+        'labelframe_bg': '#181818',
+        'labelframe_fg': '#d4d4d4',
+        # Buttons
+        'button_bg': '#2d2d2d',
+        'button_fg': '#d4d4d4',
+        'button_active_bg': '#3e3e3e',
+        'button_active_fg': '#ffffff',
+        # Entry fields
+        'entry_bg': '#1e1e1e',
+        'entry_fg': '#d4d4d4',
+        # Menu
+        'menu_bg': '#252526',
+        'menu_fg': '#d4d4d4',
+        'menu_active_bg': '#094771',
+        'menu_active_fg': '#ffffff',
+        # Checkbox/Radio
+        'checkbox_bg': '#181818',
+        'checkbox_fg': '#d4d4d4',
+        'checkbox_select': '#2d2d2d',
+        # Scrollbar
+        'scrollbar_bg': '#1e1e1e',
+        'scrollbar_fg': '#424242',
     },
     'slate': {
+        # Content panes
         'pane_bg': '#2d2d2d',
         'pane_fg': '#e0e0e0',
         'select_bg': '#3d5a80',
         'insert_bg': '#e0e0e0',
+        # Window chrome
+        'window_bg': '#252525',
+        'border_bg': '#484848',
+        # Labels
+        'label_bg': '#252525',
+        'label_fg': '#e0e0e0',
+        # LabelFrame
+        'labelframe_bg': '#252525',
+        'labelframe_fg': '#e0e0e0',
+        # Buttons
+        'button_bg': '#3a3a3a',
+        'button_fg': '#e0e0e0',
+        'button_active_bg': '#4a4a4a',
+        'button_active_fg': '#ffffff',
+        # Entry fields
+        'entry_bg': '#2d2d2d',
+        'entry_fg': '#e0e0e0',
+        # Menu
+        'menu_bg': '#303030',
+        'menu_fg': '#e0e0e0',
+        'menu_active_bg': '#4a4a4a',
+        'menu_active_fg': '#ffffff',
+        # Checkbox/Radio
+        'checkbox_bg': '#252525',
+        'checkbox_fg': '#e0e0e0',
+        'checkbox_select': '#3a3a3a',
+        # Scrollbar
+        'scrollbar_bg': '#2d2d2d',
+        'scrollbar_fg': '#505050',
     },
     'graphite': {
+        # Content panes
         'pane_bg': '#3c3f41',
         'pane_fg': '#bbbbbb',
         'select_bg': '#4b6eaf',
         'insert_bg': '#bbbbbb',
+        # Window chrome
+        'window_bg': '#313335',
+        'border_bg': '#555555',
+        # Labels
+        'label_bg': '#313335',
+        'label_fg': '#bbbbbb',
+        # LabelFrame
+        'labelframe_bg': '#313335',
+        'labelframe_fg': '#bbbbbb',
+        # Buttons
+        'button_bg': '#45484a',
+        'button_fg': '#bbbbbb',
+        'button_active_bg': '#55585a',
+        'button_active_fg': '#ffffff',
+        # Entry fields
+        'entry_bg': '#3c3f41',
+        'entry_fg': '#bbbbbb',
+        # Menu
+        'menu_bg': '#3c3f41',
+        'menu_fg': '#bbbbbb',
+        'menu_active_bg': '#4b6eaf',
+        'menu_active_fg': '#ffffff',
+        # Checkbox/Radio
+        'checkbox_bg': '#313335',
+        'checkbox_fg': '#bbbbbb',
+        'checkbox_select': '#45484a',
+        # Scrollbar
+        'scrollbar_bg': '#3c3f41',
+        'scrollbar_fg': '#5a5d5e',
     },
     'silver': {
-        'pane_bg': '#f0f0f0',
-        'pane_fg': '#1e1e1e',
+        # Content panes
+        'pane_bg': '#d0d0d0',
+        'pane_fg': '#1a1a1a',
         'select_bg': '#0078d4',
-        'insert_bg': '#1e1e1e',
+        'insert_bg': '#1a1a1a',
+        # Window chrome
+        'window_bg': '#c0c0c0',
+        'border_bg': '#a0a0a0',
+        # Labels
+        'label_bg': '#c0c0c0',
+        'label_fg': '#1a1a1a',
+        # LabelFrame
+        'labelframe_bg': '#c0c0c0',
+        'labelframe_fg': '#1a1a1a',
+        # Buttons
+        'button_bg': '#b8b8b8',
+        'button_fg': '#1a1a1a',
+        'button_active_bg': '#a8a8a8',
+        'button_active_fg': '#000000',
+        # Entry fields
+        'entry_bg': '#d0d0d0',
+        'entry_fg': '#1a1a1a',
+        # Menu
+        'menu_bg': '#c8c8c8',
+        'menu_fg': '#1a1a1a',
+        'menu_active_bg': '#0078d4',
+        'menu_active_fg': '#ffffff',
+        # Checkbox/Radio
+        'checkbox_bg': '#c0c0c0',
+        'checkbox_fg': '#1a1a1a',
+        'checkbox_select': '#a0a0a0',
+        # Scrollbar
+        'scrollbar_bg': '#c0c0c0',
+        'scrollbar_fg': '#888888',
     },
     'system_light': {
+        # Content panes
         'pane_bg': 'SystemWindow',
         'pane_fg': 'SystemWindowText',
         'select_bg': 'SystemHighlight',
         'insert_bg': 'SystemWindowText',
+        # Window chrome
+        'window_bg': 'SystemButtonFace',
+        'border_bg': 'SystemButtonShadow',
+        # Labels
+        'label_bg': 'SystemButtonFace',
+        'label_fg': 'SystemButtonText',
+        # LabelFrame
+        'labelframe_bg': 'SystemButtonFace',
+        'labelframe_fg': 'SystemButtonText',
+        # Buttons
+        'button_bg': 'SystemButtonFace',
+        'button_fg': 'SystemButtonText',
+        'button_active_bg': 'SystemButtonFace',
+        'button_active_fg': 'SystemButtonText',
+        # Entry fields
+        'entry_bg': 'SystemWindow',
+        'entry_fg': 'SystemWindowText',
+        # Menu
+        'menu_bg': 'SystemMenu',
+        'menu_fg': 'SystemMenuText',
+        'menu_active_bg': 'SystemHighlight',
+        'menu_active_fg': 'SystemHighlightText',
+        # Checkbox/Radio
+        'checkbox_bg': 'SystemButtonFace',
+        'checkbox_fg': 'SystemButtonText',
+        'checkbox_select': 'SystemWindow',
+        # Scrollbar
+        'scrollbar_bg': 'SystemScrollbar',
+        'scrollbar_fg': 'SystemButtonFace',
     },
 }
 
@@ -134,13 +392,24 @@ def get_color(key: str) -> str:
     Get a color value from the current theme.
     
     Args:
-        key: Color key ('pane_bg', 'pane_fg', 'select_bg', 'insert_bg')
+        key: Color key from COLOR_KEYS
     
     Returns:
         Color value (hex string or system color name)
     """
     theme = PRESET_THEMES.get(_current_theme, PRESET_THEMES['system_light'])
     return theme.get(key, '')
+
+
+def get_all_colors() -> Dict[str, str]:
+    """
+    Get all color values from the current theme.
+    
+    Returns:
+        Dict mapping color keys to their values
+    """
+    theme = PRESET_THEMES.get(_current_theme, PRESET_THEMES['system_light'])
+    return theme.copy()
 
 
 def is_dark_theme() -> bool:
@@ -309,7 +578,7 @@ def save_theme_to_config(theme_key: str) -> None:
 
 
 # =============================================================================
-# Widget Styling Functions
+# Widget Styling Functions (New - Full Chrome Theming)
 # =============================================================================
 
 def apply_theme_to_pane(widget) -> None:
@@ -332,16 +601,381 @@ def apply_theme_to_pane(widget) -> None:
         logger.debug(f"Could not apply theme to pane: {e}")
 
 
+def apply_theme_to_window(widget) -> None:
+    """
+    Apply current theme colors to a window/frame background.
+    
+    Args:
+        widget: A Tk, Toplevel, or Frame widget
+    """
+    try:
+        widget.config(bg=get_color('window_bg'))
+    except Exception as e:
+        logger.debug(f"Could not apply theme to window: {e}")
+
+
+def apply_theme_to_label(widget) -> None:
+    """
+    Apply current theme colors to a label.
+    
+    Args:
+        widget: A Label widget
+    """
+    try:
+        widget.config(
+            bg=get_color('label_bg'),
+            fg=get_color('label_fg'),
+        )
+    except Exception as e:
+        logger.debug(f"Could not apply theme to label: {e}")
+
+
+def apply_theme_to_labelframe(widget) -> None:
+    """
+    Apply current theme colors to a LabelFrame.
+    
+    Args:
+        widget: A LabelFrame widget
+    """
+    try:
+        widget.config(
+            bg=get_color('labelframe_bg'),
+            fg=get_color('labelframe_fg'),
+        )
+    except Exception as e:
+        logger.debug(f"Could not apply theme to labelframe: {e}")
+
+
+def apply_theme_to_button(widget) -> None:
+    """
+    Apply current theme colors to a button.
+    
+    Args:
+        widget: A Button widget
+    """
+    try:
+        widget.config(
+            bg=get_color('button_bg'),
+            fg=get_color('button_fg'),
+            activebackground=get_color('button_active_bg'),
+            activeforeground=get_color('button_active_fg'),
+        )
+    except Exception as e:
+        logger.debug(f"Could not apply theme to button: {e}")
+
+
+def apply_theme_to_entry(widget) -> None:
+    """
+    Apply current theme colors to an entry field.
+    
+    Args:
+        widget: An Entry widget
+    """
+    try:
+        widget.config(
+            bg=get_color('entry_bg'),
+            fg=get_color('entry_fg'),
+            insertbackground=get_color('insert_bg'),
+            selectbackground=get_color('select_bg'),
+        )
+    except Exception as e:
+        logger.debug(f"Could not apply theme to entry: {e}")
+
+
+def apply_theme_to_menu(widget) -> None:
+    """
+    Apply current theme colors to a menu.
+    
+    Args:
+        widget: A Menu widget
+    """
+    try:
+        widget.config(
+            bg=get_color('menu_bg'),
+            fg=get_color('menu_fg'),
+            activebackground=get_color('menu_active_bg'),
+            activeforeground=get_color('menu_active_fg'),
+        )
+    except Exception as e:
+        logger.debug(f"Could not apply theme to menu: {e}")
+
+
+def apply_theme_to_checkbox(widget) -> None:
+    """
+    Apply current theme colors to a checkbox/checkbutton.
+    
+    Args:
+        widget: A Checkbutton widget
+    """
+    try:
+        widget.config(
+            bg=get_color('checkbox_bg'),
+            fg=get_color('checkbox_fg'),
+            activebackground=get_color('checkbox_bg'),
+            activeforeground=get_color('checkbox_fg'),
+            selectcolor=get_color('checkbox_select'),
+        )
+    except Exception as e:
+        logger.debug(f"Could not apply theme to checkbox: {e}")
+
+
+def apply_theme_to_scrollbar(widget) -> None:
+    """
+    Apply current theme colors to a scrollbar.
+    
+    Args:
+        widget: A Scrollbar widget
+    """
+    try:
+        widget.config(
+            bg=get_color('scrollbar_fg'),
+            troughcolor=get_color('scrollbar_bg'),
+        )
+    except Exception as e:
+        logger.debug(f"Could not apply theme to scrollbar: {e}")
+
+
+def apply_theme_to_widget(widget, widget_type: str = 'auto') -> None:
+    """
+    Apply current theme colors to a widget based on its type.
+    
+    Args:
+        widget: Any tkinter widget
+        widget_type: One of 'pane', 'window', 'frame', 'label', 'labelframe',
+                     'button', 'entry', 'menu', 'checkbox', 'scrollbar', 'auto'
+                     If 'auto', attempts to detect widget type.
+    """
+    if widget_type == 'auto':
+        # Attempt to detect widget type from class name
+        class_name = widget.winfo_class()
+        type_map = {
+            'Text': 'pane',
+            'Scrolledtext': 'pane',
+            'Toplevel': 'window',
+            'Frame': 'frame',
+            'Label': 'label',
+            'Labelframe': 'labelframe',
+            'Button': 'button',
+            'Entry': 'entry',
+            'Menu': 'menu',
+            'Checkbutton': 'checkbox',
+            'Radiobutton': 'checkbox',
+            'Scrollbar': 'scrollbar',
+        }
+        widget_type = type_map.get(class_name, 'frame')
+    
+    apply_funcs = {
+        'pane': apply_theme_to_pane,
+        'text': apply_theme_to_pane,
+        'window': apply_theme_to_window,
+        'frame': apply_theme_to_window,
+        'toplevel': apply_theme_to_window,
+        'label': apply_theme_to_label,
+        'labelframe': apply_theme_to_labelframe,
+        'button': apply_theme_to_button,
+        'entry': apply_theme_to_entry,
+        'menu': apply_theme_to_menu,
+        'checkbox': apply_theme_to_checkbox,
+        'radiobutton': apply_theme_to_checkbox,
+        'scrollbar': apply_theme_to_scrollbar,
+    }
+    
+    func = apply_funcs.get(widget_type)
+    if func:
+        func(widget)
+    else:
+        # Fallback: try to set bg
+        try:
+            widget.config(bg=get_color('window_bg'))
+        except Exception:
+            pass
+
+
+def configure_ttk_styles(style=None) -> None:
+    """
+    Configure ttk Style for current theme.
+    
+    This updates ttk widget styles (Treeview, Combobox, etc.) to match
+    the current theme.
+    
+    Args:
+        style: A ttk.Style instance. If None, creates one.
+    """
+    try:
+        import tkinter.ttk as ttk
+        if style is None:
+            style = ttk.Style()
+        
+        # Use clam theme as base for dark themes (better color support)
+        if is_dark_theme():
+            try:
+                style.theme_use('clam')
+            except Exception:
+                pass
+        
+        # Configure Treeview
+        style.configure(
+            'Treeview',
+            background=get_color('pane_bg'),
+            fieldbackground=get_color('pane_bg'),
+            foreground=get_color('pane_fg'),
+            rowheight=18
+        )
+        style.map(
+            'Treeview',
+            background=[('selected', get_color('select_bg'))],
+            foreground=[('selected', get_color('menu_active_fg'))]
+        )
+        
+        # Pane.Treeview variant
+        style.configure(
+            'Pane.Treeview',
+            background=get_color('pane_bg'),
+            fieldbackground=get_color('pane_bg'),
+            foreground=get_color('pane_fg'),
+            rowheight=18
+        )
+        style.map(
+            'Pane.Treeview',
+            background=[('selected', get_color('select_bg'))],
+            foreground=[('selected', get_color('menu_active_fg'))]
+        )
+        
+        # Treeview Heading
+        style.configure(
+            'Treeview.Heading',
+            background=get_color('button_bg'),
+            foreground=get_color('button_fg')
+        )
+        
+        # Combobox
+        style.configure(
+            'TCombobox',
+            fieldbackground=get_color('entry_bg'),
+            background=get_color('button_bg'),
+            foreground=get_color('entry_fg')
+        )
+        style.map(
+            'TCombobox',
+            fieldbackground=[('readonly', get_color('entry_bg')), ('focus', get_color('entry_bg'))],
+            foreground=[('readonly', get_color('entry_fg')), ('focus', get_color('entry_fg'))]
+        )
+        
+        # Pane.TCombobox variant
+        style.configure(
+            'Pane.TCombobox',
+            fieldbackground=get_color('pane_bg'),
+            background=get_color('pane_bg'),
+            foreground=get_color('pane_fg')
+        )
+        style.map(
+            'Pane.TCombobox',
+            fieldbackground=[('readonly', get_color('pane_bg')), ('focus', get_color('pane_bg'))],
+            foreground=[('readonly', get_color('pane_fg')), ('focus', get_color('pane_fg'))]
+        )
+        
+        # TButton
+        style.configure(
+            'TButton',
+            background=get_color('button_bg'),
+            foreground=get_color('button_fg')
+        )
+        style.map(
+            'TButton',
+            background=[('active', get_color('button_active_bg'))]
+        )
+        
+        # TEntry
+        style.configure(
+            'TEntry',
+            fieldbackground=get_color('entry_bg'),
+            foreground=get_color('entry_fg')
+        )
+        
+        # TLabel
+        style.configure(
+            'TLabel',
+            background=get_color('label_bg'),
+            foreground=get_color('label_fg')
+        )
+        
+        # TFrame
+        style.configure(
+            'TFrame',
+            background=get_color('window_bg')
+        )
+        
+        # TLabelframe
+        style.configure(
+            'TLabelframe',
+            background=get_color('labelframe_bg')
+        )
+        style.configure(
+            'TLabelframe.Label',
+            background=get_color('labelframe_bg'),
+            foreground=get_color('labelframe_fg')
+        )
+        
+    except Exception as e:
+        logger.debug(f"Could not configure ttk styles: {e}")
+
+
+def configure_root_options(root) -> None:
+    """
+    Configure root window option database for theme colors.
+    
+    This sets default colors for tk widgets that read from the option database.
+    
+    Args:
+        root: The root Tk window
+    """
+    try:
+        # Listbox (for Combobox dropdowns)
+        root.option_add('*Listbox.background', get_color('pane_bg'))
+        root.option_add('*Listbox.foreground', get_color('pane_fg'))
+        root.option_add('*Listbox.selectBackground', get_color('select_bg'))
+        
+        # Button
+        root.option_add('*Button.background', get_color('button_bg'))
+        root.option_add('*Button.foreground', get_color('button_fg'))
+        root.option_add('*Button.activeBackground', get_color('button_active_bg'))
+        root.option_add('*Button.activeForeground', get_color('button_active_fg'))
+        root.option_add('*Button.highlightBackground', get_color('window_bg'))
+        
+        # Menu
+        root.option_add('*Menu.background', get_color('menu_bg'))
+        root.option_add('*Menu.foreground', get_color('menu_fg'))
+        root.option_add('*Menu.activeBackground', get_color('menu_active_bg'))
+        root.option_add('*Menu.activeForeground', get_color('menu_active_fg'))
+        
+        # Label
+        root.option_add('*Label.background', get_color('label_bg'))
+        root.option_add('*Label.foreground', get_color('label_fg'))
+        
+        # Frame
+        root.option_add('*Frame.background', get_color('window_bg'))
+        
+        # Entry
+        root.option_add('*Entry.background', get_color('entry_bg'))
+        root.option_add('*Entry.foreground', get_color('entry_fg'))
+        
+        # Checkbutton
+        root.option_add('*Checkbutton.background', get_color('checkbox_bg'))
+        root.option_add('*Checkbutton.foreground', get_color('checkbox_fg'))
+        root.option_add('*Checkbutton.selectColor', get_color('checkbox_select'))
+        
+    except Exception as e:
+        logger.debug(f"Could not configure root options: {e}")
+
+
+# =============================================================================
+# Legacy Alias Functions (for backward compatibility)
+# =============================================================================
+
 def style_pane(widget) -> None:
-    """
-    Alias for apply_theme_to_pane for backward compatibility.
-    """
+    """Alias for apply_theme_to_pane for backward compatibility."""
     apply_theme_to_pane(widget)
 
-
-# =============================================================================
-# Dark Mode Detection (Legacy - for backward compatibility)
-# =============================================================================
 
 def is_dark_mode_active() -> bool:
     """
@@ -355,60 +989,30 @@ def is_dark_mode_active() -> bool:
     return is_dark_theme()
 
 
-# =============================================================================
-# Legacy Widget Styling (for backward compatibility)
-# =============================================================================
-
 def apply_dark_mode_to_widget(widget, widget_type='generic'):
     """
     Apply dark mode styling to a widget if dark mode is active.
     
     This function is kept for backward compatibility.
-    For new code, use apply_theme_to_pane() for text widgets.
+    For new code, use apply_theme_to_widget().
     
     Args:
         widget: The tkinter widget to style
         widget_type: Type of widget - 'button', 'label', 'frame', 'text', 'checkbox', 'generic'
     """
-    if not is_dark_mode_active():
+    if not is_dark_theme():
         return
     
-    try:
-        if widget_type == 'button':
-            widget.config(
-                bg=DARK_BTN_BG,
-                fg=DARK_FG,
-                activebackground=DARK_BTN_ACTIVE_BG,
-                activeforeground=DARK_FG
-            )
-        elif widget_type == 'label':
-            widget.config(bg=DARK_BG, fg=DARK_FG)
-        elif widget_type == 'frame':
-            widget.config(bg=DARK_BG)
-        elif widget_type == 'text':
-            apply_theme_to_pane(widget)
-        elif widget_type == 'checkbox':
-            widget.config(
-                bg=DARK_BG,
-                fg=DARK_FG,
-                activebackground=DARK_BG,
-                activeforeground=DARK_FG,
-                selectcolor=DARK_SELECT_BG
-            )
-        elif widget_type == 'toplevel':
-            widget.config(bg=DARK_BG)
-        else:
-            # Generic - try common options
-            try:
-                widget.config(bg=DARK_BG)
-            except Exception:
-                pass
-            try:
-                widget.config(fg=DARK_FG)
-            except Exception:
-                pass
-    except Exception as e:
-        logger.debug(f"Could not apply dark mode to widget: {e}")
+    type_map = {
+        'button': 'button',
+        'label': 'label',
+        'frame': 'frame',
+        'text': 'pane',
+        'checkbox': 'checkbox',
+        'toplevel': 'window',
+        'generic': 'frame',
+    }
+    apply_theme_to_widget(widget, type_map.get(widget_type, 'frame'))
 
 
 def style_dialog_for_dark_mode(dialog, labels=None, frames=None, buttons=None, 
@@ -426,41 +1030,31 @@ def style_dialog_for_dark_mode(dialog, labels=None, frames=None, buttons=None,
         text_widgets: List of Text/ScrolledText widgets
         checkboxes: List of Checkbutton widgets
     """
-    if not is_dark_mode_active():
+    if not is_dark_theme():
         return
     
-    # Style the dialog window itself
-    apply_dark_mode_to_widget(dialog, 'toplevel')
+    apply_theme_to_window(dialog)
     
-    # Style labels
     if labels:
         for label in labels:
-            apply_dark_mode_to_widget(label, 'label')
+            apply_theme_to_label(label)
     
-    # Style frames
     if frames:
         for frame in frames:
-            apply_dark_mode_to_widget(frame, 'frame')
+            apply_theme_to_window(frame)
     
-    # Style buttons
     if buttons:
         for button in buttons:
-            apply_dark_mode_to_widget(button, 'button')
+            apply_theme_to_button(button)
     
-    # Style text widgets
     if text_widgets:
         for text_widget in text_widgets:
             apply_theme_to_pane(text_widget)
     
-    # Style checkboxes
     if checkboxes:
         for checkbox in checkboxes:
-            apply_dark_mode_to_widget(checkbox, 'checkbox')
+            apply_theme_to_checkbox(checkbox)
 
-
-# =============================================================================
-# Convenience Functions for Pane Styling (Legacy wrappers)
-# =============================================================================
 
 def set_panes_dark(*panes) -> None:
     """

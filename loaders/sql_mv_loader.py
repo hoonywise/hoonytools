@@ -1054,44 +1054,38 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         return False
 
     def _apply_theme(dark: bool):
-        # Only apply theme colors to the SQL text pane and the MV name entry.
-        # Do not darken frames, labelframes, or control panels — keep chrome
-        # light so only the content panes change.
+        """Apply full chrome theming to the MV Builder dialog."""
+        # Apply theme to main window
         try:
-            if dark:
-                # Get colors from current theme
-                pane_bg = gui_utils.get_color('pane_bg')
-                pane_fg = gui_utils.get_color('pane_fg')
-                insert_bg = gui_utils.get_color('insert_bg')
-                select_bg = gui_utils.get_color('select_bg')
-                
-                sql_text.config(bg=pane_bg, fg=pane_fg, insertbackground=insert_bg, selectbackground=select_bg)
-                try:
-                    mv_name_entry.config(bg=pane_bg, fg=pane_fg, insertbackground=insert_bg)
-                except Exception:
-                    pass
-            else:
-                sql_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
-                try:
-                    mv_name_entry.config(bg='white', fg='black', insertbackground='black')
-                except Exception:
-                    pass
+            gui_utils.apply_theme_to_window(builder_window)
         except Exception:
             pass
-        # Apply button styling for dark/light mode
+        
+        # Apply theme to SQL text pane
         try:
-            pane_bg = gui_utils.get_color('pane_bg') if dark else 'SystemButtonFace'
-            pane_fg = gui_utils.get_color('pane_fg') if dark else 'SystemButtonText'
+            gui_utils.apply_theme_to_pane(sql_text)
+        except Exception:
+            pass
+        
+        # Apply theme to MV name entry
+        try:
+            gui_utils.apply_theme_to_entry(mv_name_entry)
+        except Exception:
+            pass
+        
+        # Apply theme to all buttons
+        try:
             for btn in _all_buttons:
                 try:
-                    if dark:
-                        btn.config(bg=pane_bg, fg=pane_fg, activebackground='#222222', activeforeground=pane_fg)
-                    else:
-                        btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
+                    gui_utils.apply_theme_to_button(btn)
                 except Exception:
                     pass
         except Exception:
             pass
+        
+        # Apply theme to frames and labels if they exist in globals/locals
+        # Note: LabelFrames and other widgets will pick up colors from
+        # root option database configured by gui_utils.configure_root_options()
 
     def _poll_theme():
         nonlocal _last_dark, _poll_id
@@ -1148,6 +1142,10 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
                 gui_utils.unregister_theme_callback(_theme_cb)
             except Exception:
                 pass
+            try:
+                _stop_polling()
+            except Exception:
+                pass
         try:
             builder_window.bind('<Destroy>', _on_destroy)
         except Exception:
@@ -1157,18 +1155,17 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         try:
             _theme_cb(gui_utils.get_current_theme())
         except Exception:
-                pass
-        else:
-            try:
-                builder_window.after(600, _poll_theme)
-            except Exception:
-                pass
-            try:
-                builder_window.bind('<Destroy>', _stop_polling)
-            except Exception:
-                pass
+            pass
     except Exception:
-        pass
+        # Fallback to polling if registration fails
+        try:
+            builder_window.after(600, _poll_theme)
+        except Exception:
+            pass
+        try:
+            builder_window.bind('<Destroy>', _stop_polling)
+        except Exception:
+            pass
 
     # Helper to briefly bring the builder window to the front after modal messageboxes
     def ensure_builder_on_top(delay=50):

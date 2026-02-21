@@ -1579,67 +1579,101 @@ else:
 
 ---
 
-### 🎨 Entry #18: Theme System Architecture (v2.1.8)
+### 🎨 Entry #18: Theme System Architecture with Full Chrome Theming (v2.1.8)
 
-**Problem:** The simple Dark Mode toggle (on/off) was too limiting. Users wanted options between pure black and system light, similar to how VS Code offers multiple theme presets.
+**Problem:** The simple Dark Mode toggle (on/off) was too limiting. Users wanted options between pure black and system light, similar to how VS Code offers multiple theme presets. Additionally, the initial "pane-only" approach was incomplete - users wanted the entire UI to be themed, not just content panes.
 
-**Solution:** Implemented a theme system with 7 preset themes spanning the spectrum from darkest to lightest.
+**Solution:** Implemented a comprehensive theme system with:
+- 7 preset themes spanning the spectrum from darkest to lightest
+- **22 color keys** for full UI customization
+- Full chrome theming for the entire UI (buttons, labels, frames, menus, etc.)
 
 #### Theme System Design
 
-**Core principle:** "Pane-only" theming. Theme colors apply ONLY to content panes (ScrolledText, Treeview, log pane), NOT to dialog chrome (buttons, labels, frames, checkboxes). This ensures a clean look where system widgets remain functional and native-looking.
+**Core principle: Full chrome theming.** All UI elements are themed, not just content panes. Each preset defines colors for every UI element type, creating a cohesive visual experience.
 
 **Preset themes (dark to light):**
-1. **Pure Black** (`#000000`) — What Dark Mode used to be
-2. **Midnight** (`#0d1117`) — GitHub Dark style
-3. **Charcoal** (`#1e1e1e`) — VS Code Dark style
-4. **Slate** (`#2d2d2d`) — Softer dark
-5. **Graphite** (`#3c3f41`) — Medium grey
-6. **Silver** (`#f0f0f0`) — Near-white
-7. **System Light** (`SystemWindow`) — Windows default
+1. **Pure Black** (`#000000` window) — What Dark Mode used to be
+2. **Midnight** (`#010409` window) — GitHub Dark style
+3. **Charcoal** (`#181818` window) — VS Code Dark style
+4. **Slate** (`#252525` window) — Softer dark
+5. **Graphite** (`#313335` window) — Medium grey (IntelliJ style)
+6. **Silver** (`#c0c0c0` window) — Light grey, distinctly different from System Light
+7. **System Light** (`SystemButtonFace`) — Windows default, respects high contrast
 
-**Color keys per theme:**
-- `pane_bg` — Background color for text panes
-- `pane_fg` — Foreground/text color
-- `select_bg` — Selection highlight background
-- `insert_bg` — Cursor/insertion point color
+**Complete color keys (22 total):**
+```python
+COLOR_KEYS = [
+    # Content panes
+    'pane_bg', 'pane_fg', 'select_bg', 'insert_bg',
+    # Window chrome
+    'window_bg', 'border_bg',
+    # Labels
+    'label_bg', 'label_fg',
+    # LabelFrame
+    'labelframe_bg', 'labelframe_fg',
+    # Buttons
+    'button_bg', 'button_fg', 'button_active_bg', 'button_active_fg',
+    # Entry fields
+    'entry_bg', 'entry_fg',
+    # Menu
+    'menu_bg', 'menu_fg', 'menu_active_bg', 'menu_active_fg',
+    # Checkbox/Radio
+    'checkbox_bg', 'checkbox_fg', 'checkbox_select',
+    # Scrollbar
+    'scrollbar_bg', 'scrollbar_fg',
+]
+```
 
 #### Implementation Components
 
 **1. `libs/gui_utils.py` — Theme infrastructure:**
+
+Per-widget styling functions:
 ```python
-PRESET_THEMES = {
-    'pure_black': {'pane_bg': '#000000', 'pane_fg': '#ffffff', ...},
-    'midnight': {'pane_bg': '#0d1117', 'pane_fg': '#c9d1d9', ...},
-    # ... more themes
-}
-
-_current_theme = 'system_light'  # Module state
-_theme_change_callbacks = []     # For live updates
-
-def set_theme(name, save=True):
-    """Set theme, save to config, trigger callbacks."""
-    
-def get_color(key):
-    """Get color from current theme."""
-    
-def register_theme_callback(callback):
-    """Register for theme change notifications."""
+apply_theme_to_pane(widget)      # ScrolledText, Text
+apply_theme_to_window(widget)    # Tk, Toplevel, Frame
+apply_theme_to_label(widget)     # Label
+apply_theme_to_labelframe(widget)
+apply_theme_to_button(widget)    # Button
+apply_theme_to_entry(widget)     # Entry
+apply_theme_to_menu(widget)      # Menu
+apply_theme_to_checkbox(widget)  # Checkbutton, Radiobutton
+apply_theme_to_scrollbar(widget)
+apply_theme_to_widget(widget, widget_type='auto')  # Auto-detect
 ```
 
-**2. Settings UI (`libs/settings.py`):**
-- Theme dropdown in Appearance panel
-- Live preview — `<<ComboboxSelected>>` event triggers `gui_utils.set_theme()`
-- "Customize..." button disabled (Phase 2)
+TTK and option database configuration:
+```python
+configure_ttk_styles(style)      # Treeview, TCombobox, TButton, etc.
+configure_root_options(root)     # *Listbox.*, *Button.*, *Menu.*, etc.
+```
 
-**3. Config migration:**
-- Legacy `[preferences] → dark_mode = true/false` auto-migrates to `[theme] → preset = pure_black/system_light`
-- Legacy key is removed after migration
+**2. `HoonyTools.pyw` — Unified `apply_full_theme()`:**
 
-**4. Callback system:**
-- `gui_utils.register_theme_callback(fn)` — Register to be notified of theme changes
-- `gui_utils.unregister_theme_callback(fn)` — Clean up on window destroy
-- All open dialogs update immediately when theme changes in Settings
+Replaced separate `apply_current_theme()` and `_restore_light_theme()` with a single unified function that:
+- Calls `gui_utils.configure_ttk_styles()` and `configure_root_options()`
+- Applies theme to root window, menu bar, verse pane, all buttons
+- Recreates Treeview widgets with appropriate style
+- Registers with `gui_utils.register_theme_callback()` for live updates
+
+**3. Settings dialog (`libs/settings.py`):**
+- Registers `_apply_theme` callback with `gui_utils`
+- On theme change, applies theme to entire Settings dialog (window, frames, buttons, category tree, content area)
+
+**4. Child dialogs (`sql_mv_loader.py`, `mv_refresh_gui.py`):**
+- Register with `gui_utils.register_theme_callback()`
+- Apply full chrome theming using `gui_utils.apply_theme_to_*()` functions
+- Unregister callback on window destroy
+
+#### Color Relationship Philosophy
+
+**Independent values, not derived.** Each color key in a preset is explicitly defined, allowing for:
+- Full customization freedom when custom colors are implemented
+- No hidden dependencies between color keys
+- Preset serves as starting template for customization
+
+For example, `label_bg` could be different from `window_bg` if the user wants it that way.
 
 #### View Menu Removal
 
@@ -1650,19 +1684,21 @@ The View menu (which only contained Dark Mode toggle) was removed entirely. Them
 - `gui_utils.is_dark_mode_active()` now calls `is_dark_theme()` internally
 - `set_panes_dark()` / `set_panes_light()` legacy functions still work
 - Legacy constants (`DARK_BG`, `DARK_FG`, etc.) preserved for any external code
+- `apply_dark_mode_to_widget()` and `style_dialog_for_dark_mode()` still work
 
 #### Future Phases
 
 **Phase 2 (Custom Colors):**
-- Enable "Customize..." button
+- Enable "Customize..." button in Settings > Appearance
 - Color pickers (hex entry + `tkinter.colorchooser.askcolor()`)
 - Custom overrides stored in `[theme.custom]` section
-- Preview panel showing current colors
+- Live preview panel showing all 22 color keys grouped logically
+- Reset to preset button
 
 #### Files Updated
 
-- `libs/gui_utils.py` — Complete rewrite with theme infrastructure
-- `libs/settings.py` — Theme dropdown replaces Dark Mode checkbox
-- `HoonyTools.pyw` — View menu removed, theme loading on startup
-- `loaders/sql_mv_loader.py` — Uses `gui_utils` theme API
+- `libs/gui_utils.py` — 22 color keys, 7 fully-defined presets, per-widget styling functions
+- `libs/settings.py` — Full chrome theming, registered with gui_utils callbacks
+- `HoonyTools.pyw` — New unified `apply_full_theme()`, removed View menu
+- `loaders/sql_mv_loader.py` — Full chrome theming for MV Builder dialog
 - `tools/mv_refresh_gui.py` — Uses `gui_utils` theme API

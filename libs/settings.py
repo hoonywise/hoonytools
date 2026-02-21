@@ -88,9 +88,8 @@ def _center_window(window, width, height):
 def _is_dark_mode():
     """Check if dark mode is currently active."""
     try:
-        style = ttk.Style()
-        bg = style.lookup('Pane.Treeview', 'background') or ''
-        return bg.lower() in ('#000000', '#000', 'black')
+        from libs import gui_utils
+        return gui_utils.is_dark_theme()
     except Exception:
         return False
 
@@ -772,54 +771,75 @@ def show_settings(parent=None):
     # --------------------------------------------------------------------------
     # Theme callback for dark mode support
     # --------------------------------------------------------------------------
-    def _apply_theme(dark: bool):
-        """Apply dark or light theme to the category pane and content panels."""
-        if dark:
-            try:
-                # Configure dark style for category tree
-                style.configure('Settings.Treeview',
-                                background='#000000',
-                                fieldbackground='#000000',
-                                foreground='#ffffff',
-                                rowheight=24)
-                style.map('Settings.Treeview',
-                          background=[('selected', '#2a6bd6')],
-                          foreground=[('selected', '#ffffff')])
-                category_frame.configure(bg='#000000')
-                # Apply dark mode to buttons
-                for btn in (btn_ok, btn_cancel, btn_apply):
-                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-            except Exception:
-                pass
-        else:
-            try:
-                # Restore light style
-                style.configure('Settings.Treeview',
-                                background='white',
-                                fieldbackground='white',
-                                foreground='black',
-                                rowheight=24)
-                style.map('Settings.Treeview',
-                          background=[('selected', '#0078d7')],
-                          foreground=[('selected', 'white')])
-                category_frame.configure(bg='SystemButtonFace')
-                # Restore light mode to buttons
-                for btn in (btn_ok, btn_cancel, btn_apply):
-                    btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
-            except Exception:
-                pass
-
+    def _apply_theme(theme_key=None):
+        """Apply current theme from gui_utils to the Settings dialog."""
+        from libs import gui_utils
+        
+        try:
+            # Configure Settings.Treeview style
+            style.configure('Settings.Treeview',
+                            background=gui_utils.get_color('pane_bg'),
+                            fieldbackground=gui_utils.get_color('pane_bg'),
+                            foreground=gui_utils.get_color('pane_fg'),
+                            rowheight=24)
+            style.map('Settings.Treeview',
+                      background=[('selected', gui_utils.get_color('select_bg'))],
+                      foreground=[('selected', gui_utils.get_color('menu_active_fg'))])
+        except Exception:
+            pass
+        
+        # Apply theme to dialog window
+        try:
+            gui_utils.apply_theme_to_window(win)
+        except Exception:
+            pass
+        
+        # Apply theme to category frame
+        try:
+            gui_utils.apply_theme_to_window(category_frame)
+        except Exception:
+            pass
+        
+        # Apply theme to main paned window
+        try:
+            main_paned.config(bg=gui_utils.get_color('border_bg'))
+        except Exception:
+            pass
+        
+        # Apply theme to status bar
+        try:
+            status_frame.config(bg=gui_utils.get_color('window_bg'))
+            status_label.config(bg=gui_utils.get_color('window_bg'), fg=gui_utils.get_color('label_fg'))
+            status_separator.config(bg=gui_utils.get_color('border_bg'))
+        except Exception:
+            pass
+        
+        # Apply theme to buttons
+        try:
+            for btn in (btn_ok, btn_cancel, btn_apply):
+                gui_utils.apply_theme_to_button(btn)
+        except Exception:
+            pass
+        
+        # Apply theme to content canvas and inner frame
+        try:
+            content_canvas.config(bg=gui_utils.get_color('window_bg'))
+            content_inner_frame.config(bg=gui_utils.get_color('window_bg'))
+            content_outer_frame.config(bg=gui_utils.get_color('window_bg'))
+        except Exception:
+            pass
+        
         # Apply theme to connections panel if it exists
         conn_apply_theme = entry_refs.get('_conn_apply_theme')
         if conn_apply_theme:
             try:
-                conn_apply_theme(dark)
+                conn_apply_theme(gui_utils.is_dark_theme())
             except Exception:
                 pass
 
-    # Register with parent's theme callback system
-    if parent and hasattr(parent, 'register_theme_callback'):
-        parent.register_theme_callback(_apply_theme)
+    # Register with gui_utils theme callback system
+    from libs import gui_utils
+    gui_utils.register_theme_callback(_apply_theme)
 
     def _on_destroy(event=None):
         if event.widget == win:  # Only on main window destroy
@@ -828,12 +848,11 @@ def show_settings(parent=None):
                 content_canvas.unbind_all('<MouseWheel>')
             except Exception:
                 pass
-            # Unregister theme callback
-            if parent and hasattr(parent, 'unregister_theme_callback'):
-                try:
-                    parent.unregister_theme_callback(_apply_theme)
-                except Exception:
-                    pass
+            # Unregister theme callback from gui_utils
+            try:
+                gui_utils.unregister_theme_callback(_apply_theme)
+            except Exception:
+                pass
 
     win.bind('<Destroy>', _on_destroy)
 

@@ -1914,606 +1914,224 @@ def launch_tool_gui():
     except Exception:
         pane_orig = {}
 
-    def apply_current_theme():
-        """Apply the current theme from gui_utils to all panes."""
+    def apply_full_theme():
+        """
+        Apply the current theme from gui_utils to the entire main window.
+        
+        This unified function handles all theme presets (dark and light)
+        by reading colors from gui_utils.get_color().
+        """
         nonlocal schema1_tree, schema2_tree
         
-        # Get current theme colors
-        pane_bg = gui_utils.get_color('pane_bg')
-        pane_fg = gui_utils.get_color('pane_fg')
-        select_bg = gui_utils.get_color('select_bg')
-        is_dark = gui_utils.is_dark_theme()
+        # Configure ttk styles using gui_utils
+        try:
+            gui_utils.configure_ttk_styles(style)
+        except Exception:
+            pass
         
-        # Record original theme/style/lookups the first time so we can
-        # reliably restore them later. Also capture per-item tags and
-        # master background colors.
+        # Configure root option database
         try:
-            if style:
+            gui_utils.configure_root_options(root)
+        except Exception:
+            pass
+        
+        # Apply theme to root window background
+        try:
+            root.config(bg=gui_utils.get_color('window_bg'))
+        except Exception:
+            pass
+        
+        # Apply theme to menu bar
+        try:
+            gui_utils.apply_theme_to_menu(menu_bar)
+        except Exception:
+            pass
+        
+        # Apply theme to custom in-window menu if present
+        try:
+            if 'custom_menu_frame' in globals() and getattr(custom_menu_frame, 'winfo_exists', lambda: False)():
                 try:
-                    # Save current theme
-                    if not pane_orig.get('orig_theme'):
-                        pane_orig['orig_theme'] = style.theme_use()
+                    custom_menu_frame.config(bg=gui_utils.get_color('window_bg'))
                 except Exception:
                     pass
-                # Save lookup values for Treeview and Pane.Treeview
-                try:
-                    if not pane_orig.get('orig_tree_lookup'):
-                        pane_orig['orig_tree_lookup'] = {
-                            'background': style.lookup('Treeview', 'background'),
-                            'fieldbackground': style.lookup('Treeview', 'fieldbackground'),
-                            'foreground': style.lookup('Treeview', 'foreground'),
-                        }
-                except Exception:
-                    pane_orig['orig_tree_lookup'] = {}
-                try:
-                    if not pane_orig.get('orig_pane_lookup'):
-                        pane_orig['orig_pane_lookup'] = {
-                            'background': style.lookup('Pane.Treeview', 'background'),
-                            'fieldbackground': style.lookup('Pane.Treeview', 'fieldbackground'),
-                            'foreground': style.lookup('Pane.Treeview', 'foreground'),
-                        }
-                except Exception:
-                    pane_orig['orig_pane_lookup'] = {}
-                try:
-                    # Save heading colors too (some backends use a separate heading style)
-                    if not pane_orig.get('orig_heading_lookup'):
-                        pane_orig['orig_heading_lookup'] = {
-                            'background': style.lookup('Treeview.Heading', 'background'),
-                            'foreground': style.lookup('Treeview.Heading', 'foreground'),
-                        }
-                except Exception:
-                    pane_orig['orig_heading_lookup'] = {}
-
-        except Exception:
-            pass
-
-        # Save per-item tags so we can restore after recreating
-        try:
-            if not pane_orig.get('user_item_tags'):
-                tags = {}
-                try:
-                    for it in list(schema1_tree.get_children()):
-                        try:
-                            tags[it] = tuple(schema1_tree.item(it).get('tags') or ())
-                        except Exception:
-                            tags[it] = ()
-                except Exception:
-                    tags = {}
-                pane_orig['user_item_tags'] = tags
-        except Exception:
-            pass
-        try:
-            if not pane_orig.get('dwh_item_tags'):
-                tags = {}
-                try:
-                    for it in list(schema2_tree.get_children()):
-                        try:
-                            tags[it] = tuple(schema2_tree.item(it).get('tags') or ())
-                        except Exception:
-                            tags[it] = ()
-                except Exception:
-                    tags = {}
-                pane_orig['dwh_item_tags'] = tags
-        except Exception:
-            pass
-        # Save master backgrounds
-        try:
-            if not pane_orig.get('user_master_bg'):
-                pane_orig['user_master_bg'] = schema1_tree.master.cget('bg')
-        except Exception:
-            pass
-        try:
-            if not pane_orig.get('dwh_master_bg'):
-                pane_orig['dwh_master_bg'] = schema2_tree.master.cget('bg')
-        except Exception:
-            pass
-
-        # Now apply theme style settings and recreate the trees using Pane.Treeview
-        # For light themes, restore to original settings instead
-        if not is_dark:
-            # Restore to light mode and return
-            _restore_light_theme()
-            return
-            
-        try:
-            if style:
-                try:
-                    style.theme_use('clam')
-                except Exception:
-                    pass
-                try:
-                    style.configure('Treeview', background=pane_bg, fieldbackground=pane_bg, foreground=pane_fg, rowheight=18)
-                    style.configure('Pane.Treeview', background=pane_bg, fieldbackground=pane_bg, foreground=pane_fg, rowheight=18)
-                    style.map('Treeview', background=[('selected', select_bg)], foreground=[('selected', '#ffffff')])
-                    style.map('Pane.Treeview', background=[('selected', select_bg)], foreground=[('selected', '#ffffff')])
-                    # Explicitly configure heading style as well; on Windows the
-                    # heading often needs its own configure call to update at runtime.
+                # Style menu buttons (custom_file, custom_help)
+                for t in ('custom_file', 'custom_help'):
                     try:
-                        style.configure('Treeview.Heading', background=pane_bg, foreground=pane_fg)
-                    except Exception:
-                        # Some backends expose the heading as 'Heading' element
-                        try:
-                            style.configure('Heading', background=pane_bg, foreground=pane_fg)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-                # Configure a pane-specific Combobox style and apply it to the toolbar combobox
-                try:
-                    style.configure('Pane.TCombobox', fieldbackground=pane_bg, background=pane_bg, foreground=pane_fg)
-                    # map readonly state colors explicitly
-                    try:
-                        # Map common states so the combobox stays themed when focused
-                        style.map('Pane.TCombobox', fieldbackground=[('readonly', pane_bg), ('focus', pane_bg)], foreground=[('readonly', pane_fg), ('focus', pane_fg)])
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-                # Best-effort: set Listbox option defaults so native popups inherit theme colors.
-                try:
-                    root.option_add('*Listbox.background', pane_bg)
-                    root.option_add('*Listbox.foreground', pane_fg)
-                    root.option_add('*Listbox.selectBackground', select_bg)
-                    pane_orig['listbox_options_set'] = True
-                except Exception:
-                    pass
-                # Style buttons for dark mode
-                try:
-                    root.option_add('*Button.background', pane_bg)
-                    root.option_add('*Button.foreground', pane_fg)
-                    root.option_add('*Button.activeBackground', '#222222')
-                    root.option_add('*Button.activeForeground', pane_fg)
-                    root.option_add('*Button.highlightBackground', pane_bg)
-                    pane_orig['button_options_set'] = True
-                except Exception:
-                    pass
-                # Style the top menu bar
-                try:
-                    root.option_add('*Menu.background', pane_bg)
-                    root.option_add('*Menu.foreground', pane_fg)
-                    root.option_add('*Menu.activeBackground', '#222222')
-                    root.option_add('*Menu.activeForeground', pane_fg)
-                    try:
-                        menu_bar.config(background=pane_bg, foreground=pane_fg, activebackground='#222222', activeforeground=pane_fg)
-                    except Exception:
-                        pass
-                    # If using the custom in-window menu, style its frame/menubuttons too
-                    try:
-                        if 'custom_menu_frame' in globals() and getattr(custom_menu_frame, 'winfo_exists', lambda: False)():
+                        mb, m = globals().get(t, (None, None))
+                        if mb:
                             try:
-                                custom_menu_frame.config(bg=pane_bg)
+                                mb.config(
+                                    bg=gui_utils.get_color('menu_bg'),
+                                    fg=gui_utils.get_color('menu_fg'),
+                                    activebackground=gui_utils.get_color('menu_active_bg'),
+                                    activeforeground=gui_utils.get_color('menu_active_fg')
+                                )
                             except Exception:
                                 pass
+                        if m:
                             try:
-                                # custom_file/custom_help are tuples: (mb, menu) - View menu removed
-                                for t in ('custom_file', 'custom_help'):
-                                    try:
-                                        mb, m = globals().get(t, (None, None))
-                                        if mb:
-                                            try:
-                                                mb.config(bg=pane_bg, fg=pane_fg, activebackground='#222222', activeforeground=pane_fg)
-                                            except Exception:
-                                                pass
-                                        if m:
-                                            try:
-                                                m.config(bg=pane_bg, fg=pane_fg, selectcolor=pane_fg)
-                                            except Exception:
-                                                pass
-                                    except Exception:
-                                        pass
-                            except Exception:
-                                pass
-                            # Style verse pane (only inner text area, not frame/border)
-                            try:
-                                if 'verse_text' in globals():
-                                    globals()['verse_text'].config(bg=pane_bg, fg=pane_fg)
-                                if 'verse_inner' in globals():
-                                    globals()['verse_inner'].config(bg=pane_bg)
-                                if 'verse_scrollbar' in globals():
-                                    globals()['verse_scrollbar'].config(bg='#333333', troughcolor=pane_bg)
-                            except Exception:
-                                pass
-                            # Style all existing buttons in the main window
-                            try:
-                                _btn_style = {'bg': pane_bg, 'fg': pane_fg, 'activebackground': '#222222', 'activeforeground': pane_fg}
-                                # Verse buttons
-                                try:
-                                    verse_prev_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    verse_next_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                # Schema1 pane buttons
-                                try:
-                                    schema1_refresh_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema1_load_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema1_drop_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema1_view_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema1_mv_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema1_pk_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema1_index_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                # Schema2 pane buttons
-                                try:
-                                    schema2_refresh_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema2_load_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema2_drop_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema2_view_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema2_mv_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema2_pk_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema2_index_btn.config(**_btn_style)
-                                except Exception:
-                                    pass
+                                gui_utils.apply_theme_to_menu(m)
                             except Exception:
                                 pass
                     except Exception:
                         pass
+        except Exception:
+            pass
+        
+        # Style verse pane
+        try:
+            if 'verse_text' in globals():
+                gui_utils.apply_theme_to_pane(globals()['verse_text'])
+            if 'verse_inner' in globals():
+                gui_utils.apply_theme_to_window(globals()['verse_inner'])
+            if 'verse_scrollbar' in globals():
+                gui_utils.apply_theme_to_scrollbar(globals()['verse_scrollbar'])
+        except Exception:
+            pass
+        
+        # Style all buttons in main window
+        _all_buttons = [
+            'verse_prev_btn', 'verse_next_btn',
+            'schema1_refresh_btn', 'schema1_load_btn', 'schema1_drop_btn',
+            'schema1_view_btn', 'schema1_mv_btn', 'schema1_pk_btn', 'schema1_index_btn',
+            'schema2_refresh_btn', 'schema2_load_btn', 'schema2_drop_btn',
+            'schema2_view_btn', 'schema2_mv_btn', 'schema2_pk_btn', 'schema2_index_btn',
+        ]
+        for btn_name in _all_buttons:
+            try:
+                if btn_name in dir():
+                    btn = eval(btn_name)
+                    gui_utils.apply_theme_to_button(btn)
+            except Exception:
+                pass
+        
+        # Apply button theme using locals/nonlocals directly
+        try:
+            gui_utils.apply_theme_to_button(verse_prev_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(verse_next_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema1_refresh_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema1_load_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema1_drop_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema1_view_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema1_mv_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema1_pk_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema1_index_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema2_refresh_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema2_load_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema2_drop_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema2_view_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema2_mv_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema2_pk_btn)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_button(schema2_index_btn)
+        except Exception:
+            pass
+        
+        # Apply theme to schema trees and their containers
+        is_dark = gui_utils.is_dark_theme()
+        try:
+            # Recreate trees to apply new style
+            schema1_tree = _recreate_tree(schema1_tree, use_pane_style=is_dark)
+        except Exception:
+            pass
+        try:
+            schema2_tree = _recreate_tree(schema2_tree, use_pane_style=is_dark)
+        except Exception:
+            pass
+        
+        # Style tree master frames
+        try:
+            schema1_tree.master.config(bg=gui_utils.get_color('pane_bg'))
+        except Exception:
+            pass
+        try:
+            schema2_tree.master.config(bg=gui_utils.get_color('pane_bg'))
+        except Exception:
+            pass
+        
+        # Configure tree row tag colors
+        try:
+            pane_bg = gui_utils.get_color('pane_bg')
+            pane_fg = gui_utils.get_color('pane_fg')
+            schema1_tree.tag_configure('row', background=pane_bg, foreground=pane_fg)
+            for it in list(schema1_tree.get_children()):
+                try:
+                    schema1_tree.item(it, tags=('row',))
                 except Exception:
                     pass
         except Exception:
             pass
-
-        # Recreate trees under the new Pane.Treeview style so backend honors fieldbackground
         try:
-            try:
-                schema1_tree = _recreate_tree(schema1_tree, use_pane_style=True)
-            except Exception:
-                pass
-            try:
-                schema2_tree = _recreate_tree(schema2_tree, use_pane_style=True)
-            except Exception:
-                pass
+            schema2_tree.tag_configure('row', background=pane_bg, foreground=pane_fg)
+            for it in list(schema2_tree.get_children()):
+                try:
+                    schema2_tree.item(it, tags=('row',))
+                except Exception:
+                    pass
         except Exception:
             pass
-
-        # Set master backgrounds and style log pane
-        try:
-            try:
-                schema1_tree.master.config(bg=pane_bg)
-            except Exception:
-                pass
-            try:
-                schema2_tree.master.config(bg=pane_bg)
-            except Exception:
-                pass
-        except Exception:
-            pass
-
+        
+        # Style log pane
         try:
             if 'log_text' in globals():
-                if not pane_orig.get('log'):
-                    pane_orig['log'] = (log_text.cget('bg'), log_text.cget('fg'), log_text.cget('insertbackground'))
-                try:
-                    log_text.config(bg=pane_bg, fg=pane_fg, insertbackground=gui_utils.get_color('insert_bg'), selectbackground=select_bg)
-                except Exception:
-                    pass
+                gui_utils.apply_theme_to_pane(log_text)
         except Exception:
             pass
-
+        
+        # Store reference for potential use by child dialogs
         try:
             root._pane_orig = pane_orig
         except Exception:
             pass
-
-    def _restore_light_theme():
-        """Internal helper to restore light theme styling."""
-        nonlocal schema1_tree, schema2_tree
-        # First, if we recorded the original theme or style lookups, restore
-        # them so newly-created Treeviews are created under the original rules.
-        try:
-            if style:
-                try:
-                    po = getattr(root, '_pane_orig', {}) or {}
-                except Exception:
-                    po = {}
-                try:
-                    orig_theme = po.get('orig_theme')
-                    if orig_theme:
-                        try:
-                            style.theme_use(orig_theme)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-                try:
-                    # restore Treeview lookups if we captured them
-                    ot = po.get('orig_tree_lookup') or {}
-                    if ot:
-                        try:
-                            style.configure('Treeview', background=ot.get('background') or '', fieldbackground=ot.get('fieldbackground') or '', foreground=ot.get('foreground') or '')
-                        except Exception:
-                            pass
-                    op = po.get('orig_pane_lookup') or {}
-                    if op:
-                        try:
-                            style.configure('Pane.Treeview', background=op.get('background') or '', fieldbackground=op.get('fieldbackground') or '', foreground=op.get('foreground') or '')
-                        except Exception:
-                            pass
-                    # Restore Listbox option defaults to light values so native
-                    # popups created after this will be white on black text
-                    try:
-                        root.option_add('*Listbox.background', 'white')
-                        root.option_add('*Listbox.foreground', 'black')
-                        root.option_add('*Listbox.selectBackground', '#2a6bd6')
-                    except Exception:
-                        pass
-                    # Restore button option defaults to light values
-                    try:
-                        root.option_add('*Button.background', 'SystemButtonFace')
-                        root.option_add('*Button.foreground', 'black')
-                        root.option_add('*Button.activeBackground', 'SystemButtonFace')
-                        root.option_add('*Button.activeForeground', 'black')
-                        root.option_add('*Button.highlightBackground', 'SystemButtonFace')
-                    except Exception:
-                        pass
-                    # Restore menu bar to light appearance
-                    try:
-                        root.option_add('*Menu.background', '#d0d0d0')
-                        root.option_add('*Menu.foreground', 'black')
-                        root.option_add('*Menu.activeBackground', '#ffffff')
-                        root.option_add('*Menu.activeForeground', 'black')
-                        try:
-                            menu_bar.config(background='#d0d0d0', foreground='black', activebackground='#ffffff', activeforeground='black')
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
-
-                    # Restore custom in-window menu if present
-                    try:
-                        if 'custom_menu_frame' in globals() and getattr(custom_menu_frame, 'winfo_exists', lambda: False)():
-                            try:
-                                custom_menu_frame.config(bg=root.cget('bg'))
-                            except Exception:
-                                pass
-                            try:
-                                # custom_file/custom_help - View menu removed
-                                for t in ('custom_file', 'custom_help'):
-                                    try:
-                                        mb, m = globals().get(t, (None, None))
-                                        if mb:
-                                            try:
-                                                mb.config(bg=root.cget('bg'), fg='black', activebackground='#ececec', activeforeground='black')
-                                            except Exception:
-                                                pass
-                                        if m:
-                                            try:
-                                                m.config(bg='white', fg='black', selectcolor='#000000')
-                                            except Exception:
-                                                pass
-                                    except Exception:
-                                        pass
-                            except Exception:
-                                pass
-                            # Restore verse pane to light mode (only inner text area)
-                            try:
-                                if 'verse_text' in globals():
-                                    globals()['verse_text'].config(bg='white', fg='black')
-                                if 'verse_inner' in globals():
-                                    globals()['verse_inner'].config(bg='white')
-                            except Exception:
-                                pass
-                            # Restore all existing buttons in the main window to light mode
-                            try:
-                                _light_btn_style = {'bg': 'SystemButtonFace', 'fg': 'black', 'activebackground': 'SystemButtonFace', 'activeforeground': 'black'}
-                                # Verse buttons
-                                try:
-                                    verse_prev_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    verse_next_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                # Schema1 pane buttons
-                                try:
-                                    schema1_refresh_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema1_load_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema1_drop_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema1_view_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema1_mv_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema1_pk_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema1_index_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                # Schema2 pane buttons
-                                try:
-                                    schema2_refresh_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema2_load_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema2_drop_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema2_view_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema2_mv_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema2_pk_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                                try:
-                                    schema2_index_btn.config(**_light_btn_style)
-                                except Exception:
-                                    pass
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-                    # Restore heading lookups if available
-                    try:
-                        oh = po.get('orig_heading_lookup') or {}
-                        if oh:
-                            try:
-                                style.configure('Treeview.Heading', background=oh.get('background') or '', foreground=oh.get('foreground') or '')
-                            except Exception:
-                                try:
-                                    style.configure('Heading', background=oh.get('background') or '', foreground=oh.get('foreground') or '')
-                                except Exception:
-                                    pass
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-
-        except Exception:
-            pass
-
-        # Recreate the treeviews without the Pane style so they return to
-        # the light/default appearance on backends that only apply style
-        # at creation time.
-        try:
-            try:
-                schema1_tree = _recreate_tree(schema1_tree, use_pane_style=False)
-            except Exception:
-                pass
-            try:
-                schema2_tree = _recreate_tree(schema2_tree, use_pane_style=False)
-            except Exception:
-                pass
-        except Exception:
-            pass
-
-        # restore master bg and any saved per-widget properties
-        try:
-            try:
-                umbg = getattr(root, '_pane_orig', {}).get('user_master_bg', None)
-                if umbg is not None:
-                    schema1_tree.master.config(bg=umbg)
-            except Exception:
-                pass
-            try:
-                dmbg = getattr(root, '_pane_orig', {}).get('dwh_master_bg', None)
-                if dmbg is not None:
-                    schema2_tree.master.config(bg=dmbg)
-            except Exception:
-                pass
-        except Exception:
-            pass
-
-        # Ensure every inserted item uses the standard 'row' tag and configure
-        # that tag to match the restored Treeview lookups (some backends rely
-        # on tag_configure for per-instance coloring).
-        try:
-            # determine appropriate colors from saved lookups or sensible defaults
-            po = getattr(root, '_pane_orig', {}) or {}
-            ot = po.get('orig_tree_lookup') or {}
-            bg = ot.get('fieldbackground') or ot.get('background') or 'white'
-            fg = ot.get('foreground') or 'black'
-            try:
-                schema1_tree.tag_configure('row', background=bg, foreground=fg)
-            except Exception:
-                pass
-            try:
-                for it in list(schema1_tree.get_children()):
-                    try:
-                        schema1_tree.item(it, tags=('row',))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            try:
-                schema2_tree.tag_configure('row', background=bg, foreground=fg)
-            except Exception:
-                pass
-            try:
-                for it in list(schema2_tree.get_children()):
-                    try:
-                        schema2_tree.item(it, tags=('row',))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-        except Exception:
-            pass
-
-        try:
-            po = getattr(root, '_pane_orig', None)
-            if po and po.get('log'):
-                bg, fg, ins = po.get('log')
-                try:
-                    # restore to the saved original or fallback to default light colors
-                    log_text.config(bg=bg or 'white', fg=fg or 'black', insertbackground=ins or 'black', selectbackground=None)
-                except Exception:
-                    try:
-                        log_text.config(bg='white', fg='black', insertbackground='black', selectbackground=None)
-                    except Exception:
-                        pass
-            else:
-                # ensure log resets to white if we have no saved original
-                try:
-                    log_text.config(bg='white', fg='black', insertbackground='black', selectbackground=None)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+    
+    # Alias for backward compatibility
+    def apply_current_theme():
+        """Alias for apply_full_theme() for backward compatibility."""
+        apply_full_theme()
 
     # Legacy wrapper functions for backward compatibility
     def set_panes_dark():
