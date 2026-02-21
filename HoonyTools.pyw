@@ -1914,32 +1914,6 @@ def launch_tool_gui():
     except Exception:
         pane_orig = {}
 
-    # Helper: safe tree info (avoid calling widget cget('background') which
-    # may raise on some ttk backends). Prefer style.lookup values.
-    def _tree_info(tv):
-        try:
-            sty = None
-            try:
-                sty = tv.cget('style')
-            except Exception:
-                sty = None
-            st = ttk.Style()
-            bg = None
-            fg = None
-            try:
-                if sty:
-                    bg = st.lookup(sty, 'fieldbackground') or st.lookup(sty, 'background')
-                    fg = st.lookup(sty, 'foreground')
-                if not bg:
-                    bg = st.lookup('Treeview', 'fieldbackground') or st.lookup('Treeview', 'background')
-                if not fg:
-                    fg = st.lookup('Treeview', 'foreground')
-            except Exception:
-                pass
-            return f"style={sty} bg={bg} fg={fg}"
-        except Exception as e:
-            return f"error:{e}"
-
     def set_panes_dark():
         nonlocal schema1_tree, schema2_tree
         # Record original theme/style/lookups the first time so we can
@@ -2251,20 +2225,6 @@ def launch_tool_gui():
         except Exception:
             pass
 
-        # Debug write
-        try:
-            dbg = base_path / 'theme_debug.log'
-            with open(dbg, 'a', encoding='utf-8') as df:
-                df.write(f"SET DARK: schema1_tree.style={getattr(schema1_tree, 'cget', lambda k: None)('style')} bg={getattr(schema1_tree, 'cget', lambda k: None)('background')} fg={getattr(schema1_tree, 'cget', lambda k: None)('foreground')}\n")
-                try:
-                    its = list(schema1_tree.get_children())
-                    df.write(f"SET DARK: schema1_tree items={len(its)} sample_tags={[schema1_tree.item(its[0]).get('tags') if its else None]}\n")
-                except Exception:
-                    pass
-                df.write(f"SET DARK: schema2_tree.style={getattr(schema2_tree, 'cget', lambda k: None)('style')} bg={getattr(schema2_tree, 'cget', lambda k: None)('background')} fg={getattr(schema2_tree, 'cget', lambda k: None)('foreground')}\n")
-        except Exception:
-            pass
-
         # Log text: remember originals and set dark colors
         try:
             if 'log_text' in globals():
@@ -2276,20 +2236,6 @@ def launch_tool_gui():
 
         try:
             root._pane_orig = pane_orig
-        except Exception:
-            pass
-
-        # Debug: write status to debug log
-        try:
-            dbg = base_path / 'theme_debug.log'
-            with open(dbg, 'a', encoding='utf-8') as df:
-                df.write(f"SET DARK: schema1_tree.style={getattr(schema1_tree, 'cget', lambda k: None)('style')} bg={getattr(schema1_tree, 'cget', lambda k: None)('background')} fg={getattr(schema1_tree, 'cget', lambda k: None)('foreground')}\n")
-                try:
-                    its = list(schema1_tree.get_children())
-                    df.write(f"SET DARK: schema1_tree items={len(its)} sample_tags={[schema1_tree.item(its[0]).get('tags') if its else None]}\n")
-                except Exception:
-                    pass
-                df.write(f"SET DARK: schema2_tree.style={getattr(schema2_tree, 'cget', lambda k: None)('style')} bg={getattr(schema2_tree, 'cget', lambda k: None)('background')} fg={getattr(schema2_tree, 'cget', lambda k: None)('foreground')}\n")
         except Exception:
             pass
 
@@ -2576,20 +2522,6 @@ def launch_tool_gui():
         except Exception:
             pass
 
-        # Debug: write status to debug log
-        try:
-            dbg = base_path / 'theme_debug.log'
-            with open(dbg, 'a', encoding='utf-8') as df:
-                df.write(f"SET LIGHT: schema1_tree.style={getattr(schema1_tree, 'cget', lambda k: None)('style')} bg={getattr(schema1_tree, 'cget', lambda k: None)('background')} fg={getattr(schema1_tree, 'cget', lambda k: None)('foreground')}\n")
-                try:
-                    its = list(schema1_tree.get_children())
-                    df.write(f"SET LIGHT: schema1_tree items={len(its)} sample_tags={[schema1_tree.item(its[0]).get('tags') if its else None]}\n")
-                except Exception:
-                    pass
-                df.write(f"SET LIGHT: schema2_tree.style={getattr(schema2_tree, 'cget', lambda k: None)('style')} bg={getattr(schema2_tree, 'cget', lambda k: None)('background')} fg={getattr(schema2_tree, 'cget', lambda k: None)('foreground')}\n")
-        except Exception:
-            pass
-
     # Dark mode toggle variable (pane-only). Default off.
     dark_mode_var = tk.BooleanVar(value=False)
 
@@ -2665,47 +2597,7 @@ def launch_tool_gui():
 
     view_menu.add_checkbutton(label="Dark Mode", variable=dark_mode_var, command=_toggle_dark)
     menu_bar.add_cascade(label="View", menu=view_menu)
-    # Debug helper to inspect treeview style/tags at runtime
-    def _debug_panes():
-        try:
-            s = []
-            try:
-                s.append(f"schema1_tree {_tree_info(schema1_tree)}")
-                items = list(schema1_tree.get_children())
-                s.append(f"schema1_tree.items={len(items)}")
-                if items:
-                    s.append(f"sample_item_tags={schema1_tree.item(items[0]).get('tags')}")
-            except Exception as e:
-                s.append(f"schema1_tree error: {e}")
-            try:
-                s.append(f"schema2_tree {_tree_info(schema2_tree)}")
-                items2 = list(schema2_tree.get_children())
-                s.append(f"schema2_tree.items={len(items2)}")
-                if items2:
-                    s.append(f"sample_item_tags2={schema2_tree.item(items2[0]).get('tags')}")
-            except Exception as e:
-                s.append(f"schema2_tree error: {e}")
-            try:
-                style = ttk.Style()
-                s.append(f"Pane.Treeview lookup background={style.lookup('Pane.Treeview','background')} fieldbackground={style.lookup('Pane.Treeview','fieldbackground')} foreground={style.lookup('Pane.Treeview','foreground')}")
-                s.append(f"Treeview lookup background={style.lookup('Treeview','background')} fieldbackground={style.lookup('Treeview','fieldbackground')} foreground={style.lookup('Treeview','foreground')}")
-            except Exception as e:
-                s.append(f"style error: {e}")
 
-            dbg = base_path / 'theme_debug.log'
-            with open(dbg, 'a', encoding='utf-8') as df:
-                df.write('\n'.join(s) + '\n---\n')
-            from tkinter import messagebox
-            messagebox.showinfo('Theme Debug', '\n'.join(s))
-        except Exception as e:
-            try:
-                from tkinter import messagebox
-                messagebox.showerror('Theme Debug Error', str(e))
-            except Exception:
-                pass
-
-    # Debug Panes is intentionally hidden (keep handler for future use)
-    
     # Settings launcher (defined here so it can be bound to keyboard shortcut)
     def _launch_settings():
         try:
