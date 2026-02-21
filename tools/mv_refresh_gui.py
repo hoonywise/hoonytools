@@ -149,12 +149,20 @@ def run_mv_refresh_gui(on_finish=None):
     user_schema_label = tk.Label(user_label_frame, text=session.get_label('schema1') + (" MVs" if session.get_label('schema1') != 'Not Connected' else ""), font=("Arial", 9, "bold"))
     user_schema_label.pack(side="left")
     user_frame.configure(labelwidget=user_label_frame)
+    try:
+        # Let session update this label if other parts of the app change the saved label
+        session.register_label_widget('schema1', user_schema_label)
+    except Exception:
+        pass
 
     user_btn_frame = tk.Frame(user_frame)
     user_btn_frame.pack(fill="x")
     btn_refresh_user = tk.Button(user_btn_frame, text="Refresh", width=8, command=lambda: load_user_mviews())
     btn_refresh_user.pack(side="left")
     _all_buttons.append(btn_refresh_user)
+    btn_reset_user = tk.Button(user_btn_frame, text="Reset", width=8, command=lambda: (mview_listbox_user.selection_clear(0, tk.END), on_select(None, source='user')))
+    btn_reset_user.pack(side="left", padx=(6, 0))
+    _all_buttons.append(btn_reset_user)
 
     mview_listbox_user = tk.Listbox(user_frame, width=40, height=14, selectmode=tk.EXTENDED, exportselection=False)
     mview_listbox_user.pack(fill="both", expand=True)
@@ -167,12 +175,19 @@ def run_mv_refresh_gui(on_finish=None):
     dwh_schema_label = tk.Label(dwh_label_frame, text=session.get_label('schema2') + (" MVs" if session.get_label('schema2') != 'Not Connected' else ""), font=("Arial", 9, "bold"))
     dwh_schema_label.pack(side="left")
     dwh_frame.configure(labelwidget=dwh_label_frame)
+    try:
+        session.register_label_widget('schema2', dwh_schema_label)
+    except Exception:
+        pass
 
     dwh_btn_frame = tk.Frame(dwh_frame)
     dwh_btn_frame.pack(fill="x")
     btn_refresh_dwh = tk.Button(dwh_btn_frame, text="Refresh", width=8, command=lambda: refresh_dwh_mviews())
     btn_refresh_dwh.pack(side="left")
     _all_buttons.append(btn_refresh_dwh)
+    btn_reset_dwh = tk.Button(dwh_btn_frame, text="Reset", width=8, command=lambda: (mview_listbox_dwh.selection_clear(0, tk.END), on_select(None, source='dwh')))
+    btn_reset_dwh.pack(side="left", padx=(6, 0))
+    _all_buttons.append(btn_reset_dwh)
 
     mview_listbox_dwh = tk.Listbox(dwh_frame, width=40, height=14, selectmode=tk.EXTENDED, exportselection=False)
     mview_listbox_dwh.pack(fill="both", expand=True)
@@ -518,6 +533,12 @@ def run_mv_refresh_gui(on_finish=None):
         total = user_count + dwh_count
 
         if total == 0:
+            # Clear right pane when nothing is selected (e.g., after Reset)
+            try:
+                info_text.delete('1.0', tk.END)
+                sql_text.delete('1.0', tk.END)
+            except Exception:
+                pass
             return
 
         # If multiple selections, show a summary in the right pane (non-invasive)
@@ -533,8 +554,20 @@ def run_mv_refresh_gui(on_finish=None):
             summary_lines.append("")
             summary_lines.append("Click 'Refresh MV' to refresh all selected materialized views.")
             info_text.insert(tk.END, '\n'.join(summary_lines))
+            # Show full list of selected MVs in bottom-right pane
             sql_text.delete('1.0', tk.END)
-            sql_text.insert(tk.END, "(Multiple selections)")
+            mv_lines = []
+            if user_count:
+                mv_lines.append("User MVs:")
+                for i in user_sel:
+                    mv_lines.append(f"  - {mview_listbox_user.get(i)}")
+            if dwh_count:
+                if mv_lines:
+                    mv_lines.append("")
+                mv_lines.append("DWH MVs:")
+                for i in dwh_sel:
+                    mv_lines.append(f"  - {mview_listbox_dwh.get(i)}")
+            sql_text.insert(tk.END, '\n'.join(mv_lines))
             # store last_selected as a combined selection for do_refresh
             try:
                 setattr(root, '_last_selected', {'user_selected': [mview_listbox_user.get(i) for i in user_sel], 'dwh_selected': [mview_listbox_dwh.get(i) for i in dwh_sel]})
@@ -728,27 +761,7 @@ def run_mv_refresh_gui(on_finish=None):
             _safe_messagebox('showwarning', "Select MV", "Please select at least one materialized view.", dlg=root)
             return
 
-        # Non-invasive confirmation shown in right pane
-        total = len(user_mvs) + len(dwh_mvs)
-        info_text.delete('1.0', tk.END)
-        info_text.insert(tk.END, f"Confirm refresh of {len(user_mvs)} User MV(s) and {len(dwh_mvs)} DWH MV(s).\nClick 'Refresh MV' again to proceed.")
-        sql_text.delete('1.0', tk.END)
-        sql_text.insert(tk.END, "(Pending confirmation - click 'Refresh MV' to proceed)")
-
-        # If this call is the confirmation step (user clicked Refresh MV twice), proceed
-        # Use sel marker to detect pending confirmation
-        if sel and sel.get('confirm_pending'):
-            # clear the pending marker
-            sel['confirm_pending'] = False
-        else:
-            # store pending selection and return
-            try:
-                setattr(root, '_last_selected', {'user_selected': user_mvs, 'dwh_selected': dwh_mvs, 'confirm_pending': True})
-            except Exception:
-                pass
-            return
-
-        # Proceed with actual refresh (schema1 then schema2)
+        # Single-click refresh: proceed immediately (schema1 then schema2)
         mode = 'C'
         success = []
         failures = []
@@ -807,16 +820,24 @@ def run_mv_refresh_gui(on_finish=None):
             except Exception as e:
                 logger.exception("Error refreshing DWH MVs: %s", e)
 
-        # Show results summary in right pane
+        # Brief summary in top-right (info_text)
         info_text.delete('1.0', tk.END)
-        summary = []
-        summary.append(f"Refresh complete: {len(success)} succeeded, {len(failures)} failed")
-        if success:
-            summary.append("\nSucceeded:\n" + '\n'.join(success))
-        if failures:
-            summary.append("\nFailed:\n" + '\n'.join([f'{m}: {err}' for m, err in failures]))
-        info_text.insert(tk.END, '\n'.join(summary))
+        info_text.insert(tk.END, f"Refresh complete: {len(success)} succeeded, {len(failures)} failed")
+
+        # Detailed list in bottom-right (sql_text)
         sql_text.delete('1.0', tk.END)
+        details = []
+        if success:
+            details.append("Succeeded:")
+            for mv in success:
+                details.append(f"  - {mv}")
+        if failures:
+            if details:
+                details.append("")
+            details.append("Failed:")
+            for mv, err in failures:
+                details.append(f"  - {mv}: {err}")
+        sql_text.insert(tk.END, '\n'.join(details))
 
         # Reload lists
         try:
