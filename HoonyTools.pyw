@@ -463,8 +463,18 @@ def stream_logs():
 
 
 def show_splash():
+    # Load saved theme before showing splash
+    from libs import gui_utils
+    gui_utils.load_theme_from_config()
+    
+    # Get splash-specific theme colors
+    splash_bg = gui_utils.get_color('splash_bg')
+    splash_fg = gui_utils.get_color('splash_fg')
+    splash_muted_fg = gui_utils.get_color('splash_muted_fg')
+    
     splash = tk.Tk()
     splash.overrideredirect(True)
+    splash.config(bg=splash_bg)
     center_window(splash, 420, 260)
     splash.attributes('-alpha', 0.0)
 
@@ -474,22 +484,25 @@ def show_splash():
         hoony_img = Image.open(hoony_logo_path).resize((36, 36))
         hoony_logo = ImageTk.PhotoImage(hoony_img)
 
-        logo_title_frame = tk.Frame(splash)
+        logo_title_frame = tk.Frame(splash, bg=splash_bg)
         logo_title_frame.pack(pady=(40, 10))
 
-        tk.Label(logo_title_frame, image=hoony_logo).pack(side="left", padx=(0, 10))
-        tk.Label(logo_title_frame, text="HoonyTools Launcher", font=("Arial", 16, "bold")).pack(side="left")
+        tk.Label(logo_title_frame, image=hoony_logo, bg=splash_bg).pack(side="left", padx=(0, 10))
+        tk.Label(logo_title_frame, text="HoonyTools Launcher", font=("Arial", 16, "bold"),
+                 bg=splash_bg, fg=splash_fg).pack(side="left")
 
         splash.hoony_logo = hoony_logo  # Prevent garbage collection
     except:
-        tk.Label(splash, text="HoonyTools Launcher", font=("Arial", 18, "bold")).pack(pady=(40, 10))
+        tk.Label(splash, text="HoonyTools Launcher", font=("Arial", 18, "bold"),
+                 bg=splash_bg, fg=splash_fg).pack(pady=(40, 10))
 
     # === Created by hoonywise ===
     footer_top = tk.Label(
         splash,
         text="Created by hoonywise · hoonywise@proton.me",
         font=("Arial", 9, "italic"),
-        fg="#444444"
+        bg=splash_bg,
+        fg=splash_muted_fg
     )
     footer_top.pack(side="bottom", pady=(0, 2))
 
@@ -497,7 +510,8 @@ def show_splash():
         splash,
         text=f"v{APP_VERSION}",
         font=("Arial", 9, "bold"),
-        fg="#444444"
+        bg=splash_bg,
+        fg=splash_muted_fg
     )
     footer_version.pack(side="bottom", pady=(0, 12))
 

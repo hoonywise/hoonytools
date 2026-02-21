@@ -351,9 +351,10 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
     
     def _on_customize():
         """Open the Customize Colors dialog."""
-        # Get the base preset to start from (current theme, or charcoal if already custom)
+        # Get the base preset to start from (current theme, including 'custom')
+        # get_colors_for_preset() handles 'custom' by loading saved custom colors
         current_key = gui_utils.get_current_theme()
-        base_preset = current_key if current_key != 'custom' else 'charcoal'
+        base_preset = current_key
         
         # Open customize dialog
         dialog = CustomizeColorsDialog(parent_frame.winfo_toplevel(), base_preset)
@@ -485,6 +486,10 @@ COLOR_KEY_LABELS = {
     # Scrollbars
     'scrollbar_bg': ('Scrollbars', 'Track'),
     'scrollbar_fg': ('Scrollbars', 'Thumb'),
+    # Splash Screen
+    'splash_bg': ('Splash Screen', 'Background'),
+    'splash_fg': ('Splash Screen', 'Title Text'),
+    'splash_muted_fg': ('Splash Screen', 'Footer Text'),
 }
 
 # Order of groups for display
@@ -498,6 +503,7 @@ COLOR_GROUP_ORDER = [
     'Menus',
     'Checkboxes',
     'Scrollbars',
+    'Splash Screen',
 ]
 
 

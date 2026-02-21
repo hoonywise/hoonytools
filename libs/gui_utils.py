@@ -83,6 +83,11 @@ COLOR_KEYS = [
     # Scrollbar
     'scrollbar_bg',       # Scrollbar track/trough
     'scrollbar_fg',       # Scrollbar thumb/slider
+    
+    # Splash screen
+    'splash_bg',          # Splash window background
+    'splash_fg',          # Splash title text color
+    'splash_muted_fg',    # Splash footer/version text (muted)
 ]
 
 # =============================================================================
@@ -125,6 +130,10 @@ PRESET_THEMES = {
         # Scrollbar
         'scrollbar_bg': '#1a1a1a',
         'scrollbar_fg': '#444444',
+        # Splash screen
+        'splash_bg': '#000000',
+        'splash_fg': '#ffffff',
+        'splash_muted_fg': '#888888',
     },
     'midnight': {
         # Content panes
@@ -161,6 +170,10 @@ PRESET_THEMES = {
         # Scrollbar
         'scrollbar_bg': '#161b22',
         'scrollbar_fg': '#30363d',
+        # Splash screen
+        'splash_bg': '#010409',
+        'splash_fg': '#c9d1d9',
+        'splash_muted_fg': '#6e7681',
     },
     'charcoal': {
         # Content panes
@@ -197,6 +210,10 @@ PRESET_THEMES = {
         # Scrollbar
         'scrollbar_bg': '#1e1e1e',
         'scrollbar_fg': '#424242',
+        # Splash screen
+        'splash_bg': '#181818',
+        'splash_fg': '#d4d4d4',
+        'splash_muted_fg': '#808080',
     },
     'slate': {
         # Content panes
@@ -233,6 +250,10 @@ PRESET_THEMES = {
         # Scrollbar
         'scrollbar_bg': '#2d2d2d',
         'scrollbar_fg': '#505050',
+        # Splash screen
+        'splash_bg': '#252525',
+        'splash_fg': '#e0e0e0',
+        'splash_muted_fg': '#888888',
     },
     'graphite': {
         # Content panes
@@ -269,6 +290,10 @@ PRESET_THEMES = {
         # Scrollbar
         'scrollbar_bg': '#3c3f41',
         'scrollbar_fg': '#5a5d5e',
+        # Splash screen
+        'splash_bg': '#313335',
+        'splash_fg': '#bbbbbb',
+        'splash_muted_fg': '#888888',
     },
     'silver': {
         # Content panes
@@ -305,6 +330,10 @@ PRESET_THEMES = {
         # Scrollbar
         'scrollbar_bg': '#c0c0c0',
         'scrollbar_fg': '#888888',
+        # Splash screen
+        'splash_bg': '#c0c0c0',
+        'splash_fg': '#1a1a1a',
+        'splash_muted_fg': '#555555',
     },
     'system_light': {
         # Content panes
@@ -341,6 +370,10 @@ PRESET_THEMES = {
         # Scrollbar
         'scrollbar_bg': 'SystemScrollbar',
         'scrollbar_fg': 'SystemButtonFace',
+        # Splash screen
+        'splash_bg': 'SystemButtonFace',
+        'splash_fg': 'SystemButtonText',
+        'splash_muted_fg': '#444444',
     },
 }
 
@@ -517,7 +550,7 @@ def load_theme_from_config() -> None:
     # Check for new [theme] section first
     if config.has_section('theme') and config.has_option('theme', 'preset'):
         theme_key = config.get('theme', 'preset', fallback='system_light')
-        if theme_key in PRESET_THEMES:
+        if theme_key in THEME_ORDER:
             _current_theme = theme_key
             logger.debug(f"Loaded theme from config: {theme_key}")
             return
