@@ -807,12 +807,10 @@ def launch_tool_gui():
         # allow frames to share available vertical space equally
         frame.pack(fill="both", pady=(0, 8), expand=True)
         
-        # Create custom label with bold schema name and normal "Objects"
+        # Create custom label with bold schema name (count shown separately at right edge)
         label_frame = tk.Frame(frame)
         schema_label = tk.Label(label_frame, text=_sess.get_label(schema_key), font=("Arial", 9, "bold"))
         schema_label.pack(side="left")
-        objects_label = tk.Label(label_frame, text=" Objects", font=("Arial", 9))
-        objects_label.pack(side="left")
         frame.configure(labelwidget=label_frame)
         
         # Register the label widget with session for dynamic updates
@@ -900,9 +898,9 @@ def launch_tool_gui():
     left_pane.pack_propagate(False)
 
     # Create external count labels aligned to the right of each object frame
-    # Use grid placement so they don't affect the inner frame widths
-    schema1_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
-    schema2_count_label = tk.Label(left_pane, text="", font=("Arial", 8), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
+    # Match font size with schema label (Arial 9) but not bold, use muted color
+    schema1_count_label = tk.Label(left_pane, text="", font=("Arial", 9), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
+    schema2_count_label = tk.Label(left_pane, text="", font=("Arial", 9), fg=getattr(left_pane, "_dark_theme", {}).get("muted", "#444444"))
     # start with a placeholder placement; we'll position these next to the LabelFrame titles
     schema1_count_label.place(x=0, y=0)
     schema2_count_label.place(x=0, y=0)
@@ -931,27 +929,27 @@ def launch_tool_gui():
     schema1_frame.grid(row=0, column=0, sticky="nsew", pady=(0,8), padx=(14,0))
     schema2_frame.grid(row=1, column=0, sticky="nsew", padx=(14,0))
 
-    # Position the object-count labels next to each LabelFrame title (top-left header area)
+    # Position the object-count labels at the right edge of each LabelFrame title area
     def position_count_labels(event=None):
         try:
             left_pane.update_idletasks()
-            import tkinter.font as tkfont
-            default_font = tkfont.nametofont("TkDefaultFont")
+            
+            # Use frame width and position, with adequate right padding
+            right_padding = 59  # Padding from right edge of frame
 
-            # User frame title placement
-            ux = schema1_frame.winfo_x()
+            # Schema1 frame - position count label at right side of title border
             uy = schema1_frame.winfo_y()
-            user_title = schema1_frame.cget("text")
-            title_w = default_font.measure(user_title)
-            # small left offset inside the LabelFrame border (~8 px), then a small gap
-            schema1_count_label.place(x=ux + 8 + title_w + 8, y=uy - 2)
+            frame_x = schema1_frame.winfo_x()
+            frame_w = schema1_frame.winfo_width()
+            label_w = schema1_count_label.winfo_reqwidth()
+            schema1_count_label.place(x=frame_x + frame_w - label_w - right_padding, y=uy - 0)
 
-            # DWH frame title placement
-            dx = schema2_frame.winfo_x()
+            # Schema2 frame - position count label at right side of title border
             dy = schema2_frame.winfo_y()
-            dwh_title = schema2_frame.cget("text")
-            dwh_title_w = default_font.measure(dwh_title)
-            schema2_count_label.place(x=dx + 8 + dwh_title_w + 8, y=dy - 2)
+            frame2_x = schema2_frame.winfo_x()
+            frame2_w = schema2_frame.winfo_width()
+            label2_w = schema2_count_label.winfo_reqwidth()
+            schema2_count_label.place(x=frame2_x + frame2_w - label2_w - right_padding, y=dy - 0)
         except Exception:
             pass
 
