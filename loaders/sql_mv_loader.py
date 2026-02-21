@@ -1195,6 +1195,37 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         except Exception:
             pass
 
+    def load_sql_from_file():
+        """Open file dialog, load SQL content, and auto-fill MV name from filename."""
+        from tkinter import filedialog
+        import os
+
+        filepath = filedialog.askopenfilename(
+            title="Select SQL File",
+            filetypes=[("SQL Files", "*.sql"), ("All Files", "*.*")],
+            parent=builder_window
+        )
+        if filepath:
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                # Clear and insert content
+                sql_text.delete('1.0', tk.END)
+                sql_text.insert('1.0', content)
+
+                # Auto-fill MV name from filename with MV_ prefix
+                filename = os.path.basename(filepath)
+                name_without_ext = os.path.splitext(filename)[0]
+                mv_name = f"MV_{name_without_ext}".upper()
+                mv_name_entry.delete(0, tk.END)
+                mv_name_entry.insert(0, mv_name)
+            except Exception as e:
+                _safe_messagebox('showerror', "Error", f"Failed to read file:\n{e}", dlg=builder_window)
+                try:
+                    builder_window.bell()  # System chime
+                except Exception:
+                    pass
+
     # Preserve taskbar icon and branding
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("hoonywise.hoonytools")
@@ -1233,6 +1264,11 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     except Exception:
         mv_name_entry = tk.Entry(name_row, width=33)
     mv_name_entry.pack(side="left")
+
+    # Import SQL button
+    btn_import_sql = tk.Button(name_row, text="Import SQL", command=load_sql_from_file, width=10)
+    btn_import_sql.pack(side="left", padx=(10, 0))
+    _all_buttons.append(btn_import_sql)
 
     # Row 1: Parameter frames (centered)
     param_frame = tk.Frame(control_container)

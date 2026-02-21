@@ -26,6 +26,8 @@ This release adds automatic object pane refresh on startup and tool close, fixes
 
 - **Close Button in MV Manager**: Added a "Close" button at bottom-right with visual spacing from action buttons (`[Create Logs] [Refresh MV]     [Close]`).
 
+- **Import SQL Button**: Added "Import SQL" button to SQL View Loader and SQL MV Loader. Opens file chooser for `.sql` files, loads content into the SQL text pane, and auto-fills the view/MV name from the filename with appropriate prefix (`V_` for views, `MV_` for materialized views). For example, `sales.sql` becomes `V_SALES` or `MV_SALES`.
+
 ### Changed
 
 - **Button Labels**: Changed "Cancel" to "Close" in SQL View Loader and SQL MV Loader for consistency.
@@ -56,8 +58,8 @@ This release adds automatic object pane refresh on startup and tool close, fixes
 | File | Changes |
 |------|---------|
 | `HoonyTools.pyw` | Auto-refresh on startup, `on_finish` callbacks for all tools, threading error fix |
-| `loaders/sql_view_loader.py` | UI overhaul (size, layout, centering), "Close" button, "Create" button, WITH READ ONLY/CHECK OPTION |
-| `loaders/sql_mv_loader.py` | Connection fix, UI centering, "Close" button, "Create" button, Query Rewrite on new row |
+| `loaders/sql_view_loader.py` | UI overhaul (size, layout, centering), "Close" button, "Create" button, WITH READ ONLY/CHECK OPTION, Import SQL button |
+| `loaders/sql_mv_loader.py` | Connection fix, UI centering, "Close" button, "Create" button, Query Rewrite on new row, Import SQL button |
 | `loaders/excel_csv_loader.py` | Added `on_finish` parameter |
 | `tools/pk_designate_gui.py` | Added `on_finish` parameter |
 | `tools/mv_refresh_gui.py` | Added "Close" button |

@@ -1184,3 +1184,92 @@ These are mutually exclusive - a view cannot have both. The implementation gives
 - **Create vs Create View/MV**: Shorter label reduces button width, and context is already clear from the dialog title
 - **Centered layouts**: Provides a cleaner, more professional appearance; easier to scan visually
 - **Query Rewrite on separate row**: Separates the "optional enhancement" from the core MV parameters (Build/Refresh/Trigger)
+
+---
+
+### 📁 Entry #20: Import SQL File Feature for View & MV Loaders (2026-02-21)
+
+Summary: Added an "Import SQL" button to both SQL View Loader and SQL MV Loader that allows users to load SQL queries from `.sql` files and auto-populates the view/MV name based on the filename with appropriate prefix.
+
+#### Feature Details
+
+1. **File Dialog**: Opens native file chooser filtered for `.sql` files (with "All Files" fallback)
+2. **Content Loading**: Reads file as UTF-8, clears existing text, inserts file content
+3. **Name Auto-Fill**: Extracts filename (without extension), adds prefix, converts to uppercase:
+   - View Loader: `sales.sql` → `V_SALES`
+   - MV Loader: `sales.sql` → `MV_SALES`
+4. **Error Handling**: Shows error messagebox with system chime (`builder_window.bell()`) if file read fails
+
+#### Implementation Notes
+
+**Function placement**: The `load_sql_from_file()` function is defined inside `run_sql_view_loader()` / `run_sql_mv_loader()` (not at module level) because it needs access to `sql_text`, `view_name_entry`/`mv_name_entry`, and `builder_window` which are local to those functions.
+
+**Button styling**: Added to `_all_buttons` list so it receives dark mode styling when theme changes.
+
+**System chime**: `builder_window.bell()` triggers the system error sound on Windows. Wrapped in try/except in case the window is in an invalid state.
+
+**Encoding**: Only UTF-8 is supported. If users have SQL files in other encodings (e.g., Latin-1, Windows-1252), they'll see an error. This is intentional to keep the implementation simple — UTF-8 is the modern standard.
+
+**Naming convention**: The `V_` and `MV_` prefixes follow common Oracle naming conventions that distinguish views and materialized views from tables at a glance. Uppercase conversion aligns with Oracle's case-insensitive object names (stored uppercase in data dictionary).
+
+#### Code Pattern
+
+```python
+def load_sql_from_file():
+    """Open file dialog, load SQL content, and auto-fill view/MV name from filename."""
+    from tkinter import filedialog
+    import os
+
+    filepath = filedialog.askopenfilename(
+        title="Select SQL File",
+        filetypes=[("SQL Files", "*.sql"), ("All Files", "*.*")],
+        parent=builder_window
+    )
+    if filepath:
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+            # Clear and insert content
+            sql_text.delete('1.0', tk.END)
+            sql_text.insert('1.0', content)
+
+            # Auto-fill name from filename with prefix
+            filename = os.path.basename(filepath)
+            name_without_ext = os.path.splitext(filename)[0]
+            view_name = f"V_{name_without_ext}".upper()  # or MV_ for MV loader
+            view_name_entry.delete(0, tk.END)
+            view_name_entry.insert(0, view_name)
+        except Exception as e:
+            _safe_messagebox('showerror', "Error", f"Failed to read file:\n{e}", dlg=builder_window)
+            try:
+                builder_window.bell()  # System chime
+            except Exception:
+                pass
+```
+
+#### Files Modified
+
+| File | Changes |
+|------|---------|
+| `loaders/sql_view_loader.py` | Added `load_sql_from_file()`, "Import SQL" button in name_row |
+| `loaders/sql_mv_loader.py` | Added `load_sql_from_file()`, "Import SQL" button in name_row |
+
+#### Testing Checklist
+
+1. **Basic import**: Create `test_query.sql` with valid SQL, click Import SQL, select file → text area should show content, name should be `V_TEST_QUERY` or `MV_TEST_QUERY`
+2. **Uppercase conversion**: File named `My_View.sql` → should become `V_MY_VIEW`
+3. **Special characters in filename**: File named `sales-2024.sql` → should become `V_SALES-2024` (hyphen preserved)
+4. **Cancel dialog**: Click Import SQL, then Cancel → nothing should change
+5. **Invalid file**: Try to open a binary file → should show error popup with chime
+6. **Non-UTF8 file**: Create file with non-UTF8 encoding → should show error popup with chime
+7. **Empty file**: Import empty `.sql` file → text area cleared, name still auto-filled
+8. **Overwrite existing**: Enter text manually, then import file → should replace existing text and name
+9. **Dark mode styling**: Toggle dark mode → Import SQL button should match other buttons
+
+#### UX Rationale
+
+- **V_ and MV_ prefixes**: Common Oracle naming convention that distinguishes views from tables at a glance
+- **Uppercase**: Oracle object names are case-insensitive and conventionally uppercase in data dictionaries
+- **Button placement**: Next to name field creates visual association between "import file" and "set name"
+- **UTF-8 only**: Simplifies implementation; modern SQL files should be UTF-8
+- **System chime on error**: Provides audio feedback when file read fails, especially useful if error dialog appears behind other windows

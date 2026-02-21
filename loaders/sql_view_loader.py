@@ -233,6 +233,37 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
         except Exception:
             pass
 
+    def load_sql_from_file():
+        """Open file dialog, load SQL content, and auto-fill view name from filename."""
+        from tkinter import filedialog
+        import os
+
+        filepath = filedialog.askopenfilename(
+            title="Select SQL File",
+            filetypes=[("SQL Files", "*.sql"), ("All Files", "*.*")],
+            parent=builder_window
+        )
+        if filepath:
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                # Clear and insert content
+                sql_text.delete('1.0', tk.END)
+                sql_text.insert('1.0', content)
+
+                # Auto-fill view name from filename with V_ prefix
+                filename = os.path.basename(filepath)
+                name_without_ext = os.path.splitext(filename)[0]
+                view_name = f"V_{name_without_ext}".upper()
+                view_name_entry.delete(0, tk.END)
+                view_name_entry.insert(0, view_name)
+            except Exception as e:
+                _safe_messagebox('showerror', "Error", f"Failed to read file:\n{e}", dlg=builder_window)
+                try:
+                    builder_window.bell()  # System chime
+                except Exception:
+                    pass
+
     tk.Label(builder_window, text="Enter SQL to turn into a VIEW:", font=("Arial", 11, "bold")).pack(pady=(10, 5))
 
     # Create SQL text with initial theme to avoid visible white -> black flip
@@ -263,6 +294,11 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
     except Exception:
         view_name_entry = tk.Entry(name_row, width=33)
     view_name_entry.pack(side="left")
+
+    # Import SQL button
+    btn_import_sql = tk.Button(name_row, text="Import SQL", command=load_sql_from_file, width=10)
+    btn_import_sql.pack(side="left", padx=(10, 0))
+    _all_buttons.append(btn_import_sql)
 
     # Options row - checkboxes for view options (centered)
     options_row = tk.Frame(control_container)

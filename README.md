@@ -73,23 +73,25 @@ HoonyTools/
 │   ├── setup_config.py             # Setup script for login
 │   ├── paths.py                    # Filepaths for domain-specific folders
 │   ├── mv_log_utils.py             # MV log detection helpers used by loaders and tools
-│   ├── pk_designate_settings.json  # persisted settings for PK Designator
+│   ├── pk_designate_settings.json  # Persisted settings for PK Designator
 │   ├── oracle_db_connector.py      # Oracle connection helper (get_db_connection)
 │   ├── session.py                  # Session memory for credentials and states
 │   ├── abort_manager.py            # Coordinated abort/cleanup helper used by loaders
 │   ├── table_utils.py              # Common table utilities (DDL helpers)
-│   ├── layout_definitions.py       # UI layout helper constants
-│   ├── bible_books.py              # small lookup for book names (used by some tools)
-│   └── en_kjv.json                 # embedded JSON data for KJV text (used by demo/tools)
+│   ├── gui_utils.py                # Shared GUI utility functions
+│   ├── settings.py                 # Settings GUI for credentials and appearance
+│   ├── bible_books.py              # Small lookup for book names (Word of God feature)
+│   └── en_kjv.json                 # Embedded JSON data for KJV text (Word of God feature)
 ├── loaders/                        # Loaders (Excel, CSV, SQL, etc.)
 │   ├── excel_csv_loader.py         # Excel/CSV Loader GUI (APPEND/REPLACE/UPSERT, preview)
 │   ├── sql_view_loader.py          # SQL View Loader (create view from pasted SQL)
 │   └── sql_mv_loader.py            # SQL Materialized View Loader (creates MVs, offers MV log creation)
-├── tools/                          # Object cleanup tools and extractors
+├── tools/                          # Data tools and object management
 │   ├── object_cleanup_gui.py       # Object Cleanup (drop tables/views/mviews/mlogs/pks)
 │   ├── mv_refresh_gui.py           # Materialized View Manager (refresh, create/reuse/drop logs)
-│   └── pk_designate_gui.py         # Primary Key Designator (inspect tables, create PKs safely)
-└──  assets/                         # Icons and splash images
+│   ├── pk_designate_gui.py         # Primary Key Designator (inspect tables, create PKs safely)
+│   └── index_gui.py                # Index Manager (create/drop indexes on tables and MVs)
+└── assets/                         # Icons and splash images
 ```
 
 ---
@@ -176,48 +178,107 @@ This file opens without a terminal window and starts the GUI immediately.
 
 Once launched, the GUI gives access to all tools via an intuitive interface:
 
-- Object list for `user` and `dwh` schemas.
-- Load Excel and CSV files
-- Delete tables from your Oracle schema or DWH shared schema.
-- Create SQL views from SQL files
-- View console logs and abort operations gracefully
+- **Two Object Panes**: View and manage objects in your User schema and the shared DWH schema
+- **Per-Pane Actions**: Refresh, Load, Drop, View, M.View, P.Key, Index buttons for each schema
+- **Auto-Refresh**: Object panes automatically refresh on startup if saved credentials exist
+- **Tool Close Refresh**: Panes refresh automatically when any tool GUI is closed
+- **Menu Bar**:
+  - `File → M.View Manager` — Open the Materialized View Manager
+  - `File → Settings` — Configure credentials and appearance (`Ctrl+Alt+S`)
+  - `File → Exit` — Close the application
+  - `View → Dark Mode` — Toggle dark/light theme
+  - `Help → About` — Version and contact info
+- **Status Indicator**: Green (idle) / Red (busy) light shows current operation status
+- **Console Log**: View real-time operation logs and messages
+- **Word of God**: Displays a daily Bible verse at the top of the main window with Previous/Next navigation
 
 You can run as often as needed — no admin rights or elevated privileges required.
 
 ---
 
-## 🛠 Available Tools
+## 🛠 Available Tools (7)
 
+### 1. SQL View Loader
+- Instantly create Oracle views from pasted SQL queries.
+- **Import SQL** button to load queries from `.sql` files (auto-fills view name with `V_` prefix, e.g., `sales.sql` → `V_SALES`).
+- Optional `WITH READ ONLY` or `WITH CHECK OPTION` constraints.
 
-- **SQL View Loader**  
-  - Instantly create Oracle views from pasted sql queries.  
+### 2. SQL Materialized View Loader
+- Create materialized views from pasted SQL and optionally create required materialized view logs.
+- **Import SQL** button to load queries from `.sql` files (auto-fills MV name with `MV_` prefix, e.g., `sales.sql` → `MV_SALES`).
+- Offers log creation UI with `WITH ROWID` / `WITH PRIMARY KEY` and `INCLUDING NEW VALUES` options.
+- Configurable options: Build mode (IMMEDIATE/DEFERRED), Refresh Method (COMPLETE), Refresh Trigger (ON DEMAND/ON COMMIT), and Enable Query Rewrite.
 
-- **SQL Materialized View Loader**  
-  - Create materialized views from pasted SQL and optionally create required materialized view logs. Offers log creation UI with `WITH ROWID` / `WITH PRIMARY KEY` and `INCLUDING NEW VALUES` options. Safer detection and debug info included.
+### 3. Materialized View Manager
+- Browse existing materialized views in both User and DWH schemas.
+- Request COMPLETE refreshes (single or multi-select).
+- Manage materialized view logs: create, reuse, or Drop & Recreate.
+- Shows refresh type (ON DEMAND / ON COMMIT) and per-base current log types.
+- FAST refresh is intentionally not offered due to environment dependencies.
 
-- **Materialized View Manager**  
-  - Browse existing materialized views, request COMPLETE refreshes, and manage materialized view logs (create, reuse, or Drop & Recreate). Shows refresh type (ON DEMAND / ON COMMIT) and per-base current log types; FAST refresh is intentionally not offered.
+### 4. Primary Key Designator
+- Inspect tables and detect PK candidates (single-column or composite).
+- Run safe null/duplicate checks before creating constraints.
+- Add PRIMARY KEY constraints with confirmation and configurable constraint naming.
 
-- **Primary Key Designator**  
-  - Inspect tables, detect PK candidates (single-column or composite), run safe null/duplicate checks, and add PRIMARY KEY constraints with confirmation and configurable constraint naming.
+### 5. Index Manager
+- Create and drop indexes on tables and materialized views.
+- Select columns for new indexes and view existing indexes.
+- Supports both User schema and DWH schema objects.
 
-- **Excel/CSV Loader**  
-  - Load Excel or CSV files into Oracle from a local file picker.  
-  - Auto-maps column headers and preserves datatypes.
-  - Provides options for:
-    - `APPEND` Loading into existing tables or creating new ones.
-    - `REPLACE` Truncating existing tables before loading.
-    - `UPSERT` Upserts records based on selected unique keys.
-    - Formatted SQL Preview (default ON)
-      - When loading into an existing table you can preview the generated SQL `APPEND` `REPLACE` `UPSERT` before execution.
-      - The preview window shows nicely formatted SQL, is centered, and is resilient to focus/grab issues across platforms.
-      - Preview includes `Copy SQL` and `Save to .sql` actions so you can easily copy or persist the generated SQL.
-      - Upsert `MERGE` creates a temporary staging table and runs server-side validations (`merge_with_checks`) in dry-run mode to produce accurate counts and MERGE SQL; staging is dropped after preview or execution.
+### 6. Excel/CSV Loader
+- Load Excel (`.xlsx`) or CSV files into Oracle from a local file picker.
+- Auto-maps column headers and preserves datatypes.
+- Provides loading modes:
+  - **APPEND** — Load into existing tables or create new ones
+  - **REPLACE** — Truncate existing tables before loading
+  - **UPSERT** — Merge records based on selected unique keys
+- **Formatted SQL Preview** (default ON):
+  - Preview generated SQL before execution
+  - Includes `Copy SQL` and `Save to .sql` actions
+  - Upsert `MERGE` uses a temporary staging table with dry-run validation
 
-- **Object Cleanup (Table/View/Materialized View/PK/Logs)**  
-  - Drop tables, views, materialized views, materialized view logs, and primary key constraints from your schema or the shared DWH schema.  
-  - The GUI prefers materialized views when an underlying table shares the same name to avoid accidental failures.  
-  - Use with caution — these actions are destructive and irreversible.
+### 7. Object Cleanup
+- Drop tables, views, materialized views, materialized view logs, and primary key constraints.
+- Works with both User schema and DWH schema.
+- Prefers materialized views when an underlying table shares the same name to avoid failures.
+- ⚠️ **Use with caution** — these actions are destructive and irreversible.
+
+---
+
+## ✨ Features
+
+### Settings
+- Access via `File → Settings` or keyboard shortcut `Ctrl+Alt+S`.
+- **Connections**: Configure Schema 1 (User) and Schema 2 (DWH) database credentials:
+  - Enter Username, Password, and DSN for each schema
+  - Credentials are saved to `libs/config.ini` and loaded into session memory
+  - Eliminates login popups when credentials are pre-configured
+- **Appearance**: Toggle Dark Mode preference
+
+### Dark Mode
+- Toggle via `View → Dark Mode` in the menu bar or in Settings.
+- Applies dark theme to all windows, dialogs, and tool GUIs.
+- Preference is saved and restored on next launch.
+
+---
+
+## ⚙️ Configuring Credentials via Settings
+
+Instead of entering credentials at each login prompt, you can pre-configure them in Settings:
+
+1. Launch HoonyTools and go to `File → Settings` (or press `Ctrl+Alt+S`)
+2. In the **Connections** category:
+   - **Schema 1 (User)**: Enter your personal Oracle username, password, and DSN
+   - **Schema 2 (DWH)**: Enter the shared DWH schema credentials (if applicable)
+3. Click **OK** or **Apply** to save
+
+Once configured:
+- Object panes will auto-refresh on startup using saved credentials
+- Tools will connect automatically without prompting for login
+- To update credentials later, simply return to Settings
+
+> 💡 **Tip:** You can also check "Save password" in the login popup when prompted. This saves credentials to `libs/config.ini` for future sessions.
 
 ---
 
