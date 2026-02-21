@@ -1415,6 +1415,10 @@ def launch_tool_gui():
     schema1_refresh_btn.config(command=refresh_schema1_objects)
     schema2_refresh_btn.config(command=refresh_schema2_objects)
 
+    # Expose refresh callbacks on root for Settings to call after saving credentials
+    root._refresh_schema1 = refresh_schema1_objects
+    root._refresh_schema2 = refresh_schema2_objects
+
     # --- Index button handlers ---
     def _get_selected_object(tree):
         """Return (name, type) from the currently selected treeview row, or (None, None)."""
