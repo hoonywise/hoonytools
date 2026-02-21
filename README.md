@@ -4,23 +4,21 @@
     <td><h1 style="margin-left: 10px;">HoonyTools</h1></td>
   </tr>
 </table>
-Lightweight Python-based toolkit for loading, transforming, and cleaning data in Oracle databases.
 
 Created by Jihoon Ahn [@hoonywise](https://github.com/hoonywise)  
 Contact: hoonywise@proton.me
 
 [![](https://img.shields.io/badge/license-Custom-gold)](LICENSE.md)
 [![](https://img.shields.io/badge/Donate-PayPal-blue)](https://www.paypal.com/donate/?hosted_button_id=NJSTAENDWQLXS)
-
----
-
-![Main GUI](assets/main_gui_65.png)
-
 ---
 
 > HoonyTools is an all-in-one Python-based toolkit for loading, transforming, and managing data in Oracle databases. It supports dual schema connections with customizable DSN configurations.  
 > 
 > Key features: create and drop views, materialized views, MV logs, indexes, and primary keys. Includes an Excel/CSV Loader for importing external data and a Materialized View Manager for log creation and MV refresh operations.  
+
+---
+
+![Main GUI](assets/main_gui_65.png)
 
 ---
 
