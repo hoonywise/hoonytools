@@ -145,13 +145,15 @@ def _build_connections_panel(parent_frame, entry_refs, button_frame):
     schema1_frame.pack(fill='x', pady=(0, 10))
 
     # Schema 1 - Username
-    tk.Label(schema1_frame, text="Username:").grid(row=0, column=0, sticky='e', padx=(0, 5), pady=2)
+    s1_user_label = tk.Label(schema1_frame, text="Username:")
+    s1_user_label.grid(row=0, column=0, sticky='e', padx=(0, 5), pady=2)
     s1_user_entry = tk.Entry(schema1_frame, width=35)
     s1_user_entry.grid(row=0, column=1, sticky='w', pady=2)
     entry_refs['schema1_user'] = s1_user_entry
 
     # Schema 1 - Password
-    tk.Label(schema1_frame, text="Password:").grid(row=1, column=0, sticky='e', padx=(0, 5), pady=2)
+    s1_pass_label = tk.Label(schema1_frame, text="Password:")
+    s1_pass_label.grid(row=1, column=0, sticky='e', padx=(0, 5), pady=2)
     s1_pass_entry = tk.Entry(schema1_frame, width=35, show='*')
     s1_pass_entry.grid(row=1, column=1, sticky='w', pady=2)
     entry_refs['schema1_pass'] = s1_pass_entry
@@ -167,7 +169,8 @@ def _build_connections_panel(parent_frame, entry_refs, button_frame):
     s1_show_check.grid(row=2, column=1, sticky='w', pady=(0, 2))
 
     # Schema 1 - DSN
-    tk.Label(schema1_frame, text="DSN:").grid(row=3, column=0, sticky='e', padx=(0, 5), pady=2)
+    s1_dsn_label = tk.Label(schema1_frame, text="DSN:")
+    s1_dsn_label.grid(row=3, column=0, sticky='e', padx=(0, 5), pady=2)
     s1_dsn_entry = tk.Entry(schema1_frame, width=35)
     s1_dsn_entry.grid(row=3, column=1, sticky='w', pady=2)
     entry_refs['schema1_dsn'] = s1_dsn_entry
@@ -177,13 +180,15 @@ def _build_connections_panel(parent_frame, entry_refs, button_frame):
     schema2_frame.pack(fill='x', pady=(0, 10))
 
     # Schema 2 - Username
-    tk.Label(schema2_frame, text="Username:").grid(row=0, column=0, sticky='e', padx=(0, 5), pady=2)
+    s2_user_label = tk.Label(schema2_frame, text="Username:")
+    s2_user_label.grid(row=0, column=0, sticky='e', padx=(0, 5), pady=2)
     s2_user_entry = tk.Entry(schema2_frame, width=35)
     s2_user_entry.grid(row=0, column=1, sticky='w', pady=2)
     entry_refs['schema2_user'] = s2_user_entry
 
     # Schema 2 - Password
-    tk.Label(schema2_frame, text="Password:").grid(row=1, column=0, sticky='e', padx=(0, 5), pady=2)
+    s2_pass_label = tk.Label(schema2_frame, text="Password:")
+    s2_pass_label.grid(row=1, column=0, sticky='e', padx=(0, 5), pady=2)
     s2_pass_entry = tk.Entry(schema2_frame, width=35, show='*')
     s2_pass_entry.grid(row=1, column=1, sticky='w', pady=2)
     entry_refs['schema2_pass'] = s2_pass_entry
@@ -199,7 +204,8 @@ def _build_connections_panel(parent_frame, entry_refs, button_frame):
     s2_show_check.grid(row=2, column=1, sticky='w', pady=(0, 2))
 
     # Schema 2 - DSN
-    tk.Label(schema2_frame, text="DSN:").grid(row=3, column=0, sticky='e', padx=(0, 5), pady=2)
+    s2_dsn_label = tk.Label(schema2_frame, text="DSN:")
+    s2_dsn_label.grid(row=3, column=0, sticky='e', padx=(0, 5), pady=2)
     s2_dsn_entry = tk.Entry(schema2_frame, width=35)
     s2_dsn_entry.grid(row=3, column=1, sticky='w', pady=2)
     entry_refs['schema2_dsn'] = s2_dsn_entry
@@ -217,6 +223,107 @@ def _build_connections_panel(parent_frame, entry_refs, button_frame):
         s2_pass_entry.insert(0, cfg.get('schema2', 'password', fallback=''))
         s2_dsn_entry.insert(0, cfg.get('schema2', 'dsn', fallback=''))
 
+    # Collect entry fields that need theme styling (only the input fields, not labels/frames)
+    entries = [s1_user_entry, s1_pass_entry, s1_dsn_entry, s2_user_entry, s2_pass_entry, s2_dsn_entry]
+
+    # Store widgets for theme callback
+    entry_refs['_conn_entries'] = entries
+
+    # Apply initial theme based on current dark mode state
+    parent = entry_refs.get('_parent')
+    is_dark = False
+    if parent and hasattr(parent, '_dark_mode_var'):
+        try:
+            is_dark = parent._dark_mode_var.get()
+        except Exception:
+            pass
+
+    def _apply_connections_theme(dark):
+        """Apply dark or light theme to connection panel entry fields only."""
+        if dark:
+            entry_bg = '#000000'
+            entry_fg = '#ffffff'
+        else:
+            entry_bg = 'white'
+            entry_fg = 'black'
+
+        # Apply to entry fields only
+        for entry in entries:
+            try:
+                entry.config(bg=entry_bg, fg=entry_fg, insertbackground=entry_fg)
+            except Exception:
+                pass
+
+    # Store the theme function for external access
+    entry_refs['_conn_apply_theme'] = _apply_connections_theme
+
+    # Apply initial theme
+    _apply_connections_theme(is_dark)
+
+    # Pack button frame at bottom with right alignment
+    button_frame.pack(side='bottom', fill='x', padx=10, pady=(10, 10))
+
+    return container
+
+
+def _build_appearance_panel(parent_frame, entry_refs, button_frame):
+    """
+    Build the Appearance settings panel.
+
+    Args:
+        parent_frame: The frame to build content in
+        entry_refs: Dict to store widget references for later access
+        button_frame: The button frame to pack at the bottom
+
+    Returns:
+        The built frame
+    """
+    # Main container
+    container = tk.Frame(parent_frame, bg='SystemButtonFace')
+    container.pack(fill='both', expand=True, padx=10, pady=10)
+
+    # Theme LabelFrame
+    theme_frame = tk.LabelFrame(container, text="Theme", padx=10, pady=10)
+    theme_frame.pack(fill='x', pady=(0, 10))
+
+    # Get current dark mode state - prefer live state from parent, fallback to config.ini
+    current_dark_mode = False
+    parent = entry_refs.get('_parent')
+    if parent and hasattr(parent, '_dark_mode_var'):
+        try:
+            current_dark_mode = parent._dark_mode_var.get()
+        except Exception:
+            pass
+    else:
+        # Fallback: load from config.ini
+        cfg = _load_config()
+        current_dark_mode = cfg.getboolean('preferences', 'dark_mode', fallback=False)
+
+    # Dark Mode checkbox
+    dark_mode_var = tk.BooleanVar(value=current_dark_mode)
+    entry_refs['dark_mode_var'] = dark_mode_var
+
+    def _on_dark_mode_toggle():
+        """Immediately apply dark mode toggle without requiring OK/Apply."""
+        dark_mode_enabled = dark_mode_var.get()
+        # Get parent from entry_refs in case it was updated
+        _parent = entry_refs.get('_parent')
+        if _parent and hasattr(_parent, '_dark_mode_var'):
+            parent_var = _parent._dark_mode_var
+            # Update parent's var and trigger toggle
+            parent_var.set(dark_mode_enabled)
+            # Trigger the toggle callback if it exists
+            if hasattr(_parent, '_toggle_dark'):
+                _parent._toggle_dark()
+
+    dark_mode_check = tk.Checkbutton(
+        theme_frame,
+        text="Dark Mode (applies to panes and menu bar)",
+        variable=dark_mode_var,
+        command=_on_dark_mode_toggle
+    )
+    dark_mode_check.pack(anchor='w', pady=5)
+
     # Pack button frame at bottom with right alignment
     button_frame.pack(side='bottom', fill='x', padx=10, pady=(10, 10))
 
@@ -226,6 +333,7 @@ def _build_connections_panel(parent_frame, entry_refs, button_frame):
 # Category registry - maps category name to builder function
 CATEGORIES = {
     "Connections": _build_connections_panel,
+    "Appearance": _build_appearance_panel,
 }
 
 
@@ -268,8 +376,28 @@ def show_settings(parent=None):
     # Entry references dict (for validation/saving)
     entry_refs = {}
 
+    # Store parent reference so panel builders can access it
+    entry_refs['_parent'] = parent
+
     # Track current content frame for category switching
     current_content = {'frame': None}
+
+    # --------------------------------------------------------------------------
+    # Status bar at the bottom of the window
+    # --------------------------------------------------------------------------
+    # Separator line above status bar
+    status_separator = tk.Frame(win, height=1, bg='#c0c0c0')
+    status_separator.pack(side='bottom', fill='x')
+
+    status_frame = tk.Frame(win, bg='SystemButtonFace')
+    status_frame.pack(side='bottom', fill='x')
+
+    status_label = tk.Label(status_frame, text='', fg='#005a9e', bg='SystemButtonFace', anchor='w', font=('TkDefaultFont', 9, 'bold'))
+    status_label.pack(side='left', padx=10, pady=(5, 5))
+
+    # Store status label reference for use in _save()
+    entry_refs['_status_label'] = status_label
+    entry_refs['_win'] = win  # For scheduling auto-hide
 
     # --------------------------------------------------------------------------
     # Main layout: Left (categories) | Right (content)
@@ -387,6 +515,29 @@ def show_settings(parent=None):
 
         return True
 
+    def _show_status_message(message, error=False):
+        """Show a status message at the bottom of the window that auto-hides after 3 seconds."""
+        status_label = entry_refs.get('_status_label')
+        settings_win = entry_refs.get('_win')
+        if status_label:
+            try:
+                # Set color based on error or success (darker blue for success, red for error)
+                color = '#cc0000' if error else '#005a9e'
+                status_label.config(text=message, fg=color)
+
+                # Schedule auto-hide after 3 seconds
+                if settings_win:
+                    def _clear_status():
+                        try:
+                            if status_label.winfo_exists():
+                                status_label.config(text='')
+                        except Exception:
+                            pass
+
+                    settings_win.after(3000, _clear_status)
+            except Exception:
+                pass
+
     def _save():
         """Save to config.ini and update session memory."""
         cfg = _load_config()
@@ -441,6 +592,14 @@ def show_settings(parent=None):
                 if cfg.has_section('schema2'):
                     cfg.remove_section('schema2')
 
+        # Save Appearance settings (Dark Mode)
+        dark_mode_var = entry_refs.get('dark_mode_var')
+        if dark_mode_var is not None:
+            dark_mode_enabled = dark_mode_var.get()
+            if not cfg.has_section('preferences'):
+                cfg.add_section('preferences')
+            cfg.set('preferences', 'dark_mode', str(dark_mode_enabled).lower())
+
         if _save_config(cfg):
             # Update session memory so login dialog won't appear unnecessarily
             try:
@@ -471,11 +630,29 @@ def show_settings(parent=None):
             except Exception:
                 pass
 
-            # Show confirmation message
-            messagebox.showinfo("Settings", "Settings saved successfully.", parent=win)
+            # Sync Dark Mode with parent window's View menu toggle
+            dark_mode_var = entry_refs.get('dark_mode_var')
+            _parent = entry_refs.get('_parent')
+            if dark_mode_var is not None and _parent:
+                try:
+                    dark_mode_enabled = dark_mode_var.get()
+                    # Check if parent has the dark_mode_var attribute (set by HoonyTools)
+                    if hasattr(_parent, '_dark_mode_var'):
+                        parent_var = _parent._dark_mode_var
+                        # Only toggle if state is different
+                        if parent_var.get() != dark_mode_enabled:
+                            parent_var.set(dark_mode_enabled)
+                            # Trigger the toggle callback if it exists
+                            if hasattr(_parent, '_toggle_dark'):
+                                _parent._toggle_dark()
+                except Exception:
+                    pass
+
+            # Show non-invasive confirmation message in status bar
+            _show_status_message("Settings saved")
             return True
         else:
-            messagebox.showerror("Error", "Failed to save settings.", parent=win)
+            _show_status_message("Failed to save settings", error=True)
             return False
 
     def _on_ok():
@@ -526,8 +703,14 @@ def show_settings(parent=None):
             if widget != button_frame:
                 widget.destroy()
 
-        # Clear entry refs for fresh build
+        # Clear entry refs for fresh build, but preserve system references
+        preserved = {
+            '_parent': entry_refs.get('_parent'),
+            '_status_label': entry_refs.get('_status_label'),
+            '_win': entry_refs.get('_win'),
+        }
         entry_refs.clear()
+        entry_refs.update(preserved)
 
         # Unpack button frame so builder can pack it
         button_frame.pack_forget()
@@ -543,7 +726,7 @@ def show_settings(parent=None):
     # Theme callback for dark mode support
     # --------------------------------------------------------------------------
     def _apply_theme(dark: bool):
-        """Apply dark or light theme to the category pane."""
+        """Apply dark or light theme to the category pane and content panels."""
         if dark:
             try:
                 # Configure dark style for category tree
@@ -570,6 +753,14 @@ def show_settings(parent=None):
                           background=[('selected', '#0078d7')],
                           foreground=[('selected', 'white')])
                 category_frame.configure(bg='SystemButtonFace')
+            except Exception:
+                pass
+
+        # Apply theme to connections panel if it exists
+        conn_apply_theme = entry_refs.get('_conn_apply_theme')
+        if conn_apply_theme:
+            try:
+                conn_apply_theme(dark)
             except Exception:
                 pass
 

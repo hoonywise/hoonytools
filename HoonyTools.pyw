@@ -2411,6 +2411,13 @@ def launch_tool_gui():
         except Exception:
             pass
 
+    # Expose dark_mode_var and _toggle_dark on root so Settings dialog can sync
+    try:
+        root._dark_mode_var = dark_mode_var
+        root._toggle_dark = _toggle_dark
+    except Exception:
+        pass
+
     # Expose a registration API on the root so child dialogs can register
     # callbacks to be notified when the pane-only dark mode changes.
     try:
