@@ -465,12 +465,26 @@ def stream_logs():
 def show_splash():
     # Load saved theme before showing splash
     from libs import gui_utils
+    from configparser import ConfigParser
+    from pathlib import Path
     gui_utils.load_theme_from_config()
     
     # Get splash-specific theme colors
     splash_bg = gui_utils.get_color('splash_bg')
     splash_fg = gui_utils.get_color('splash_fg')
     splash_muted_fg = gui_utils.get_color('splash_muted_fg')
+    
+    # Load splash opacity from config (default 1.0)
+    target_opacity = 1.0
+    try:
+        config_path = Path(__file__).parent / "libs" / "config.ini"
+        cfg = ConfigParser()
+        cfg.read(config_path)
+        target_opacity = cfg.getfloat('Appearance', 'splash_opacity')
+        # Clamp to valid range
+        target_opacity = max(0.0, min(1.0, target_opacity))
+    except Exception:
+        target_opacity = 1.0
     
     splash = tk.Tk()
     splash.overrideredirect(True)
@@ -516,16 +530,20 @@ def show_splash():
     footer_version.pack(side="bottom", pady=(0, 12))
 
     def fade_in(alpha=0.0):
-        if alpha < 1.0:
+        if alpha < target_opacity:
             splash.attributes('-alpha', alpha)
-            splash.after(30, lambda: fade_in(alpha + 0.05))
+            splash.after(30, lambda: fade_in(min(alpha + 0.05, target_opacity)))
         else:
+            # Ensure we reach exactly target_opacity
+            splash.attributes('-alpha', target_opacity)
             splash.after(3000, fade_out)  # hold full splash (logo + labels) for 3s
 
-    def fade_out(alpha=1.0):
+    def fade_out(alpha=None):
+        if alpha is None:
+            alpha = target_opacity
         if alpha > 0.0:
             splash.attributes('-alpha', alpha)
-            splash.after(14, lambda: fade_out(alpha - 0.7))
+            splash.after(14, lambda: fade_out(alpha - 0.07))
         else:
             splash.destroy()
             

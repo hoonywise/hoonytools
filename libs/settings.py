@@ -380,6 +380,76 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
     # Get reference to the "Theme Preset:" label (it was created anonymously)
     theme_preset_label = theme_row.winfo_children()[0]  # First child is the label
 
+    # --- Splash Screen Settings ---
+    splash_frame = tk.LabelFrame(container, text="Splash Screen", padx=10, pady=10)
+    splash_frame.pack(fill='x', pady=(0, 10))
+    
+    # Splash opacity row
+    opacity_row = tk.Frame(splash_frame)
+    opacity_row.pack(fill='x', pady=5)
+    
+    opacity_label = tk.Label(opacity_row, text="Opacity:")
+    opacity_label.pack(side='left', padx=(0, 10))
+    
+    # Load current splash opacity from config (default 1.0)
+    cfg = _load_config()
+    try:
+        current_opacity = cfg.getfloat('Appearance', 'splash_opacity')
+    except Exception:
+        current_opacity = 1.0
+    
+    # Opacity slider (Scale widget)
+    opacity_var = tk.DoubleVar(value=current_opacity)
+    entry_refs['splash_opacity_var'] = opacity_var
+    
+    opacity_slider = tk.Scale(
+        opacity_row,
+        from_=0.0,
+        to=1.0,
+        resolution=0.05,
+        orient='horizontal',
+        variable=opacity_var,
+        length=200,
+        showvalue=True
+    )
+    opacity_slider.pack(side='left', padx=(0, 10))
+    
+    # Opacity value label showing percentage
+    opacity_pct_label = tk.Label(opacity_row, text=f"{int(current_opacity * 100)}%", width=5)
+    opacity_pct_label.pack(side='left')
+    
+    def _on_opacity_change(value):
+        """Update percentage label and save to config immediately."""
+        try:
+            val = float(value)
+            opacity_pct_label.config(text=f"{int(val * 100)}%")
+            # Save to config immediately
+            cfg = _load_config()
+            if not cfg.has_section('Appearance'):
+                cfg.add_section('Appearance')
+            cfg.set('Appearance', 'splash_opacity', str(val))
+            _save_config(cfg)
+        except Exception:
+            pass
+    
+    opacity_slider.config(command=_on_opacity_change)
+    
+    # Splash opacity description
+    opacity_desc_label = tk.Label(
+        splash_frame,
+        text="Controls the maximum opacity of the startup splash screen.",
+        fg='gray'
+    )
+    opacity_desc_label.pack(anchor='w', pady=(5, 0))
+    
+    # Store splash widgets for theme callback
+    entry_refs['_appearance_splash_frame'] = splash_frame
+    entry_refs['_appearance_opacity_row'] = opacity_row
+    entry_refs['_appearance_opacity_label'] = opacity_label
+    entry_refs['_appearance_opacity_slider'] = opacity_slider
+    entry_refs['_appearance_opacity_pct_label'] = opacity_pct_label
+    entry_refs['_appearance_opacity_desc_label'] = opacity_desc_label
+
     # Store widgets for theme callback
     entry_refs['_appearance_container'] = container
     entry_refs['_appearance_theme_frame'] = theme_frame
@@ -415,6 +485,39 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
             pass
         try:
             gui_utils.apply_theme_to_button(customize_btn)
+        except Exception:
+            pass
+        # Splash screen section theming
+        try:
+            gui_utils.apply_theme_to_labelframe(splash_frame)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_window(opacity_row)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_label(opacity_label)
+        except Exception:
+            pass
+        try:
+            gui_utils.apply_theme_to_label(opacity_pct_label)
+        except Exception:
+            pass
+        try:
+            # opacity_desc_label keeps gray fg for muted appearance
+            opacity_desc_label.config(bg=gui_utils.get_color('labelframe_bg'))
+        except Exception:
+            pass
+        try:
+            # Theme the Scale widget
+            opacity_slider.config(
+                bg=gui_utils.get_color('labelframe_bg'),
+                fg=gui_utils.get_color('label_fg'),
+                troughcolor=gui_utils.get_color('entry_bg'),
+                highlightbackground=gui_utils.get_color('labelframe_bg'),
+                activebackground=gui_utils.get_color('button_active_bg')
+            )
         except Exception:
             pass
     
