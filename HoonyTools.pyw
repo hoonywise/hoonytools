@@ -1494,7 +1494,11 @@ def launch_tool_gui():
             messagebox.showerror('Error', 'Could not determine user schema.', parent=root)
             return
         from tools.index_gui import main as index_main
-        index_main(parent=root, schema=owner, object_name=name, object_type=obj_type)
+        _update_status_light('busy')
+        def on_close():
+            _update_status_light('idle')
+            refresh_user_objects()  # auto-refresh after closing
+        index_main(parent=root, schema=owner, object_name=name, object_type=obj_type, on_finish=on_close)
 
     def launch_index_dwh():
         name, obj_type = _get_selected_object(dwh_tree)
@@ -1507,7 +1511,11 @@ def launch_tool_gui():
             messagebox.showwarning('Not Supported', 'Indexes cannot be created on views. Please select a table or materialized view.', parent=root)
             return
         from tools.index_gui import main as index_main
-        index_main(parent=root, schema='DWH', object_name=name, object_type=obj_type)
+        _update_status_light('busy')
+        def on_close():
+            _update_status_light('idle')
+            refresh_dwh_objects()  # auto-refresh after closing
+        index_main(parent=root, schema='DWH', object_name=name, object_type=obj_type, on_finish=on_close)
 
     user_index_btn.config(command=launch_index_user)
     dwh_index_btn.config(command=launch_index_dwh)

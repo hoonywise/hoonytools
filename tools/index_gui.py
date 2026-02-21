@@ -133,7 +133,7 @@ def _ensure_dialog_parent(parent):
         return root
 
 
-def main(parent=None, schema=None, object_name=None, object_type=None):
+def main(parent=None, schema=None, object_name=None, object_type=None, on_finish=None):
     """Entry point for the Index Manager tool.
 
     Parameters
@@ -146,6 +146,8 @@ def main(parent=None, schema=None, object_name=None, object_type=None):
         The table or materialized view name.
     object_type : str
         'TABLE' or 'MATERIALIZED VIEW'.
+    on_finish : callable or None
+        Optional callback invoked when the dialog is closed.
     """
     if not schema or not object_name:
         _safe_messagebox('showwarning', 'Missing Info', 'Schema and object name are required.', dlg=parent)
@@ -635,6 +637,13 @@ def main(parent=None, schema=None, object_name=None, object_type=None):
         dwh_session.cleanup(target)
     except Exception:
         logger.debug('DWH cleanup failed', exc_info=True)
+
+    # Call on_finish callback when window is closed
+    if on_finish:
+        try:
+            on_finish()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
