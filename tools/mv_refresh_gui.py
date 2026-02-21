@@ -1169,9 +1169,13 @@ def run_mv_refresh_gui(on_finish=None):
 
     btn_refresh_mv = tk.Button(btn_frame, text="Refresh MV", command=do_refresh)
     btn_create_logs = tk.Button(btn_frame, text="Create Logs", command=do_create_logs)
-    btn_refresh_mv.pack(side="right", padx=6)
+    # Close button - command will be configured after on_close is defined
+    btn_close = tk.Button(btn_frame, text="Close", width=10)
+    # Close button on the far right, with larger space separating it from the action buttons
+    btn_close.pack(side="right", padx=6)
+    btn_refresh_mv.pack(side="right", padx=(6, 20))
     btn_create_logs.pack(side="right", padx=6)
-    _all_buttons.extend([btn_refresh_mv, btn_create_logs])
+    _all_buttons.extend([btn_refresh_mv, btn_create_logs, btn_close])
 
     # Apply initial dark mode styling to buttons
     try:
@@ -1286,6 +1290,9 @@ def run_mv_refresh_gui(on_finish=None):
                 on_finish()
             except Exception:
                 logger.exception("Error in on_finish callback for mv_refresh_gui")
+
+    # Configure the Close button command now that on_close is defined
+    btn_close.config(command=on_close)
 
     root.protocol("WM_DELETE_WINDOW", on_close)
     try:

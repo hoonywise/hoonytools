@@ -1704,7 +1704,7 @@ def _compute_col_sizes(df, buffer=1.2, minimum=20):
     return sizes
 
 
-def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
+def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_finish=None):
     """Open the structured Data Loader dialog.
 
     Parameters
@@ -1716,6 +1716,9 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
     on_status_change : callable or None
         Callback function(status) where status is 'busy', 'aborting', or 'idle'.
         Used to update the main GUI status indicator.
+    on_finish : callable or None
+        Callback function called when the dialog is closed (cancel, X, or after loading).
+        Used to refresh object panes in the main GUI.
     """
     import math
     from tkinter import Toplevel, Frame, Label, Button, Entry, StringVar, IntVar
@@ -2824,16 +2827,24 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None):
     win.protocol('WM_DELETE_WINDOW', _on_window_close)
 
     # --- Wait ---
-    if parent:
-        try:
-            win.wait_window()
-        except tk.TclError:
-            pass
-    else:
-        try:
-            win.mainloop()
-        except tk.TclError:
-            pass
+    try:
+        if parent:
+            try:
+                win.wait_window()
+            except tk.TclError:
+                pass
+        else:
+            try:
+                win.mainloop()
+            except tk.TclError:
+                pass
+    finally:
+        # Call on_finish callback when dialog is closed
+        if on_finish:
+            try:
+                on_finish()
+            except Exception:
+                pass
 
 
 if __name__ == '__main__':

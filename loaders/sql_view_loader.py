@@ -188,7 +188,7 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
     # Create Toplevel with optional parent so the window can be modal
     builder_window = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
     builder_window.title("SQL View Loader")
-    builder_window.geometry("800x600")
+    builder_window.geometry("1300x740")
 
     # If launched from the main launcher, make the window transient and modal
     grabbed = False
@@ -226,38 +226,39 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
         except Exception:
             pass
 
-    tk.Label(builder_window, text="Enter SQL to turn into a view:", font=("Arial", 11, "bold")).pack(pady=(10, 5))
+    tk.Label(builder_window, text="Enter SQL to turn into a VIEW:", font=("Arial", 11, "bold")).pack(pady=(10, 5))
 
     # Create SQL text with initial theme to avoid visible white -> black flip
     try:
         if _initial_dark:
-            sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10), bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
+            sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
         else:
-            sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10), bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
+            sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
     except Exception:
-        sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10))
-    sql_text.pack(padx=10, pady=(0, 10))
+        sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10))
+    sql_text.pack(padx=10, pady=(0, 10), fill="both", expand=False)
 
+    # Use a grid-based control area so widgets can expand proportionally
     control_frame = tk.Frame(builder_window)
-    control_frame.pack(pady=5)
+    control_frame.pack(pady=8, fill="x", padx=12)
 
-    tk.Label(control_frame, text="View Name:").grid(row=0, column=0, padx=(0, 5))
+    tk.Label(control_frame, text="View Name:").grid(row=0, column=0, sticky="w")
     # Create the view name entry with initial theme to avoid flash
     try:
         if _initial_dark:
-            view_name_entry = tk.Entry(control_frame, width=40, bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+            view_name_entry = tk.Entry(control_frame, bg='#000000', fg='#ffffff', insertbackground='#ffffff')
         else:
-            view_name_entry = tk.Entry(control_frame, width=40)
+            view_name_entry = tk.Entry(control_frame)
     except Exception:
-        view_name_entry = tk.Entry(control_frame, width=40)
-    view_name_entry.grid(row=0, column=1, padx=(0, 20))
+        view_name_entry = tk.Entry(control_frame)
+    view_name_entry.grid(row=0, column=1, sticky="w", padx=(8, 0))
 
     btn_frame = tk.Frame(builder_window)
     btn_frame.pack(pady=15)
 
     # Create buttons with references for dark mode styling
-    btn_create = tk.Button(btn_frame, text="Create View", command=on_submit, width=15)
-    btn_cancel = tk.Button(btn_frame, text="Cancel", command=on_cancel, width=10)
+    btn_create = tk.Button(btn_frame, text="Create View", command=on_submit, width=22)
+    btn_cancel = tk.Button(btn_frame, text="Close", command=on_cancel, width=10)
     btn_create.pack(side="left", padx=10)
     btn_cancel.pack(side="left", padx=10)
     _all_buttons.extend([btn_create, btn_cancel])

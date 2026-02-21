@@ -1023,12 +1023,8 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
                     cursor.close()
             except Exception as e:
                 logger.warning(f"⚠️ Failed to close cursor: {e}")
-
-            try:
-                if conn:
-                    conn.close()
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to close connection: {e}")
+            # Connection stays open for consecutive MV creations
+            # It will be closed when the window is destroyed via session cleanup
 
     def on_cancel():
         builder_window.destroy()
@@ -1233,10 +1229,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             mv_name_entry = tk.Entry(control_frame)
     except Exception:
         mv_name_entry = tk.Entry(control_frame)
-    mv_name_entry.grid(row=0, column=1, sticky="we", padx=(6, 12))
-
-    # Configure grid weights so the entry expands
-    control_frame.grid_columnconfigure(1, weight=1)
+    mv_name_entry.grid(row=0, column=1, sticky="w", padx=(8, 0))
 
     # Row 1: Parameter frames
     param_frame = tk.Frame(control_frame)
@@ -1279,7 +1272,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
 
     # Create buttons with references for dark mode styling
     btn_create_mv = tk.Button(btn_frame, text="Create Materialized View", command=on_submit, width=22)
-    btn_cancel_mv = tk.Button(btn_frame, text="Cancel", command=on_cancel, width=10)
+    btn_cancel_mv = tk.Button(btn_frame, text="Close", command=on_cancel, width=10)
     btn_create_mv.pack(side="left", padx=10)
     btn_cancel_mv.pack(side="left", padx=10)
     _all_buttons.extend([btn_create_mv, btn_cancel_mv])
