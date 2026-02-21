@@ -861,8 +861,13 @@ def unregister_theme_callback(callback: Callable) -> None:
 # =============================================================================
 
 def _get_config_path() -> str:
-    """Get the path to config.ini."""
-    return os.path.join(os.path.dirname(__file__), 'config.ini')
+    """Get the path to config.ini.
+    
+    Uses PROJECT_PATH from libs.paths to ensure consistent behavior
+    whether running from source or as a frozen EXE.
+    """
+    from libs.paths import PROJECT_PATH
+    return str(PROJECT_PATH / "libs" / "config.ini")
 
 
 def load_theme_from_config() -> None:

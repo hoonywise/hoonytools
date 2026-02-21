@@ -24,6 +24,8 @@ dist/
 
 # Local build scripts/logs
 *.log
+build_exe.bat
+build_pkg.bat
 
 # VS Code workspace/settings
 .vscode/
