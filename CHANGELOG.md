@@ -4,6 +4,52 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🚀 v2.1.0 — Settings Menu GUI (2026-02-20)
+
+This release introduces a comprehensive Settings GUI accessible via the File menu, enabling users to configure application preferences without editing config files directly.
+
+### Added
+
+- **Settings GUI** (`libs/settings.py`): New modal settings dialog with category-based navigation:
+  - Left pane: Dark-mode-compatible category list using `ttk.Treeview`
+  - Right pane: Scrollable content area with category-specific settings
+  - Bottom buttons: OK, Cancel, Apply (OK applies and closes, Cancel discards, Apply saves but keeps window open)
+  - Non-invasive status message at bottom showing "Settings saved" in bold blue text, auto-hides after 3 seconds
+
+- **Connections Category**: Configure Schema 1 and Schema 2 database credentials:
+  - Username, Password (with "Show password" toggle), and DSN fields for each schema
+  - Validation ensures all three fields are filled if any are provided
+  - Credentials saved to `config.ini` and loaded into session memory immediately
+  - Eliminates login popup if credentials are pre-configured in Settings
+
+- **Appearance Category**: Theme configuration:
+  - Dark Mode checkbox that applies immediately without requiring OK/Apply
+  - Syncs bidirectionally with View → Dark Mode menu toggle
+
+- **File Menu Updates**:
+  - Added "Settings" menu item (launches Settings GUI)
+  - Added separator line between tools and exit
+  - Added "Exit" menu item (cleanly closes application)
+
+- **Keyboard Shortcut**: `Ctrl+Alt+S` opens Settings dialog (PyCharm-style)
+
+- **Dark Mode Support for Settings**:
+  - Category pane follows dark/light theme
+  - Connection entry fields (Username, Password, DSN) switch between black/white backgrounds
+
+### Changed
+
+- **Session Memory Integration**: When credentials are saved via Settings, they are immediately loaded into `session.schemas` memory, preventing unnecessary login popups when using tools.
+
+- **Menu Bar Separator Support**: Updated `_mb()` function to handle `'separator'` menu item type.
+
+### Files Touched
+
+- `libs/settings.py` — **NEW** (~800 lines): Complete Settings GUI implementation
+- `HoonyTools.pyw` — Added `_launch_settings()`, `_exit_app()`, exposed `root._dark_mode_var` and `root._toggle_dark`, added keyboard binding, updated `file_items`
+
+---
+
 ## 🚀 v2.0.0 — Major Refactoring: Unified Session, Streamlined UI, Word of God Verse Pane (2026-02-20)
 
 This major release delivers a comprehensive refactoring of credential handling, removes the toolbar combobox in favor of direct menu and button access, and introduces an elegant Bible verse display pane.

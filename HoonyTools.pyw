@@ -15,7 +15,7 @@ import random
 import webbrowser
 from configparser import ConfigParser
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
 
 
 # Theme helpers
@@ -2411,6 +2411,13 @@ def launch_tool_gui():
         except Exception:
             pass
 
+    # Expose dark_mode_var and _toggle_dark on root so Settings dialog can sync
+    try:
+        root._dark_mode_var = dark_mode_var
+        root._toggle_dark = _toggle_dark
+    except Exception:
+        pass
+
     # Expose a registration API on the root so child dialogs can register
     # callbacks to be notified when the pane-only dark mode changes.
     try:
@@ -2478,6 +2485,18 @@ def launch_tool_gui():
 
     # Debug Panes is intentionally hidden (keep handler for future use)
     
+    # Settings launcher (defined here so it can be bound to keyboard shortcut)
+    def _launch_settings():
+        try:
+            from libs.settings import show_settings
+            show_settings(root)
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+                messagebox.showerror("Error", f"Failed to launch Settings: {e}")
+            except Exception:
+                pass
+
     # Replace native menu bar with a custom in-window menu bar composed of
     # Menubuttons inside a Frame so it can be reliably styled per-pane.
     # This is safer than relying on platform-drawn native menu bars which
@@ -2517,6 +2536,8 @@ def launch_tool_gui():
                     m.add_checkbutton(label=ilabel, command=(cmd if callable(cmd) else None), variable=var)
                 elif itype == 'cascade':
                     m.add_cascade(label=ilabel, menu=icmd)
+                elif itype == 'separator':
+                    m.add_separator()
             # show popup on click
             mb.config(command=lambda b=mb, mm=m: _show_menu(b, mm))
             mb.pack(side='left', padx=(6, 2))
@@ -2534,9 +2555,19 @@ def launch_tool_gui():
                     messagebox.showerror("Error", f"Failed to launch M.View Manager: {e}")
                 except Exception:
                     pass
-        
+
+        def _exit_app():
+            """Exit the application."""
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
         file_items = [
-            ('command', 'M.View Manager', _launch_mv_manager)
+            ('command', 'M.View Manager', _launch_mv_manager),
+            ('command', 'Settings', _launch_settings),
+            ('separator', None, None),
+            ('command', 'Exit', _exit_app)
         ]
         
         # View: Dark Mode toggle
@@ -2591,6 +2622,13 @@ def launch_tool_gui():
     # menu_bar structure around for compatibility but do not reattach it as
     # the root menubar (native menubars ignore styling on some platforms).
     tk.Frame(root, height=1, bg=getattr(root, "_dark_theme", {}).get("border", "#b0b0b0")).pack(fill="x")
+
+    # Bind Ctrl+Alt+S to open Settings
+    try:
+        root.bind('<Control-Alt-s>', lambda e: _launch_settings())
+        root.bind('<Control-Alt-S>', lambda e: _launch_settings())
+    except Exception:
+        pass
 
     # Restore dark mode preference from config.ini on startup
     try:
