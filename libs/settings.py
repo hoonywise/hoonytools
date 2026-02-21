@@ -357,19 +357,9 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
         base_preset = current_key
         
         # Open customize dialog
+        # Theme dropdown update is handled automatically by _apply_theme() callback
+        # which is triggered via gui_utils.register_theme_callback() system
         dialog = CustomizeColorsDialog(parent_frame.winfo_toplevel(), base_preset)
-        
-        # After dialog closes, update dropdown if theme changed to Custom
-        def _check_theme():
-            try:
-                new_theme = gui_utils.get_current_theme()
-                if new_theme == 'custom':
-                    theme_var.set('Custom')
-            except Exception:
-                pass
-        
-        # Wait for dialog to close then check
-        parent_frame.after(100, _check_theme)
     
     # Customize button (now enabled)
     customize_btn = tk.Button(
@@ -604,11 +594,13 @@ class CustomizeColorsDialog:
         self.inner_frame.bind('<Configure>', _on_configure)
         self.canvas.bind('<Configure>', lambda e: self.canvas.itemconfig(self.canvas_window, width=e.width))
         
-        # Mousewheel scrolling
+        # Mousewheel scrolling - bind to specific widgets, not globally
         def _on_mousewheel(event):
             self.canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
         
-        self.canvas.bind_all('<MouseWheel>', _on_mousewheel)
+        self.canvas.bind('<MouseWheel>', _on_mousewheel)
+        self.inner_frame.bind('<MouseWheel>', _on_mousewheel)
+        canvas_frame.bind('<MouseWheel>', _on_mousewheel)
         
         # Build color rows grouped by category
         self._build_color_rows()
@@ -649,15 +641,6 @@ class CustomizeColorsDialog:
         
         # Clean up on close
         self.win.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        
-        def _on_destroy(event=None):
-            if event.widget == self.win:
-                try:
-                    self.canvas.unbind_all('<MouseWheel>')
-                except Exception:
-                    pass
-        
-        self.win.bind('<Destroy>', _on_destroy)
     
     def _build_color_rows(self):
         """Build rows for each color key, grouped by category."""
@@ -866,10 +849,6 @@ class CustomizeColorsDialog:
     
     def _cleanup_and_close(self):
         """Clean up and close the dialog."""
-        try:
-            self.canvas.unbind_all('<MouseWheel>')
-        except Exception:
-            pass
         self.win.destroy()
 
 
@@ -997,11 +976,40 @@ def show_settings(parent=None):
 
     content_canvas.bind('<Configure>', _on_canvas_configure)
 
-    # Enable mousewheel scrolling
+    # Enable mousewheel scrolling - bind to specific widgets, not globally
+    # This prevents capturing scroll events meant for combobox dropdowns
+    # Only scroll when content exceeds viewport height
     def _on_mousewheel(event):
-        content_canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        # Only scroll if content is larger than viewport
+        try:
+            content_height = content_inner_frame.winfo_height()
+            viewport_height = content_canvas.winfo_height()
+            if content_height > viewport_height:
+                content_canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        except Exception:
+            pass
 
-    content_canvas.bind_all('<MouseWheel>', _on_mousewheel)
+    def _bind_mousewheel_recursive(widget):
+        """Bind mousewheel to widget and all its children recursively."""
+        try:
+            # Skip binding to Combobox widgets to avoid conflicts
+            if widget.winfo_class() not in ('TCombobox', 'Listbox'):
+                widget.bind('<MouseWheel>', _on_mousewheel)
+        except Exception:
+            pass
+        for child in widget.winfo_children():
+            _bind_mousewheel_recursive(child)
+    
+    # Bind to canvas and outer frame
+    content_canvas.bind('<MouseWheel>', _on_mousewheel)
+    content_outer_frame.bind('<MouseWheel>', _on_mousewheel)
+    content_inner_frame.bind('<MouseWheel>', _on_mousewheel)
+    
+    # Re-bind mousewheel when content changes (new widgets added)
+    def _rebind_mousewheel_on_configure(event=None):
+        _bind_mousewheel_recursive(content_inner_frame)
+    
+    content_inner_frame.bind('<Map>', _rebind_mousewheel_on_configure)
 
     # Pack canvas and scrollbar
     content_scrollbar.pack(side='right', fill='y')
@@ -1195,19 +1203,9 @@ def show_settings(parent=None):
     def _on_ok():
         if _validate():
             if _save():
-                # Unbind mousewheel before destroying
-                try:
-                    content_canvas.unbind_all('<MouseWheel>')
-                except Exception:
-                    pass
                 win.destroy()
 
     def _on_cancel():
-        # Unbind mousewheel before destroying
-        try:
-            content_canvas.unbind_all('<MouseWheel>')
-        except Exception:
-            pass
         win.destroy()
 
     def _on_apply():
@@ -1341,6 +1339,16 @@ def show_settings(parent=None):
             button_frame.config(bg=gui_utils.get_color('window_bg'))
         except Exception:
             pass
+        
+        # Update theme dropdown to reflect current theme (e.g., after Apply in Customize dialog)
+        try:
+            current_theme = gui_utils.get_current_theme()
+            current_display = gui_utils.get_theme_display_name(current_theme)
+            theme_var = entry_refs.get('theme_var')
+            if theme_var and theme_var.get() != current_display:
+                theme_var.set(current_display)
+        except Exception:
+            pass
 
     # Register with gui_utils theme callback system
     from libs import gui_utils
@@ -1348,11 +1356,6 @@ def show_settings(parent=None):
 
     def _on_destroy(event=None):
         if event.widget == win:  # Only on main window destroy
-            # Unbind mousewheel
-            try:
-                content_canvas.unbind_all('<MouseWheel>')
-            except Exception:
-                pass
             # Unregister theme callback from gui_utils
             try:
                 gui_utils.unregister_theme_callback(_apply_theme)

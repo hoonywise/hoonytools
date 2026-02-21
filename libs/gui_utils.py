@@ -18,11 +18,19 @@ logger = logging.getLogger(__name__)
 # Ordered list of theme keys (spectrum from darkest to lightest, plus Custom)
 THEME_ORDER = [
     'pure_black',
+    'high_contrast',
     'midnight',
+    'dracula',
+    'one_dark',
+    'monokai',
+    'gruvbox_dark',
     'charcoal',
+    'nord',
     'slate',
+    'solarized_dark',
     'graphite',
     'silver',
+    'solarized_light',
     'system_light',
     'custom',
 ]
@@ -30,11 +38,19 @@ THEME_ORDER = [
 # Display names for UI
 THEME_DISPLAY_NAMES = {
     'pure_black': 'Pure Black',
+    'high_contrast': 'High Contrast',
     'midnight': 'Midnight',
+    'dracula': 'Dracula',
+    'one_dark': 'One Dark',
+    'monokai': 'Monokai',
+    'gruvbox_dark': 'Gruvbox Dark',
     'charcoal': 'Charcoal',
+    'nord': 'Nord',
     'slate': 'Slate',
+    'solarized_dark': 'Solarized Dark',
     'graphite': 'Graphite',
     'silver': 'Silver',
+    'solarized_light': 'Solarized Light',
     'system_light': 'System Light',
     'custom': 'Custom',
 }
@@ -135,6 +151,46 @@ PRESET_THEMES = {
         'splash_fg': '#ffffff',
         'splash_muted_fg': '#888888',
     },
+    'high_contrast': {
+        # Content panes - bright yellow on black for maximum contrast
+        'pane_bg': '#000000',
+        'pane_fg': '#ffff00',
+        'select_bg': '#0000ff',
+        'insert_bg': '#ffffff',
+        # Window chrome
+        'window_bg': '#000000',
+        'border_bg': '#ffffff',
+        # Labels
+        'label_bg': '#000000',
+        'label_fg': '#ffffff',
+        # LabelFrame
+        'labelframe_bg': '#000000',
+        'labelframe_fg': '#00ff00',
+        # Buttons
+        'button_bg': '#000000',
+        'button_fg': '#00ff00',
+        'button_active_bg': '#0000ff',
+        'button_active_fg': '#ffffff',
+        # Entry fields
+        'entry_bg': '#000000',
+        'entry_fg': '#ffff00',
+        # Menu
+        'menu_bg': '#000000',
+        'menu_fg': '#ffffff',
+        'menu_active_bg': '#0000ff',
+        'menu_active_fg': '#ffffff',
+        # Checkbox/Radio
+        'checkbox_bg': '#000000',
+        'checkbox_fg': '#00ff00',
+        'checkbox_select': '#0000ff',
+        # Scrollbar
+        'scrollbar_bg': '#000000',
+        'scrollbar_fg': '#ffffff',
+        # Splash screen
+        'splash_bg': '#000000',
+        'splash_fg': '#00ff00',
+        'splash_muted_fg': '#00ffff',
+    },
     'midnight': {
         # Content panes
         'pane_bg': '#0d1117',
@@ -174,6 +230,166 @@ PRESET_THEMES = {
         'splash_bg': '#010409',
         'splash_fg': '#c9d1d9',
         'splash_muted_fg': '#6e7681',
+    },
+    'dracula': {
+        # Content panes - Dracula theme (purple tinted)
+        'pane_bg': '#282a36',
+        'pane_fg': '#f8f8f2',
+        'select_bg': '#44475a',
+        'insert_bg': '#f8f8f2',
+        # Window chrome
+        'window_bg': '#21222c',
+        'border_bg': '#44475a',
+        # Labels
+        'label_bg': '#21222c',
+        'label_fg': '#f8f8f2',
+        # LabelFrame
+        'labelframe_bg': '#21222c',
+        'labelframe_fg': '#bd93f9',
+        # Buttons
+        'button_bg': '#44475a',
+        'button_fg': '#f8f8f2',
+        'button_active_bg': '#6272a4',
+        'button_active_fg': '#ffffff',
+        # Entry fields
+        'entry_bg': '#282a36',
+        'entry_fg': '#f8f8f2',
+        # Menu
+        'menu_bg': '#282a36',
+        'menu_fg': '#f8f8f2',
+        'menu_active_bg': '#44475a',
+        'menu_active_fg': '#ffffff',
+        # Checkbox/Radio
+        'checkbox_bg': '#21222c',
+        'checkbox_fg': '#f8f8f2',
+        'checkbox_select': '#44475a',
+        # Scrollbar
+        'scrollbar_bg': '#282a36',
+        'scrollbar_fg': '#44475a',
+        # Splash screen
+        'splash_bg': '#21222c',
+        'splash_fg': '#bd93f9',
+        'splash_muted_fg': '#6272a4',
+    },
+    'one_dark': {
+        # Content panes - Atom One Dark theme
+        'pane_bg': '#282c34',
+        'pane_fg': '#abb2bf',
+        'select_bg': '#3e4451',
+        'insert_bg': '#abb2bf',
+        # Window chrome
+        'window_bg': '#21252b',
+        'border_bg': '#3e4451',
+        # Labels
+        'label_bg': '#21252b',
+        'label_fg': '#abb2bf',
+        # LabelFrame
+        'labelframe_bg': '#21252b',
+        'labelframe_fg': '#61afef',
+        # Buttons
+        'button_bg': '#3e4451',
+        'button_fg': '#abb2bf',
+        'button_active_bg': '#4d5566',
+        'button_active_fg': '#ffffff',
+        # Entry fields
+        'entry_bg': '#282c34',
+        'entry_fg': '#abb2bf',
+        # Menu
+        'menu_bg': '#282c34',
+        'menu_fg': '#abb2bf',
+        'menu_active_bg': '#3e4451',
+        'menu_active_fg': '#ffffff',
+        # Checkbox/Radio
+        'checkbox_bg': '#21252b',
+        'checkbox_fg': '#abb2bf',
+        'checkbox_select': '#3e4451',
+        # Scrollbar
+        'scrollbar_bg': '#282c34',
+        'scrollbar_fg': '#4d5566',
+        # Splash screen
+        'splash_bg': '#21252b',
+        'splash_fg': '#61afef',
+        'splash_muted_fg': '#5c6370',
+    },
+    'monokai': {
+        # Content panes - Monokai theme (warm tones)
+        'pane_bg': '#272822',
+        'pane_fg': '#f8f8f2',
+        'select_bg': '#49483e',
+        'insert_bg': '#f8f8f2',
+        # Window chrome
+        'window_bg': '#1e1f1c',
+        'border_bg': '#49483e',
+        # Labels
+        'label_bg': '#1e1f1c',
+        'label_fg': '#f8f8f2',
+        # LabelFrame
+        'labelframe_bg': '#1e1f1c',
+        'labelframe_fg': '#a6e22e',
+        # Buttons
+        'button_bg': '#3e3d32',
+        'button_fg': '#f8f8f2',
+        'button_active_bg': '#49483e',
+        'button_active_fg': '#ffffff',
+        # Entry fields
+        'entry_bg': '#272822',
+        'entry_fg': '#f8f8f2',
+        # Menu
+        'menu_bg': '#272822',
+        'menu_fg': '#f8f8f2',
+        'menu_active_bg': '#49483e',
+        'menu_active_fg': '#ffffff',
+        # Checkbox/Radio
+        'checkbox_bg': '#1e1f1c',
+        'checkbox_fg': '#f8f8f2',
+        'checkbox_select': '#3e3d32',
+        # Scrollbar
+        'scrollbar_bg': '#272822',
+        'scrollbar_fg': '#49483e',
+        # Splash screen
+        'splash_bg': '#1e1f1c',
+        'splash_fg': '#a6e22e',
+        'splash_muted_fg': '#75715e',
+    },
+    'gruvbox_dark': {
+        # Content panes - Gruvbox Dark theme (retro warm)
+        'pane_bg': '#282828',
+        'pane_fg': '#ebdbb2',
+        'select_bg': '#504945',
+        'insert_bg': '#ebdbb2',
+        # Window chrome
+        'window_bg': '#1d2021',
+        'border_bg': '#504945',
+        # Labels
+        'label_bg': '#1d2021',
+        'label_fg': '#ebdbb2',
+        # LabelFrame
+        'labelframe_bg': '#1d2021',
+        'labelframe_fg': '#fabd2f',
+        # Buttons
+        'button_bg': '#3c3836',
+        'button_fg': '#ebdbb2',
+        'button_active_bg': '#504945',
+        'button_active_fg': '#fbf1c7',
+        # Entry fields
+        'entry_bg': '#282828',
+        'entry_fg': '#ebdbb2',
+        # Menu
+        'menu_bg': '#282828',
+        'menu_fg': '#ebdbb2',
+        'menu_active_bg': '#504945',
+        'menu_active_fg': '#fbf1c7',
+        # Checkbox/Radio
+        'checkbox_bg': '#1d2021',
+        'checkbox_fg': '#ebdbb2',
+        'checkbox_select': '#3c3836',
+        # Scrollbar
+        'scrollbar_bg': '#282828',
+        'scrollbar_fg': '#504945',
+        # Splash screen
+        'splash_bg': '#1d2021',
+        'splash_fg': '#fabd2f',
+        'splash_muted_fg': '#a89984',
     },
     'charcoal': {
         # Content panes
@@ -215,6 +431,46 @@ PRESET_THEMES = {
         'splash_fg': '#d4d4d4',
         'splash_muted_fg': '#808080',
     },
+    'nord': {
+        # Content panes - Nord theme (Arctic blue-gray)
+        'pane_bg': '#2e3440',
+        'pane_fg': '#d8dee9',
+        'select_bg': '#4c566a',
+        'insert_bg': '#d8dee9',
+        # Window chrome
+        'window_bg': '#2e3440',
+        'border_bg': '#4c566a',
+        # Labels
+        'label_bg': '#2e3440',
+        'label_fg': '#d8dee9',
+        # LabelFrame
+        'labelframe_bg': '#2e3440',
+        'labelframe_fg': '#88c0d0',
+        # Buttons
+        'button_bg': '#3b4252',
+        'button_fg': '#d8dee9',
+        'button_active_bg': '#4c566a',
+        'button_active_fg': '#eceff4',
+        # Entry fields
+        'entry_bg': '#3b4252',
+        'entry_fg': '#d8dee9',
+        # Menu
+        'menu_bg': '#3b4252',
+        'menu_fg': '#d8dee9',
+        'menu_active_bg': '#4c566a',
+        'menu_active_fg': '#eceff4',
+        # Checkbox/Radio
+        'checkbox_bg': '#2e3440',
+        'checkbox_fg': '#d8dee9',
+        'checkbox_select': '#3b4252',
+        # Scrollbar
+        'scrollbar_bg': '#2e3440',
+        'scrollbar_fg': '#4c566a',
+        # Splash screen
+        'splash_bg': '#2e3440',
+        'splash_fg': '#88c0d0',
+        'splash_muted_fg': '#7b88a1',
+    },
     'slate': {
         # Content panes
         'pane_bg': '#2d2d2d',
@@ -254,6 +510,46 @@ PRESET_THEMES = {
         'splash_bg': '#252525',
         'splash_fg': '#e0e0e0',
         'splash_muted_fg': '#888888',
+    },
+    'solarized_dark': {
+        # Content panes - Solarized Dark theme (blue tinted)
+        'pane_bg': '#002b36',
+        'pane_fg': '#839496',
+        'select_bg': '#073642',
+        'insert_bg': '#839496',
+        # Window chrome
+        'window_bg': '#002b36',
+        'border_bg': '#073642',
+        # Labels
+        'label_bg': '#002b36',
+        'label_fg': '#839496',
+        # LabelFrame
+        'labelframe_bg': '#002b36',
+        'labelframe_fg': '#2aa198',
+        # Buttons
+        'button_bg': '#073642',
+        'button_fg': '#839496',
+        'button_active_bg': '#586e75',
+        'button_active_fg': '#fdf6e3',
+        # Entry fields
+        'entry_bg': '#073642',
+        'entry_fg': '#839496',
+        # Menu
+        'menu_bg': '#073642',
+        'menu_fg': '#839496',
+        'menu_active_bg': '#586e75',
+        'menu_active_fg': '#fdf6e3',
+        # Checkbox/Radio
+        'checkbox_bg': '#002b36',
+        'checkbox_fg': '#839496',
+        'checkbox_select': '#073642',
+        # Scrollbar
+        'scrollbar_bg': '#002b36',
+        'scrollbar_fg': '#073642',
+        # Splash screen
+        'splash_bg': '#002b36',
+        'splash_fg': '#2aa198',
+        'splash_muted_fg': '#586e75',
     },
     'graphite': {
         # Content panes
@@ -334,6 +630,46 @@ PRESET_THEMES = {
         'splash_bg': '#c0c0c0',
         'splash_fg': '#1a1a1a',
         'splash_muted_fg': '#555555',
+    },
+    'solarized_light': {
+        # Content panes - Solarized Light theme (warm cream)
+        'pane_bg': '#fdf6e3',
+        'pane_fg': '#657b83',
+        'select_bg': '#eee8d5',
+        'insert_bg': '#657b83',
+        # Window chrome
+        'window_bg': '#eee8d5',
+        'border_bg': '#93a1a1',
+        # Labels
+        'label_bg': '#eee8d5',
+        'label_fg': '#657b83',
+        # LabelFrame
+        'labelframe_bg': '#eee8d5',
+        'labelframe_fg': '#268bd2',
+        # Buttons
+        'button_bg': '#fdf6e3',
+        'button_fg': '#657b83',
+        'button_active_bg': '#eee8d5',
+        'button_active_fg': '#073642',
+        # Entry fields
+        'entry_bg': '#fdf6e3',
+        'entry_fg': '#657b83',
+        # Menu
+        'menu_bg': '#fdf6e3',
+        'menu_fg': '#657b83',
+        'menu_active_bg': '#eee8d5',
+        'menu_active_fg': '#073642',
+        # Checkbox/Radio
+        'checkbox_bg': '#eee8d5',
+        'checkbox_fg': '#657b83',
+        'checkbox_select': '#fdf6e3',
+        # Scrollbar
+        'scrollbar_bg': '#eee8d5',
+        'scrollbar_fg': '#93a1a1',
+        # Splash screen
+        'splash_bg': '#eee8d5',
+        'splash_fg': '#268bd2',
+        'splash_muted_fg': '#93a1a1',
     },
     'system_light': {
         # Content panes
