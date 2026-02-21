@@ -604,6 +604,7 @@ def show_settings(parent=None):
             # Update session memory so login dialog won't appear unnecessarily
             try:
                 from libs import session
+                _parent = entry_refs.get('_parent')
 
                 # Schema 1: Update or clear session credentials
                 if s1_user_val and s1_pass_val and s1_dsn_val:
@@ -626,6 +627,19 @@ def show_settings(parent=None):
                     })
                 else:
                     session.clear_credentials('schema2')
+
+                # Trigger object pane refresh in main GUI after credentials are saved
+                if _parent:
+                    if hasattr(_parent, '_refresh_schema1') and s1_user_val and s1_pass_val and s1_dsn_val:
+                        try:
+                            _parent._refresh_schema1()
+                        except Exception:
+                            pass
+                    if hasattr(_parent, '_refresh_schema2') and s2_user_val and s2_pass_val and s2_dsn_val:
+                        try:
+                            _parent._refresh_schema2()
+                        except Exception:
+                            pass
 
             except Exception:
                 pass

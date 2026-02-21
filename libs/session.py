@@ -85,6 +85,8 @@ def set_credentials(schema, credentials):
         # Update label to username when credentials are set
         if credentials and credentials.get('user'):
             schemas[schema]['label'] = credentials['user']
+            # Update the GUI label widget if registered
+            update_label_widget(schema)
         # Also update stored_credentials for backward compatibility
         stored_credentials = credentials
 
