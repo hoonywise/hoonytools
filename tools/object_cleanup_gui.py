@@ -11,35 +11,9 @@ except Exception:
     ttk = None
 from libs.oracle_db_connector import get_db_connection
 from libs import session
+from libs import gui_utils
 
 logger = logging.getLogger(__name__)
-
-def _detect_dark_from_style():
-    """Detect if dark mode is active by checking ttk style background."""
-    try:
-        if ttk:
-            st = ttk.Style()
-            bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-            if isinstance(bg, str) and bg.strip():
-                sb = bg.strip().lower()
-                if sb in ('#000000', '#000') or 'black' in sb:
-                    return True
-    except Exception:
-        pass
-    return False
-
-def _apply_dark_mode_to_buttons(buttons, dark=None):
-    """Apply dark or light mode styling to a list of buttons."""
-    if dark is None:
-        dark = _detect_dark_from_style()
-    for btn in buttons:
-        try:
-            if dark:
-                btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-            else:
-                btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
-        except Exception:
-            pass
 
 # Use shared safe messagebox helper when available for consistent parenting
 try:
@@ -100,6 +74,10 @@ def prompt_schema_choice():
 
     win = Toplevel()
     win.title("Select Schema Scope")
+    
+    # Apply theme immediately after creating dialog
+    gui_utils.apply_theme_to_dialog(win)
+    
     center_window(win, 300, 140)
     win.resizable(False, False)
 
@@ -115,9 +93,26 @@ def prompt_schema_choice():
     b1.pack(side="left", padx=5)
     b2.pack(side="left", padx=5)
     b3.pack(side="left", padx=5)
+
+    # Live theme update callback
+    def _on_theme_change(theme_key):
+        try:
+            gui_utils.apply_theme_to_existing_widgets(win)
+        except Exception:
+            pass
     
-    # Apply dark mode styling to buttons
-    _apply_dark_mode_to_buttons([b1, b2, b3])
+    # Register theme callback and unregister on destroy
+    try:
+        gui_utils.register_theme_callback(_on_theme_change)
+        def _on_destroy(event=None):
+            if event and event.widget == win:
+                try:
+                    gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
+        win.bind('<Destroy>', _on_destroy)
+    except Exception:
+        pass
 
     # Enable keyboard focus
     b1.focus()
@@ -143,6 +138,10 @@ def select_tables_gui(tables, title="Select tables to delete from your schema:")
 
     window = Toplevel()
     window.title(title)
+    
+    # Apply theme immediately after creating dialog
+    gui_utils.apply_theme_to_dialog(window)
+    
     center_window(window, 500, 600)
 
     Label(window, text=title).pack(pady=5)
@@ -154,7 +153,6 @@ def select_tables_gui(tables, title="Select tables to delete from your schema:")
     btn_cancel = Button(btn_frame, text="Cancel", width=10, command=on_cancel)
     btn_ok.pack(side="left", padx=20)
     btn_cancel.pack(side="left", padx=20)
-    _apply_dark_mode_to_buttons([btn_ok, btn_cancel])
 
     # Scrollable canvas for table list
     canvas = Canvas(window)
@@ -172,7 +170,7 @@ def select_tables_gui(tables, title="Select tables to delete from your schema:")
     canvas.pack(side=LEFT, fill=BOTH, expand=True)
     scrollbar.pack(side=RIGHT, fill=Y)
 
-    # 🖱️ Enable mouse scrolling inside the canvas only while cursor is over it.
+    # Enable mouse scrolling inside the canvas only while cursor is over it.
     # Use enter/leave to bind/unbind the global mousewheel so the callback
     # does not fire after the window is destroyed (prevents TclError).
     def _on_mousewheel(ev):
@@ -191,6 +189,26 @@ def select_tables_gui(tables, title="Select tables to delete from your schema:")
         chk = Checkbutton(scrollable_frame, text=table, variable=var)
         chk.pack(anchor="w")
         vars_[table] = var
+
+    # Live theme update callback
+    def _on_theme_change(theme_key):
+        try:
+            gui_utils.apply_theme_to_existing_widgets(window)
+        except Exception:
+            pass
+    
+    # Register theme callback and unregister on destroy
+    try:
+        gui_utils.register_theme_callback(_on_theme_change)
+        def _on_destroy(event=None):
+            if event and event.widget == window:
+                try:
+                    gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
+        window.bind('<Destroy>', _on_destroy)
+    except Exception:
+        pass
 
     window.grab_set()
     window.wait_window()
@@ -454,13 +472,17 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
 
             win = tk.Toplevel(parent)
             win.title(title)
+            
+            # Apply theme immediately after creating dialog
+            gui_utils.apply_theme_to_dialog(win)
+            
             center_window(win, 350, 120)
             win.resizable(False, False)
 
             tk.Label(win, text=prompt).pack(pady=(15, 5))
             entry = tk.Entry(win, width=30)
             entry.pack(pady=5)
-            entry.focus()  # ✅ Autofocus
+            entry.focus()  # Autofocus
 
             btn_frame = tk.Frame(win)
             btn_frame.pack(pady=5)
@@ -468,9 +490,28 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
             btn_cancel_dlg = tk.Button(btn_frame, text="Cancel", width=10, command=cancel)
             btn_ok_dlg.pack(side="left", padx=5)
             btn_cancel_dlg.pack(side="left", padx=5)
-            _apply_dark_mode_to_buttons([btn_ok_dlg, btn_cancel_dlg])
 
-            win.bind("<Return>", lambda event: submit())  # ✅ Enter to submit
+            # Live theme update callback
+            def _on_theme_change(theme_key):
+                try:
+                    gui_utils.apply_theme_to_existing_widgets(win)
+                except Exception:
+                    pass
+            
+            # Register theme callback and unregister on destroy
+            try:
+                gui_utils.register_theme_callback(_on_theme_change)
+                def _on_destroy(event=None):
+                    if event and event.widget == win:
+                        try:
+                            gui_utils.unregister_theme_callback(_on_theme_change)
+                        except Exception:
+                            pass
+                win.bind('<Destroy>', _on_destroy)
+            except Exception:
+                pass
+
+            win.bind("<Return>", lambda event: submit())  # Enter to submit
             win.grab_set()
             win.wait_window()
 
@@ -583,6 +624,10 @@ def _show_error_dialog(parent, obj_name, obj_type, error_msg, remaining=0):
     
     dlg = tk.Toplevel(parent)
     dlg.title("Drop Error")
+    
+    # Apply theme immediately after creating dialog
+    gui_utils.apply_theme_to_dialog(dlg)
+    
     dlg.transient(parent)
     dlg.grab_set()
     center_window(dlg, 500, 220)
@@ -592,9 +637,11 @@ def _show_error_dialog(parent, obj_name, obj_type, error_msg, remaining=0):
     
     # Truncate long error messages
     display_error = error_msg if len(error_msg) <= 200 else error_msg[:200] + "..."
+    # Use semantic red foreground for error message - will be preserved by apply_theme_to_existing_widgets
     tk.Label(dlg, text=display_error, wraplength=450, fg="red").pack(pady=5)
     
     if remaining > 0:
+        # Use semantic gray foreground - will be preserved by apply_theme_to_existing_widgets
         tk.Label(dlg, text=f"{remaining} object(s) remaining", fg="gray").pack()
     
     btn_frame = tk.Frame(dlg)
@@ -616,17 +663,33 @@ def _show_error_dialog(parent, obj_name, obj_type, error_msg, remaining=0):
     btn_skip = tk.Button(btn_frame, text="Skip", width=10, command=skip)
     btn_stop.pack(side="left", padx=5)
     btn_skip.pack(side="left", padx=5)
-    _dlg_btns = [btn_stop, btn_skip]
     
     # Only show Force option for TABLEs (CASCADE CONSTRAINTS)
     if obj_type.upper() == 'TABLE':
         force_btn = tk.Button(btn_frame, text="Force Drop", width=12, command=force)
         force_btn.pack(side="left", padx=5)
-        _dlg_btns.append(force_btn)
-        # Add tooltip explaining what Force does
+        # Add tooltip explaining what Force does - use semantic gray foreground
         tk.Label(dlg, text="Force Drop: Drops table with CASCADE CONSTRAINTS", font=("Arial", 8), fg="gray").pack()
+
+    # Live theme update callback
+    def _on_theme_change(theme_key):
+        try:
+            gui_utils.apply_theme_to_existing_widgets(dlg)
+        except Exception:
+            pass
     
-    _apply_dark_mode_to_buttons(_dlg_btns)
+    # Register theme callback and unregister on destroy
+    try:
+        gui_utils.register_theme_callback(_on_theme_change)
+        def _on_destroy(event=None):
+            if event and event.widget == dlg:
+                try:
+                    gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
+        dlg.bind('<Destroy>', _on_destroy)
+    except Exception:
+        pass
     
     dlg.wait_window()
     return result['choice']

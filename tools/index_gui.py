@@ -10,6 +10,7 @@ from tkinter.constants import MULTIPLE, END, LEFT, RIGHT, Y, BOTH, EXTENDED
 
 from libs.oracle_db_connector import get_db_connection
 from libs import session
+from libs import gui_utils
 
 logger = logging.getLogger(__name__)
 
@@ -175,9 +176,9 @@ def main(parent=None, schema_key=None, object_name=None, object_type=None, on_fi
     # --- Build the dialog ---
     win = _ensure_dialog_parent(parent)
     win.title(f'Index Manager - {owner}.{object_name}')
-
-    # List to track all buttons for dark mode styling
-    _all_buttons = []
+    
+    # Apply theme immediately after creating dialog
+    gui_utils.apply_theme_to_dialog(win)
 
     # === Main layout: left (columns) + right (existing indexes) ===
     main_frame = tk.Frame(win)
@@ -260,69 +261,23 @@ def main(parent=None, schema_key=None, object_name=None, object_type=None, on_fi
     key_size_label.pack(fill='x', pady=(0, 4))
 
     # --- Theme support ---
-    def _apply_entry_theme(dark=None):
-        """Apply dark/light theme to entry widgets."""
-        if dark is None:
-            # Auto-detect from ttk style
-            try:
-                if ttk:
-                    st = ttk.Style()
-                    sbg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-                    if isinstance(sbg, str) and sbg.strip().lower() in ('#000000', '#000', 'black'):
-                        dark = True
-                    else:
-                        dark = False
-            except Exception:
-                dark = False
-
-        if dark:
-            try:
-                name_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
-            except Exception:
-                pass
-            try:
-                col_list.config(bg='#0b0b0b', fg='#e6e6e6', selectbackground='#2a6bd6')
-            except Exception:
-                pass
-        else:
-            try:
-                name_entry.config(bg='white', fg='black', insertbackground='black')
-            except Exception:
-                pass
-            try:
-                col_list.config(bg='white', fg='black', selectbackground='#2a6bd6')
-            except Exception:
-                pass
-        # Apply button styling for dark/light mode
+    # Live theme update callback
+    def _on_theme_change(theme_key):
         try:
-            for btn in _all_buttons:
-                try:
-                    if dark:
-                        btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-                    else:
-                        btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
-                except Exception:
-                    pass
+            gui_utils.apply_theme_to_existing_widgets(win)
         except Exception:
             pass
-
-    _apply_entry_theme()
-
-    def _theme_cb(enable_dark: bool):
-        _apply_entry_theme(dark=enable_dark)
-
-    # Register theme callback if parent supports it
+    
+    # Register theme callback and unregister on destroy
     try:
-        if parent and hasattr(parent, 'register_theme_callback'):
-            parent.register_theme_callback(_theme_cb)
-
-            def _on_destroy(event=None):
+        gui_utils.register_theme_callback(_on_theme_change)
+        def _on_destroy(event=None):
+            if event and event.widget == win:
                 try:
-                    if parent and hasattr(parent, 'unregister_theme_callback'):
-                        parent.unregister_theme_callback(_theme_cb)
+                    gui_utils.unregister_theme_callback(_on_theme_change)
                 except Exception:
                     pass
-            win.bind('<Destroy>', _on_destroy)
+        win.bind('<Destroy>', _on_destroy)
     except Exception:
         pass
 
@@ -621,21 +576,6 @@ def main(parent=None, schema_key=None, object_name=None, object_type=None, on_fi
     btn_drop.pack(side=LEFT, padx=(0, 6))
     btn_refresh.pack(side=LEFT, padx=(0, 6))
     btn_close.pack(side=RIGHT)
-    _all_buttons.extend([btn_create, btn_drop, btn_refresh, btn_close])
-
-    # Apply initial dark mode styling to buttons
-    try:
-        if ttk:
-            st = ttk.Style()
-            sbg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-            if isinstance(sbg, str) and sbg.strip().lower() in ('#000000', '#000', 'black'):
-                for btn in _all_buttons:
-                    try:
-                        btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-                    except Exception:
-                        pass
-    except Exception:
-        pass
 
     # --- Center and show the dialog after all widgets are built ---
     center_window(win, 900, 560)
