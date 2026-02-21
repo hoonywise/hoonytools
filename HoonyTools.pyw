@@ -1186,9 +1186,17 @@ def launch_tool_gui():
             # If no rows found, show friendly message in status
             if not rows:
                 # update external count label and tree
-                root.after(0, lambda: (_populate_treeview(schema1_tree, rows), schema1_count_label.config(text="No Objects")))
+                if is_gui_running:
+                    try:
+                        root.after(0, lambda: (_populate_treeview(schema1_tree, rows), schema1_count_label.config(text="No Objects")))
+                    except Exception:
+                        pass
             else:
-                root.after(0, lambda: (_populate_treeview(schema1_tree, rows), schema1_count_label.config(text=f"{len(rows)} Objects")))
+                if is_gui_running:
+                    try:
+                        root.after(0, lambda: (_populate_treeview(schema1_tree, rows), schema1_count_label.config(text=f"{len(rows)} Objects")))
+                    except Exception:
+                        pass
         threading.Thread(target=worker, daemon=True).start()
 
     def refresh_schema2_objects():
@@ -1354,9 +1362,17 @@ def launch_tool_gui():
                         pass
 
                 if not rows:
-                    root.after(0, lambda: (_populate_treeview(schema2_tree, rows), schema2_count_label.config(text="No Objects"), schema2_status.config(text="")))
+                    if is_gui_running:
+                        try:
+                            root.after(0, lambda: (_populate_treeview(schema2_tree, rows), schema2_count_label.config(text="No Objects"), schema2_status.config(text="")))
+                        except Exception:
+                            pass
                 else:
-                    root.after(0, lambda: (_populate_treeview(schema2_tree, rows), schema2_count_label.config(text=f"{len(rows)} Objects"), schema2_status.config(text="")))
+                    if is_gui_running:
+                        try:
+                            root.after(0, lambda: (_populate_treeview(schema2_tree, rows), schema2_count_label.config(text=f"{len(rows)} Objects"), schema2_status.config(text="")))
+                        except Exception:
+                            pass
 
             threading.Thread(target=worker, daemon=True).start()
 
@@ -1374,7 +1390,11 @@ def launch_tool_gui():
         from libs.oracle_db_connector import get_db_connection
         conn = get_db_connection(schema='schema2', root=root)
         if not conn:
-            root.after(0, lambda: schema2_status.config(text="Not logged in"))
+            if is_gui_running:
+                try:
+                    root.after(0, lambda: schema2_status.config(text="Not logged in"))
+                except Exception:
+                    pass
             return
 
         # If get_db_connection returned a connection, close it and use the stored session credentials
@@ -1472,11 +1492,21 @@ def launch_tool_gui():
     # --- Load button handlers ---
     def launch_load_schema1():
         from loaders.excel_csv_loader import load_files_gui
-        load_files_gui(parent=root, schema_choice='user', on_status_change=_update_status_light)
+        _update_status_light('busy')
+        def on_close():
+            _update_status_light('idle')
+            if session.get_credentials('schema1'):
+                refresh_schema1_objects()
+        load_files_gui(parent=root, schema_choice='user', on_status_change=_update_status_light, on_finish=on_close)
 
     def launch_load_schema2():
         from loaders.excel_csv_loader import load_files_gui
-        load_files_gui(parent=root, schema_choice='dwh', on_status_change=_update_status_light)
+        _update_status_light('busy')
+        def on_close():
+            _update_status_light('idle')
+            if session.get_credentials('schema2'):
+                refresh_schema2_objects()
+        load_files_gui(parent=root, schema_choice='dwh', on_status_change=_update_status_light, on_finish=on_close)
 
     schema1_load_btn.config(command=launch_load_schema1)
     schema2_load_btn.config(command=launch_load_schema2)
@@ -1630,20 +1660,20 @@ def launch_tool_gui():
     def launch_pk_schema1():
         from tools.pk_designate_gui import main as pk_main
         _update_status_light('busy')
-        pk_main(parent=root, schema_choice='user')
-        _update_status_light('idle')
-        # Only auto-refresh if user successfully logged in (has credentials)
-        if session.get_credentials('schema1'):
-            refresh_schema1_objects()
+        def on_close():
+            _update_status_light('idle')
+            if session.get_credentials('schema1'):
+                refresh_schema1_objects()
+        pk_main(parent=root, schema_choice='user', on_finish=on_close)
 
     def launch_pk_schema2():
         from tools.pk_designate_gui import main as pk_main
         _update_status_light('busy')
-        pk_main(parent=root, schema_choice='dwh')
-        _update_status_light('idle')
-        # Only auto-refresh if user successfully logged in (has credentials)
-        if session.get_credentials('schema2'):
-            refresh_schema2_objects()
+        def on_close():
+            _update_status_light('idle')
+            if session.get_credentials('schema2'):
+                refresh_schema2_objects()
+        pk_main(parent=root, schema_choice='dwh', on_finish=on_close)
 
     schema1_pk_btn.config(command=launch_pk_schema1)
     schema2_pk_btn.config(command=launch_pk_schema2)
@@ -2711,7 +2741,13 @@ def launch_tool_gui():
         def _launch_mv_manager():
             try:
                 from tools.mv_refresh_gui import run_mv_refresh_gui
-                run_mv_refresh_gui(parent)
+                def on_close():
+                    # Refresh both panes since MV manager can affect both schemas
+                    if session.get_credentials('schema1'):
+                        refresh_schema1_objects()
+                    if session.get_credentials('schema2'):
+                        refresh_schema2_objects()
+                run_mv_refresh_gui(on_finish=on_close)
             except Exception as e:
                 try:
                     from tkinter import messagebox
@@ -2804,6 +2840,16 @@ def launch_tool_gui():
             _toggle_dark()
     except Exception:
         pass
+
+    # Auto-refresh object panes on startup if saved credentials exist
+    def _auto_refresh_on_startup():
+        """Auto-refresh object panes if saved credentials exist (not a brand new launch)."""
+        if session.get_credentials('schema1'):
+            refresh_schema1_objects()
+        if session.get_credentials('schema2'):
+            refresh_schema2_objects()
+
+    root.after(100, _auto_refresh_on_startup)
 
     root.mainloop()
 

@@ -1023,12 +1023,8 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
                     cursor.close()
             except Exception as e:
                 logger.warning(f"⚠️ Failed to close cursor: {e}")
-
-            try:
-                if conn:
-                    conn.close()
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to close connection: {e}")
+            # Connection stays open for consecutive MV creations
+            # It will be closed when the window is destroyed via session cleanup
 
     def on_cancel():
         builder_window.destroy()
@@ -1219,39 +1215,39 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10))
     sql_text.pack(padx=10, pady=(0, 10), fill="both", expand=False)
 
-    # Use a grid-based control area so widgets can expand proportionally
-    control_frame = tk.Frame(builder_window)
-    control_frame.pack(pady=8, fill="x", padx=12)
+    # Shared container for name row and buttons to ensure alignment
+    control_container = tk.Frame(builder_window)
+    control_container.pack(pady=8)
 
-    # Row 0: MV name + DWH checkbox
-    tk.Label(control_frame, text="Materialized View Name:").grid(row=0, column=0, sticky="w")
+    # Name row - label outside, entry inside
+    name_row = tk.Frame(control_container)
+    name_row.pack(pady=(0, 10))
+
+    tk.Label(name_row, text="Materialized View Name:").pack(side="left", padx=(0, 5))
     # Create MV name entry with initial theme to avoid flash
     try:
         if _initial_dark:
-            mv_name_entry = tk.Entry(control_frame, bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+            mv_name_entry = tk.Entry(name_row, width=33, bg='#000000', fg='#ffffff', insertbackground='#ffffff')
         else:
-            mv_name_entry = tk.Entry(control_frame)
+            mv_name_entry = tk.Entry(name_row, width=33)
     except Exception:
-        mv_name_entry = tk.Entry(control_frame)
-    mv_name_entry.grid(row=0, column=1, sticky="we", padx=(6, 12))
+        mv_name_entry = tk.Entry(name_row, width=33)
+    mv_name_entry.pack(side="left")
 
-    # Configure grid weights so the entry expands
-    control_frame.grid_columnconfigure(1, weight=1)
-
-    # Row 1: Parameter frames
-    param_frame = tk.Frame(control_frame)
-    param_frame.grid(row=1, column=0, columnspan=3, pady=(10, 0), sticky="we")
+    # Row 1: Parameter frames (centered)
+    param_frame = tk.Frame(control_container)
+    param_frame.pack(pady=(0, 10))
 
     # Build mode
     build_frame = tk.LabelFrame(param_frame, text="Build", padx=8, pady=6)
-    build_frame.pack(side="left", padx=(0, 12))
+    build_frame.pack(side="left", padx=8)
     build_var = tk.StringVar(value="IMMEDIATE")
     tk.Radiobutton(build_frame, text="IMMEDIATE", variable=build_var, value="IMMEDIATE").pack(anchor="w")
     tk.Radiobutton(build_frame, text="DEFERRED", variable=build_var, value="DEFERRED").pack(anchor="w")
 
     # Refresh method
     refresh_frame = tk.LabelFrame(param_frame, text="Refresh Method", padx=8, pady=6)
-    refresh_frame.pack(side="left", padx=(0, 12))
+    refresh_frame.pack(side="left", padx=8)
     refresh_method_var = tk.StringVar(value="COMPLETE")
     tk.Radiobutton(refresh_frame, text="COMPLETE", variable=refresh_method_var, value="COMPLETE").pack(anchor="w")
     # FAST refresh removed from UI because it's environment/version dependent and
@@ -1262,24 +1258,25 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
 
     # Refresh trigger
     trigger_frame = tk.LabelFrame(param_frame, text="Refresh Trigger", padx=8, pady=6)
-    trigger_frame.pack(side="left", padx=(0, 12))
+    trigger_frame.pack(side="left", padx=8)
     refresh_trigger_var = tk.StringVar(value="ON DEMAND")
     tk.Radiobutton(trigger_frame, text="ON DEMAND", variable=refresh_trigger_var, value="ON DEMAND").pack(anchor="w")
     tk.Radiobutton(trigger_frame, text="ON COMMIT", variable=refresh_trigger_var, value="ON COMMIT").pack(anchor="w")
 
-    # Query rewrite
-    right_col = tk.Frame(param_frame)
-    right_col.pack(side="left", padx=(0, 12))
+    # Row 2: Query Rewrite checkbox (centered)
+    rewrite_frame = tk.Frame(control_container)
+    rewrite_frame.pack(pady=(0, 15))
     rewrite_var = tk.BooleanVar(value=False)
-    rewrite_chk = tk.Checkbutton(right_col, text="Enable Query Rewrite", variable=rewrite_var)
-    rewrite_chk.pack(anchor="n", pady=(6, 0))
+    rewrite_chk = tk.Checkbutton(rewrite_frame, text="Enable Query Rewrite", variable=rewrite_var)
+    rewrite_chk.pack()
 
-    btn_frame = tk.Frame(builder_window)
-    btn_frame.pack(pady=15)
+    # Button row - inside same container for alignment
+    btn_frame = tk.Frame(control_container)
+    btn_frame.pack()
 
     # Create buttons with references for dark mode styling
-    btn_create_mv = tk.Button(btn_frame, text="Create Materialized View", command=on_submit, width=22)
-    btn_cancel_mv = tk.Button(btn_frame, text="Cancel", command=on_cancel, width=10)
+    btn_create_mv = tk.Button(btn_frame, text="Create", command=on_submit, width=10)
+    btn_cancel_mv = tk.Button(btn_frame, text="Close", command=on_cancel, width=10)
     btn_create_mv.pack(side="left", padx=10)
     btn_cancel_mv.pack(side="left", padx=10)
     _all_buttons.extend([btn_create_mv, btn_cancel_mv])

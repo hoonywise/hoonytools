@@ -193,12 +193,13 @@ def _sanitize_constraint_name(name: str) -> str:
     return cand[:30]
 
 
-def main(parent=None, schema_choice=None):
+def main(parent=None, schema_choice=None, on_finish=None):
     """Entry point for the PK designate tool. Accepts optional parent for proper dialog parenting.
     
     Args:
         parent: Optional parent window for modal behavior
         schema_choice: Optional 'user' or 'dwh' to skip the schema selection prompt
+        on_finish: Optional callback function called when the dialog is closed
     """
     if schema_choice is None:
         schema_choice = prompt_schema_choice(parent)
@@ -920,6 +921,13 @@ def main(parent=None, schema_choice=None):
         session.close_connections(target)
     except Exception:
         logger.debug('Session cleanup failed', exc_info=True)
+
+    # Call on_finish callback when dialog is closed
+    if on_finish:
+        try:
+            on_finish()
+        except Exception:
+            pass
 
 if __name__ == '__main__':
     main()

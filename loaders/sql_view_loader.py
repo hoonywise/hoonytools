@@ -142,7 +142,14 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
         cursor = None
         try:
             cursor = conn.cursor()
+            # Build DDL with optional clauses
             ddl = f"CREATE OR REPLACE VIEW {view_name} AS {sql_query}"
+            # Add optional clauses (WITH READ ONLY and WITH CHECK OPTION are mutually exclusive in practice,
+            # but Oracle will raise an error if both are specified, so we let Oracle handle validation)
+            if read_only_var.get():
+                ddl += " WITH READ ONLY"
+            elif check_option_var.get():
+                ddl += " WITH CHECK OPTION"
             cursor.execute(ddl)
 
             # ✅ Grant select to PUBLIC
@@ -188,7 +195,7 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
     # Create Toplevel with optional parent so the window can be modal
     builder_window = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
     builder_window.title("SQL View Loader")
-    builder_window.geometry("800x600")
+    builder_window.geometry("1300x740")
 
     # If launched from the main launcher, make the window transient and modal
     grabbed = False
@@ -226,38 +233,55 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
         except Exception:
             pass
 
-    tk.Label(builder_window, text="Enter SQL to turn into a view:", font=("Arial", 11, "bold")).pack(pady=(10, 5))
+    tk.Label(builder_window, text="Enter SQL to turn into a VIEW:", font=("Arial", 11, "bold")).pack(pady=(10, 5))
 
     # Create SQL text with initial theme to avoid visible white -> black flip
     try:
         if _initial_dark:
-            sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10), bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
+            sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
         else:
-            sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10), bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
+            sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
     except Exception:
-        sql_text = scrolledtext.ScrolledText(builder_window, width=95, height=20, font=("Courier New", 10))
-    sql_text.pack(padx=10, pady=(0, 10))
+        sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10))
+    sql_text.pack(padx=10, pady=(0, 10), fill="both", expand=False)
 
-    control_frame = tk.Frame(builder_window)
-    control_frame.pack(pady=5)
+    # Shared container for name row and buttons to ensure alignment
+    control_container = tk.Frame(builder_window)
+    control_container.pack(pady=8)
 
-    tk.Label(control_frame, text="View Name:").grid(row=0, column=0, padx=(0, 5))
+    # Name row - label outside, entry inside a fixed-width inner frame
+    name_row = tk.Frame(control_container)
+    name_row.pack(pady=(0, 10))
+
+    tk.Label(name_row, text="View Name:").pack(side="left", padx=(0, 5))
     # Create the view name entry with initial theme to avoid flash
     try:
         if _initial_dark:
-            view_name_entry = tk.Entry(control_frame, width=40, bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+            view_name_entry = tk.Entry(name_row, width=33, bg='#000000', fg='#ffffff', insertbackground='#ffffff')
         else:
-            view_name_entry = tk.Entry(control_frame, width=40)
+            view_name_entry = tk.Entry(name_row, width=33)
     except Exception:
-        view_name_entry = tk.Entry(control_frame, width=40)
-    view_name_entry.grid(row=0, column=1, padx=(0, 20))
+        view_name_entry = tk.Entry(name_row, width=33)
+    view_name_entry.pack(side="left")
 
-    btn_frame = tk.Frame(builder_window)
-    btn_frame.pack(pady=15)
+    # Options row - checkboxes for view options (centered)
+    options_row = tk.Frame(control_container)
+    options_row.pack(pady=(0, 15))
+
+    read_only_var = tk.BooleanVar(value=False)
+    check_option_var = tk.BooleanVar(value=False)
+    chk_read_only = tk.Checkbutton(options_row, text="WITH READ ONLY", variable=read_only_var)
+    chk_check_option = tk.Checkbutton(options_row, text="WITH CHECK OPTION", variable=check_option_var)
+    chk_read_only.pack(side="left", padx=10)
+    chk_check_option.pack(side="left", padx=10)
+
+    # Button row - inside same container for alignment
+    btn_frame = tk.Frame(control_container)
+    btn_frame.pack()
 
     # Create buttons with references for dark mode styling
-    btn_create = tk.Button(btn_frame, text="Create View", command=on_submit, width=15)
-    btn_cancel = tk.Button(btn_frame, text="Cancel", command=on_cancel, width=10)
+    btn_create = tk.Button(btn_frame, text="Create", command=on_submit, width=10)
+    btn_cancel = tk.Button(btn_frame, text="Close", command=on_cancel, width=10)
     btn_create.pack(side="left", padx=10)
     btn_cancel.pack(side="left", padx=10)
     _all_buttons.extend([btn_create, btn_cancel])
