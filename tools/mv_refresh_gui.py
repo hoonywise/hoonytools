@@ -10,16 +10,11 @@ import ctypes
 from libs.paths import ASSETS_PATH
 import re
 
-# Dark mode support
+# Theme support
 try:
-    from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, DARK_BTN_BG, DARK_BTN_ACTIVE_BG, DARK_INSERT_BG
+    from libs import gui_utils
 except Exception:
-    def is_dark_mode_active(): return False
-    DARK_BG = '#000000'
-    DARK_FG = '#ffffff'
-    DARK_BTN_BG = '#333333'
-    DARK_BTN_ACTIVE_BG = '#222222'
-    DARK_INSERT_BG = '#ffffff'
+    gui_utils = None
 
 logger = logging.getLogger(__name__)
 
@@ -960,7 +955,7 @@ def run_mv_refresh_gui(on_finish=None):
                                     return 'drop' if ans else None
 
                                 # Detect dark mode for pane-only styling (ScrolledText widgets)
-                                _is_dark = is_dark_mode_active()
+                                _is_dark = gui_utils.is_dark_theme() if gui_utils else False
 
                                 tk.Label(dlg, text=f"A materialized view log already exists on {table_name}.").pack(padx=12, pady=(8,4), anchor='w')
                                 
@@ -977,9 +972,9 @@ def run_mv_refresh_gui(on_finish=None):
                                     deps_box.insert('1.0', '(none detected)')
                                 deps_box.config(state='disabled')
                                 
-                                # Apply dark mode to deps_box (pane-only)
-                                if _is_dark:
-                                    deps_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
+                                # Apply current theme to deps_box (pane-only)
+                                if _is_dark and gui_utils:
+                                    gui_utils.apply_theme_to_pane(deps_box)
 
                                 tk.Label(dlg, text="Existing log columns:").pack(padx=12, anchor='w')
                                 
@@ -1000,9 +995,9 @@ def run_mv_refresh_gui(on_finish=None):
                                 ddl_box.insert('1.0', desired_sql_text)
                                 ddl_box.config(state='disabled')
                                 
-                                # Apply dark mode to ddl_box (pane-only)
-                                if _is_dark:
-                                    ddl_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
+                                # Apply current theme to ddl_box (pane-only)
+                                if _is_dark and gui_utils:
+                                    gui_utils.apply_theme_to_pane(ddl_box)
 
                                 def show_diag():
                                     try:

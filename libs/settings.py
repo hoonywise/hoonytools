@@ -279,51 +279,96 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
     Returns:
         The built frame
     """
+    from libs import gui_utils
+    
     # Main container
     container = tk.Frame(parent_frame, bg='SystemButtonFace')
     container.pack(fill='both', expand=True, padx=10, pady=10)
 
     # Theme LabelFrame
-    theme_frame = tk.LabelFrame(container, text="Theme", padx=10, pady=10)
+    theme_frame = tk.LabelFrame(container, text="Themes", padx=10, pady=10)
     theme_frame.pack(fill='x', pady=(0, 10))
 
-    # Get current dark mode state - prefer live state from parent, fallback to config.ini
-    current_dark_mode = False
-    parent = entry_refs.get('_parent')
-    if parent and hasattr(parent, '_dark_mode_var'):
-        try:
-            current_dark_mode = parent._dark_mode_var.get()
-        except Exception:
-            pass
-    else:
-        # Fallback: load from config.ini
-        cfg = _load_config()
-        current_dark_mode = cfg.getboolean('preferences', 'dark_mode', fallback=False)
-
-    # Dark Mode checkbox
-    dark_mode_var = tk.BooleanVar(value=current_dark_mode)
-    entry_refs['dark_mode_var'] = dark_mode_var
-
-    def _on_dark_mode_toggle():
-        """Immediately apply dark mode toggle without requiring OK/Apply."""
-        dark_mode_enabled = dark_mode_var.get()
-        # Get parent from entry_refs in case it was updated
-        _parent = entry_refs.get('_parent')
-        if _parent and hasattr(_parent, '_dark_mode_var'):
-            parent_var = _parent._dark_mode_var
-            # Update parent's var and trigger toggle
-            parent_var.set(dark_mode_enabled)
-            # Trigger the toggle callback if it exists
-            if hasattr(_parent, '_toggle_dark'):
-                _parent._toggle_dark()
-
-    dark_mode_check = tk.Checkbutton(
-        theme_frame,
-        text="Dark Mode (applies to panes and menu bar)",
-        variable=dark_mode_var,
-        command=_on_dark_mode_toggle
+    # Theme selection row
+    theme_row = tk.Frame(theme_frame)
+    theme_row.pack(fill='x', pady=5)
+    
+    tk.Label(theme_row, text="Theme Preset:").pack(side='left', padx=(0, 10))
+    
+    # Get display names for dropdown (ordered from dark to light)
+    theme_names = gui_utils.get_theme_names()
+    display_names = [gui_utils.get_theme_display_name(k) for k in theme_names]
+    
+    # Get current theme
+    current_theme_key = gui_utils.get_current_theme()
+    current_display_name = gui_utils.get_theme_display_name(current_theme_key)
+    
+    # Create dropdown
+    theme_var = tk.StringVar(value=current_display_name)
+    entry_refs['theme_var'] = theme_var
+    
+    theme_dropdown = ttk.Combobox(
+        theme_row,
+        textvariable=theme_var,
+        values=display_names,
+        state='readonly',
+        width=20
     )
-    dark_mode_check.pack(anchor='w', pady=5)
+    theme_dropdown.pack(side='left')
+    
+    def _on_theme_change(event=None):
+        """Apply theme immediately when selection changes (live preview)."""
+        selected_display_name = theme_var.get()
+        # Convert display name to theme key
+        name_to_key = gui_utils.get_display_name_to_key()
+        theme_key = name_to_key.get(selected_display_name, 'system_light')
+        # Set theme (this saves to config and triggers callbacks)
+        gui_utils.set_theme(theme_key)
+    
+    theme_dropdown.bind('<<ComboboxSelected>>', _on_theme_change)
+    
+    # Customize button (disabled for Phase 1)
+    customize_btn = tk.Button(
+        theme_row,
+        text="Customize...",
+        state='disabled',
+        command=lambda: None
+    )
+    customize_btn.pack(side='left', padx=(10, 0))
+    
+    # Add tooltip for disabled button
+    try:
+        from tkinter import Toplevel
+        
+        def _show_tooltip(event):
+            tooltip = Toplevel(customize_btn)
+            tooltip.wm_overrideredirect(True)
+            tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+            label = tk.Label(tooltip, text="Coming in future update", 
+                           background="#ffffe0", relief='solid', borderwidth=1,
+                           padx=5, pady=2)
+            label.pack()
+            customize_btn._tooltip = tooltip
+            
+        def _hide_tooltip(event):
+            if hasattr(customize_btn, '_tooltip'):
+                try:
+                    customize_btn._tooltip.destroy()
+                except Exception:
+                    pass
+        
+        customize_btn.bind('<Enter>', _show_tooltip)
+        customize_btn.bind('<Leave>', _hide_tooltip)
+    except Exception:
+        pass
+    
+    # Theme description
+    desc_label = tk.Label(
+        theme_frame,
+        text="Choose a theme preset. Changes apply immediately.",
+        fg='gray'
+    )
+    desc_label.pack(anchor='w', pady=(10, 0))
 
     # Pack button frame at bottom with right alignment
     button_frame.pack(side='bottom', fill='x', padx=10, pady=(10, 10))
@@ -607,13 +652,8 @@ def show_settings(parent=None):
             if cfg.has_section('schema2'):
                 cfg.remove_section('schema2')
 
-        # Save Appearance settings (Dark Mode)
-        dark_mode_var = entry_refs.get('dark_mode_var')
-        if dark_mode_var is not None:
-            dark_mode_enabled = dark_mode_var.get()
-            if not cfg.has_section('preferences'):
-                cfg.add_section('preferences')
-            cfg.set('preferences', 'dark_mode', str(dark_mode_enabled).lower())
+        # Note: Theme settings are saved automatically via gui_utils.set_theme()
+        # when the user changes the dropdown (live preview)
 
         if _save_config(cfg):
             # Update session memory so login dialog won't appear unnecessarily
@@ -652,23 +692,8 @@ def show_settings(parent=None):
             except Exception:
                 pass
 
-            # Sync Dark Mode with parent window's View menu toggle
-            dark_mode_var = entry_refs.get('dark_mode_var')
-            _parent = entry_refs.get('_parent')
-            if dark_mode_var is not None and _parent:
-                try:
-                    dark_mode_enabled = dark_mode_var.get()
-                    # Check if parent has the dark_mode_var attribute (set by HoonyTools)
-                    if hasattr(_parent, '_dark_mode_var'):
-                        parent_var = _parent._dark_mode_var
-                        # Only toggle if state is different
-                        if parent_var.get() != dark_mode_enabled:
-                            parent_var.set(dark_mode_enabled)
-                            # Trigger the toggle callback if it exists
-                            if hasattr(_parent, '_toggle_dark'):
-                                _parent._toggle_dark()
-                except Exception:
-                    pass
+            # Note: Theme changes are applied live via gui_utils.set_theme()
+            # No sync needed here anymore
 
             # Show non-invasive confirmation message in status bar
             _show_status_message("Settings saved")

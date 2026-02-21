@@ -4,7 +4,7 @@ import logging
 import re
 from libs.oracle_db_connector import get_db_connection
 from libs import session
-from libs.gui_utils import is_dark_mode_active, DARK_BG, DARK_FG, DARK_BTN_BG, DARK_BTN_ACTIVE_BG, DARK_SELECT_BG, DARK_INSERT_BG
+from libs import gui_utils
 import ctypes
 from libs.paths import ASSETS_PATH
 from pathlib import Path
@@ -399,7 +399,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             pass
 
         # Detect dark mode once for pane-only styling (ScrolledText widgets)
-        _is_dark = is_dark_mode_active()
+        _is_dark = gui_utils.is_dark_theme()
 
         lbl_title = tk.Label(dlg, text=f"A materialized view log already exists on {table}.", font=("Arial", 10, "bold"))
         lbl_title.pack(padx=12, pady=(8, 4), anchor='w')
@@ -435,9 +435,9 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             deps_box.insert('1.0', '(none detected)')
         deps_box.config(state='disabled')
         
-        # Apply dark mode to deps_box
+        # Apply current theme to deps_box (pane-only styling)
         if _is_dark:
-            deps_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
+            gui_utils.apply_theme_to_pane(deps_box)
 
         def copy_deps():
             try:
@@ -558,9 +558,9 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         ddl_box.insert("1.0", desired_sql)
         ddl_box.config(state='disabled')
         
-        # Apply dark mode to ddl_box
+        # Apply current theme to ddl_box (pane-only styling)
         if _is_dark:
-            ddl_box.config(bg=DARK_BG, fg=DARK_FG, insertbackground=DARK_INSERT_BG)
+            gui_utils.apply_theme_to_pane(ddl_box)
 
         # Note: Run Explain / MV_CAPABILITIES_TABLE support removed to keep the dialog simple.
         # Advanced EXPLAIN functionality was intentionally removed per UX decision.
@@ -1046,27 +1046,28 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     _all_buttons = []  # Will be populated when buttons are created
 
     def _detect_dark_from_style():
+        """Check if a dark theme is currently active."""
         try:
-            if _ttk:
-                st = _ttk.Style()
-                bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-                if isinstance(bg, str) and bg.strip():
-                    b = bg.strip().lower()
-                    if b in ('#000000', '#000') or 'black' in b:
-                        return True
+            return gui_utils.is_dark_theme()
         except Exception:
             pass
         return False
 
     def _apply_theme(dark: bool):
-        # Only apply dark colors to the SQL text pane and the MV name entry.
+        # Only apply theme colors to the SQL text pane and the MV name entry.
         # Do not darken frames, labelframes, or control panels — keep chrome
         # light so only the content panes change.
         try:
             if dark:
-                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
+                # Get colors from current theme
+                pane_bg = gui_utils.get_color('pane_bg')
+                pane_fg = gui_utils.get_color('pane_fg')
+                insert_bg = gui_utils.get_color('insert_bg')
+                select_bg = gui_utils.get_color('select_bg')
+                
+                sql_text.config(bg=pane_bg, fg=pane_fg, insertbackground=insert_bg, selectbackground=select_bg)
                 try:
-                    mv_name_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
+                    mv_name_entry.config(bg=pane_bg, fg=pane_fg, insertbackground=insert_bg)
                 except Exception:
                     pass
             else:
@@ -1079,10 +1080,12 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
             pass
         # Apply button styling for dark/light mode
         try:
+            pane_bg = gui_utils.get_color('pane_bg') if dark else 'SystemButtonFace'
+            pane_fg = gui_utils.get_color('pane_fg') if dark else 'SystemButtonText'
             for btn in _all_buttons:
                 try:
                     if dark:
-                        btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                        btn.config(bg=pane_bg, fg=pane_fg, activebackground='#222222', activeforeground=pane_fg)
                     else:
                         btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
                 except Exception:
@@ -1126,34 +1129,34 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     except Exception:
         pass
 
-    # Register theme callback with parent when available; otherwise start polling
-    def _theme_cb(enable_dark: bool):
+    # Register theme callback with gui_utils; fallback to parent or polling
+    def _theme_cb(theme_key):
+        """Theme change callback - accepts theme_key from gui_utils."""
         try:
-            _apply_theme(bool(enable_dark))
+            is_dark = gui_utils.is_dark_theme()
+            _apply_theme(is_dark)
         except Exception:
             pass
 
     try:
-        if parent is not None and hasattr(parent, 'register_theme_callback'):
+        # Register with gui_utils theme system
+        gui_utils.register_theme_callback(_theme_cb)
+        
+        # Ensure we unregister when this window is destroyed
+        def _on_destroy(event=None):
             try:
-                parent.register_theme_callback(_theme_cb)
-                # ensure we unregister when this window is destroyed
-                def _on_destroy(event=None):
-                    try:
-                        if parent and hasattr(parent, 'unregister_theme_callback'):
-                            parent.unregister_theme_callback(_theme_cb)
-                    except Exception:
-                        pass
-                try:
-                    builder_window.bind('<Destroy>', _on_destroy)
-                except Exception:
-                    pass
-                # apply current style immediately via callback
-                try:
-                    _theme_cb(_detect_dark_from_style())
-                except Exception:
-                    pass
+                gui_utils.unregister_theme_callback(_theme_cb)
             except Exception:
+                pass
+        try:
+            builder_window.bind('<Destroy>', _on_destroy)
+        except Exception:
+            pass
+        
+        # Apply current theme immediately
+        try:
+            _theme_cb(gui_utils.get_current_theme())
+        except Exception:
                 pass
         else:
             try:

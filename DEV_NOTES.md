@@ -1576,3 +1576,93 @@ else:
 #### Files Updated
 
 - `libs/settings.py` — Fixed `_save()` to preserve credentials when entry widgets don't exist
+
+---
+
+### 🎨 Entry #18: Theme System Architecture (v2.1.8)
+
+**Problem:** The simple Dark Mode toggle (on/off) was too limiting. Users wanted options between pure black and system light, similar to how VS Code offers multiple theme presets.
+
+**Solution:** Implemented a theme system with 7 preset themes spanning the spectrum from darkest to lightest.
+
+#### Theme System Design
+
+**Core principle:** "Pane-only" theming. Theme colors apply ONLY to content panes (ScrolledText, Treeview, log pane), NOT to dialog chrome (buttons, labels, frames, checkboxes). This ensures a clean look where system widgets remain functional and native-looking.
+
+**Preset themes (dark to light):**
+1. **Pure Black** (`#000000`) — What Dark Mode used to be
+2. **Midnight** (`#0d1117`) — GitHub Dark style
+3. **Charcoal** (`#1e1e1e`) — VS Code Dark style
+4. **Slate** (`#2d2d2d`) — Softer dark
+5. **Graphite** (`#3c3f41`) — Medium grey
+6. **Silver** (`#f0f0f0`) — Near-white
+7. **System Light** (`SystemWindow`) — Windows default
+
+**Color keys per theme:**
+- `pane_bg` — Background color for text panes
+- `pane_fg` — Foreground/text color
+- `select_bg` — Selection highlight background
+- `insert_bg` — Cursor/insertion point color
+
+#### Implementation Components
+
+**1. `libs/gui_utils.py` — Theme infrastructure:**
+```python
+PRESET_THEMES = {
+    'pure_black': {'pane_bg': '#000000', 'pane_fg': '#ffffff', ...},
+    'midnight': {'pane_bg': '#0d1117', 'pane_fg': '#c9d1d9', ...},
+    # ... more themes
+}
+
+_current_theme = 'system_light'  # Module state
+_theme_change_callbacks = []     # For live updates
+
+def set_theme(name, save=True):
+    """Set theme, save to config, trigger callbacks."""
+    
+def get_color(key):
+    """Get color from current theme."""
+    
+def register_theme_callback(callback):
+    """Register for theme change notifications."""
+```
+
+**2. Settings UI (`libs/settings.py`):**
+- Theme dropdown in Appearance panel
+- Live preview — `<<ComboboxSelected>>` event triggers `gui_utils.set_theme()`
+- "Customize..." button disabled (Phase 2)
+
+**3. Config migration:**
+- Legacy `[preferences] → dark_mode = true/false` auto-migrates to `[theme] → preset = pure_black/system_light`
+- Legacy key is removed after migration
+
+**4. Callback system:**
+- `gui_utils.register_theme_callback(fn)` — Register to be notified of theme changes
+- `gui_utils.unregister_theme_callback(fn)` — Clean up on window destroy
+- All open dialogs update immediately when theme changes in Settings
+
+#### View Menu Removal
+
+The View menu (which only contained Dark Mode toggle) was removed entirely. Theme selection is now exclusively in Settings > Appearance. This simplifies the UI and centralizes all settings in one place.
+
+#### Backward Compatibility
+
+- `gui_utils.is_dark_mode_active()` now calls `is_dark_theme()` internally
+- `set_panes_dark()` / `set_panes_light()` legacy functions still work
+- Legacy constants (`DARK_BG`, `DARK_FG`, etc.) preserved for any external code
+
+#### Future Phases
+
+**Phase 2 (Custom Colors):**
+- Enable "Customize..." button
+- Color pickers (hex entry + `tkinter.colorchooser.askcolor()`)
+- Custom overrides stored in `[theme.custom]` section
+- Preview panel showing current colors
+
+#### Files Updated
+
+- `libs/gui_utils.py` — Complete rewrite with theme infrastructure
+- `libs/settings.py` — Theme dropdown replaces Dark Mode checkbox
+- `HoonyTools.pyw` — View menu removed, theme loading on startup
+- `loaders/sql_mv_loader.py` — Uses `gui_utils` theme API
+- `tools/mv_refresh_gui.py` — Uses `gui_utils` theme API

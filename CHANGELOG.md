@@ -4,6 +4,48 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🎨 v2.1.8 — Theme System (Phase 1: Preset Themes) (2026-02-21)
+
+This release introduces a comprehensive theme system with 7 preset themes, replacing the simple Dark Mode toggle. Themes are now selected via a dropdown in Settings > Appearance with live preview.
+
+### Added
+
+- **Theme System Infrastructure** (`libs/gui_utils.py`):
+  - 7 preset themes: Pure Black, Midnight, Charcoal, Slate, Graphite, Silver, System Light
+  - Theme colors: `pane_bg`, `pane_fg`, `select_bg`, `insert_bg` for each preset
+  - Functions: `get_theme_names()`, `set_theme()`, `get_color()`, `load_theme_from_config()`, `save_theme_to_config()`
+  - Callback registration for live theme updates across all windows
+  - Automatic migration from legacy `dark_mode` setting to new `theme.preset`
+
+- **Theme Dropdown in Settings**: New "Themes" section in Appearance panel with:
+  - Dropdown to select preset theme (Pure Black to System Light)
+  - Live preview - changes apply immediately when selecting
+  - "Customize..." button (disabled, coming in future update)
+
+### Changed
+
+- **Config Structure**: Theme is now stored in `[theme]` section with `preset` key. Legacy `[preferences]` → `dark_mode` is auto-migrated and removed.
+
+- **Pane-Only Theming**: All preset themes apply colors only to content panes (ScrolledText, Treeview), keeping dialog chrome (buttons, labels, frames) in system default colors.
+
+### Removed
+
+- **View Menu**: Removed entirely from menu bar. Theme selection is now in Settings > Appearance.
+
+- **Dark Mode Checkbox**: Replaced by Theme dropdown in Settings. "Dark Mode" is now the "Pure Black" preset theme.
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `libs/gui_utils.py` | Complete rewrite: added theme presets, theme management functions, config I/O, callbacks |
+| `libs/settings.py` | Replaced Dark Mode checkbox with Theme dropdown, live preview |
+| `HoonyTools.pyw` | Removed View menu, integrated theme loading on startup, updated styling functions to use theme colors |
+| `loaders/sql_mv_loader.py` | Updated to use `gui_utils` theme API |
+| `tools/mv_refresh_gui.py` | Updated to use `gui_utils` theme API |
+
+---
+
 ## 🔧 v2.1.7 — Settings Bug Fix & Logging Cleanup (2026-02-21)
 
 This patch release fixes a critical bug where toggling dark mode in Settings would clear saved credentials, causing login popups to appear for all tools.
