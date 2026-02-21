@@ -486,7 +486,7 @@ def show_splash():
     # === Created by hoonywise ===
     footer_top = tk.Label(
         splash,
-        text="Created by hoonywise Â· hoonywise@proton.me",
+        text="Created by hoonywise · hoonywise@proton.me",
         font=("Arial", 9, "italic"),
         fg="#444444"
     )
