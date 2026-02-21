@@ -106,9 +106,25 @@ def prompt_schema_choice(parent=None):
 
     frm = tk.Frame(win)
     frm.pack(pady=6)
-    Button(frm, text='User Schema', width=12, command=pick_user).pack(side=LEFT, padx=6)
-    Button(frm, text='DWH Schema', width=12, command=pick_dwh).pack(side=LEFT, padx=6)
-    Button(frm, text='Cancel', width=10, command=on_close).pack(side=LEFT, padx=6)
+    # Create buttons with dark mode styling
+    _schema_btns = []
+    btn_user = Button(frm, text='User Schema', width=12, command=pick_user)
+    btn_dwh = Button(frm, text='DWH Schema', width=12, command=pick_dwh)
+    btn_cancel = Button(frm, text='Cancel', width=10, command=on_close)
+    btn_user.pack(side=LEFT, padx=6)
+    btn_dwh.pack(side=LEFT, padx=6)
+    btn_cancel.pack(side=LEFT, padx=6)
+    _schema_btns.extend([btn_user, btn_dwh, btn_cancel])
+    # Apply dark mode styling to buttons
+    try:
+        if ttk:
+            st = ttk.Style()
+            bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+            if isinstance(bg, str) and bg.strip().lower() in ('#000000', '#000', 'black'):
+                for btn in _schema_btns:
+                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+    except Exception:
+        pass
 
     win.protocol('WM_DELETE_WINDOW', on_close)
 
@@ -221,6 +237,9 @@ def main(parent=None, schema_choice=None):
     # Layout: main horizontal frame with left, center, right columns
     main_frame = tk.Frame(win)
     main_frame.pack(fill=BOTH, expand=True, padx=8, pady=8)
+
+    # List to track all buttons for dark mode styling
+    _all_buttons = []
 
     # cache for table statistics to avoid repeated heavy queries
     table_stats = {}
@@ -363,6 +382,18 @@ def main(parent=None, schema_choice=None):
                 cname_entry.config(bg='white', fg='black', insertbackground='black')
         except Exception:
             pass
+        # Apply button styling for dark/light mode
+        try:
+            for btn in _all_buttons:
+                try:
+                    if enable_dark:
+                        btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                    else:
+                        btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # If parent provides registration API, use it for instant callbacks.
     # Otherwise, fall back to polling.
@@ -396,6 +427,15 @@ def main(parent=None, schema_choice=None):
                             cname_entry.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff')
                         else:
                             cname_entry.config(bg='white', fg='black', insertbackground='black')
+                        # Apply button styling
+                        for btn in _all_buttons:
+                            try:
+                                if dark:
+                                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                                else:
+                                    btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
+                            except Exception:
+                                pass
                 except Exception:
                     pass
                 try:
@@ -419,7 +459,9 @@ def main(parent=None, schema_choice=None):
         except Exception:
             pass
 
-    Button(ctrl, text='Show All Columns', command=show_all_columns, width=20).pack(pady=(6,0))
+    btn_show_all = Button(ctrl, text='Show All Columns', command=show_all_columns, width=20)
+    btn_show_all.pack(pady=(6,0))
+    _all_buttons.append(btn_show_all)
     # Help text explaining threshold logic
     help_text = (
         "Threshold behavior: when 'Use row threshold' is checked, DISTINCT checks run only if table rows <= threshold.\n"
@@ -814,6 +856,7 @@ def main(parent=None, schema_choice=None):
     # Move Detect button to center ctrl area (near threshold)
     detect_button = Button(ctrl, text='Detect PK Candidates', command=detect_candidates, width=28)
     detect_button.pack(pady=(8,2))
+    _all_buttons.append(detect_button)
     # Force detect button (runs detect even when threshold would skip it)
     def force_detect():
         # Temporarily disable threshold enforcement and run detect
@@ -824,13 +867,30 @@ def main(parent=None, schema_choice=None):
         threshold_enabled.set(prev)
         _on_threshold_toggle()
 
-    Button(ctrl, text='Force Detect (override threshold)', command=force_detect, width=28).pack(pady=(0,8))
+    btn_force = Button(ctrl, text='Force Detect (override threshold)', command=force_detect, width=28)
+    btn_force.pack(pady=(0,8))
+    _all_buttons.append(btn_force)
 
     btn_frame = tk.Frame(win)
     btn_frame.pack(fill='x', pady=6)
-    Button(btn_frame, text='Reload Tables', command=load_tables, width=14).pack(side=LEFT, padx=6)
-    Button(btn_frame, text='Add PRIMARY KEY', command=add_primary_key, width=16).pack(side=LEFT, padx=6)
-    Button(btn_frame, text='Close', command=win.destroy, width=10).pack(side=RIGHT, padx=6)
+    btn_reload = Button(btn_frame, text='Reload Tables', command=load_tables, width=14)
+    btn_add_pk = Button(btn_frame, text='Add PRIMARY KEY', command=add_primary_key, width=16)
+    btn_close = Button(btn_frame, text='Close', command=win.destroy, width=10)
+    btn_reload.pack(side=LEFT, padx=6)
+    btn_add_pk.pack(side=LEFT, padx=6)
+    btn_close.pack(side=RIGHT, padx=6)
+    _all_buttons.extend([btn_reload, btn_add_pk, btn_close])
+
+    # Apply initial dark mode styling to buttons
+    try:
+        if _detect_dark_from_style():
+            for btn in _all_buttons:
+                try:
+                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
     load_tables()
 

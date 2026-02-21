@@ -131,11 +131,16 @@ def run_mv_refresh_gui(on_finish=None):
     right = tk.Frame(root)
     right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
 
+    # List to track all buttons for dark mode styling
+    _all_buttons = []
+
     # User MVs pane
     tk.Label(left, text="User Materialized Views:").pack(anchor="w")
     user_btn_frame = tk.Frame(left)
     user_btn_frame.pack(fill="x")
-    tk.Button(user_btn_frame, text="Refresh", width=8, command=lambda: load_user_mviews()).pack(side="left")
+    btn_refresh_user = tk.Button(user_btn_frame, text="Refresh", width=8, command=lambda: load_user_mviews())
+    btn_refresh_user.pack(side="left")
+    _all_buttons.append(btn_refresh_user)
     mview_listbox_user = tk.Listbox(left, width=40, height=14)
     mview_listbox_user.pack(fill="y")
 
@@ -143,7 +148,9 @@ def run_mv_refresh_gui(on_finish=None):
     tk.Label(left, text="DWH Materialized Views:").pack(anchor="w", pady=(8,0))
     dwh_btn_frame = tk.Frame(left)
     dwh_btn_frame.pack(fill="x")
-    tk.Button(dwh_btn_frame, text="Refresh DWH", width=12, command=lambda: refresh_dwh_mviews()).pack(side="left")
+    btn_refresh_dwh = tk.Button(dwh_btn_frame, text="Refresh DWH", width=12, command=lambda: refresh_dwh_mviews())
+    btn_refresh_dwh.pack(side="left")
+    _all_buttons.append(btn_refresh_dwh)
     dwh_status_label = tk.Label(dwh_btn_frame, text="(not connected)")
     dwh_status_label.pack(side="left", padx=(6,0))
     mview_listbox_dwh = tk.Listbox(left, width=40, height=14)
@@ -187,6 +194,18 @@ def run_mv_refresh_gui(on_finish=None):
                 sql_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
                 try:
                     info_text.tag_configure('logtype', foreground='blue', selectforeground='#ffffff')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Apply button styling for dark/light mode
+        try:
+            for btn in _all_buttons:
+                try:
+                    if dark:
+                        btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                    else:
+                        btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
                 except Exception:
                     pass
         except Exception:
@@ -742,7 +761,8 @@ def run_mv_refresh_gui(on_finish=None):
                                         except Exception:
                                             pass
 
-                                tk.Button(dlg, text='Show debug info', command=show_diag).pack(padx=12, anchor='w', pady=(4,0))
+                                btn_debug = tk.Button(dlg, text='Show debug info', command=show_diag)
+                                btn_debug.pack(padx=12, anchor='w', pady=(4,0))
 
                                 ack = tk.BooleanVar(value=False)
                                 ack_cb = tk.Checkbutton(dlg, text=f"I understand this will affect the {len(deps)} listed materialized view(s).", variable=ack)
@@ -766,9 +786,20 @@ def run_mv_refresh_gui(on_finish=None):
 
                                 btnf = tk.Frame(dlg)
                                 btnf.pack(pady=8)
-                                tk.Button(btnf, text=f"Reuse Existing Log - {meta_info.get('existing_type','UNKNOWN')}", command=do_reuse, width=26).pack(side='left', padx=(0,6))
-                                tk.Button(btnf, text="Cancel", command=do_cancel, width=10).pack(side='left', padx=6)
-                                tk.Button(btnf, text="Drop & Recreate", command=do_drop, width=14).pack(side='left', padx=6)
+                                btn_reuse = tk.Button(btnf, text=f"Reuse Existing Log - {meta_info.get('existing_type','UNKNOWN')}", command=do_reuse, width=26)
+                                btn_cancel_dlg = tk.Button(btnf, text="Cancel", command=do_cancel, width=10)
+                                btn_drop = tk.Button(btnf, text="Drop & Recreate", command=do_drop, width=14)
+                                btn_reuse.pack(side='left', padx=(0,6))
+                                btn_cancel_dlg.pack(side='left', padx=6)
+                                btn_drop.pack(side='left', padx=6)
+                                # Apply dark mode styling to dialog buttons
+                                _dlg_btns = [btn_debug, btn_reuse, btn_cancel_dlg, btn_drop]
+                                try:
+                                    if _detect_dark_from_style():
+                                        for btn in _dlg_btns:
+                                            btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                                except Exception:
+                                    pass
 
                                 dlg.update_idletasks()
                                 dlg.geometry(f"{dlg.winfo_width()}x{dlg.winfo_height()}+{(dlg.winfo_screenwidth()//2)-(dlg.winfo_width()//2)}+{(dlg.winfo_screenheight()//2)-(dlg.winfo_height()//2)}")
@@ -880,8 +911,22 @@ def run_mv_refresh_gui(on_finish=None):
             except Exception:
                 pass
 
-    tk.Button(btn_frame, text="Refresh MV", command=do_refresh).pack(side="right", padx=6)
-    tk.Button(btn_frame, text="Create Logs", command=do_create_logs).pack(side="right", padx=6)
+    btn_refresh_mv = tk.Button(btn_frame, text="Refresh MV", command=do_refresh)
+    btn_create_logs = tk.Button(btn_frame, text="Create Logs", command=do_create_logs)
+    btn_refresh_mv.pack(side="right", padx=6)
+    btn_create_logs.pack(side="right", padx=6)
+    _all_buttons.extend([btn_refresh_mv, btn_create_logs])
+
+    # Apply initial dark mode styling to buttons
+    try:
+        if _detect_dark_from_style():
+            for btn in _all_buttons:
+                try:
+                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
     # bind both listboxes to the shared handler
     mview_listbox_user.bind('<<ListboxSelect>>', lambda e: on_select(e, source='user'))

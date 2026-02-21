@@ -5,10 +5,41 @@ import oracledb
 import logging
 from tkinter import Toplevel, Label, Checkbutton, IntVar, Button, simpledialog, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, Y, BOTH
 from tkinter import _default_root
+try:
+    import tkinter.ttk as ttk
+except Exception:
+    ttk = None
 from libs.oracle_db_connector import get_db_connection
 from libs import session
 
 logger = logging.getLogger(__name__)
+
+def _detect_dark_from_style():
+    """Detect if dark mode is active by checking ttk style background."""
+    try:
+        if ttk:
+            st = ttk.Style()
+            bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
+            if isinstance(bg, str) and bg.strip():
+                sb = bg.strip().lower()
+                if sb in ('#000000', '#000') or 'black' in sb:
+                    return True
+    except Exception:
+        pass
+    return False
+
+def _apply_dark_mode_to_buttons(buttons, dark=None):
+    """Apply dark or light mode styling to a list of buttons."""
+    if dark is None:
+        dark = _detect_dark_from_style()
+    for btn in buttons:
+        try:
+            if dark:
+                btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
+            else:
+                btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
+        except Exception:
+            pass
 
 # Use shared safe messagebox helper when available for consistent parenting
 try:
@@ -84,6 +115,9 @@ def prompt_schema_choice():
     b1.pack(side="left", padx=5)
     b2.pack(side="left", padx=5)
     b3.pack(side="left", padx=5)
+    
+    # Apply dark mode styling to buttons
+    _apply_dark_mode_to_buttons([b1, b2, b3])
 
     # Enable keyboard focus
     b1.focus()
@@ -116,8 +150,11 @@ def select_tables_gui(tables, title="Select tables to delete from your schema:")
     # Top-aligned buttons
     btn_frame = Frame(window)
     btn_frame.pack(pady=(0, 10))
-    Button(btn_frame, text="OK", width=10, command=on_submit).pack(side="left", padx=20)
-    Button(btn_frame, text="Cancel", width=10, command=on_cancel).pack(side="left", padx=20)
+    btn_ok = Button(btn_frame, text="OK", width=10, command=on_submit)
+    btn_cancel = Button(btn_frame, text="Cancel", width=10, command=on_cancel)
+    btn_ok.pack(side="left", padx=20)
+    btn_cancel.pack(side="left", padx=20)
+    _apply_dark_mode_to_buttons([btn_ok, btn_cancel])
 
     # Scrollable canvas for table list
     canvas = Canvas(window)
@@ -427,8 +464,11 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
 
             btn_frame = tk.Frame(win)
             btn_frame.pack(pady=5)
-            tk.Button(btn_frame, text="OK", width=10, command=submit).pack(side="left", padx=5)
-            tk.Button(btn_frame, text="Cancel", width=10, command=cancel).pack(side="left", padx=5)
+            btn_ok_dlg = tk.Button(btn_frame, text="OK", width=10, command=submit)
+            btn_cancel_dlg = tk.Button(btn_frame, text="Cancel", width=10, command=cancel)
+            btn_ok_dlg.pack(side="left", padx=5)
+            btn_cancel_dlg.pack(side="left", padx=5)
+            _apply_dark_mode_to_buttons([btn_ok_dlg, btn_cancel_dlg])
 
             win.bind("<Return>", lambda event: submit())  # ✅ Enter to submit
             win.grab_set()
@@ -572,15 +612,21 @@ def _show_error_dialog(parent, obj_name, obj_type, error_msg, remaining=0):
         result['choice'] = 'force'
         dlg.destroy()
     
-    tk.Button(btn_frame, text="Stop", width=10, command=stop).pack(side="left", padx=5)
-    tk.Button(btn_frame, text="Skip", width=10, command=skip).pack(side="left", padx=5)
+    btn_stop = tk.Button(btn_frame, text="Stop", width=10, command=stop)
+    btn_skip = tk.Button(btn_frame, text="Skip", width=10, command=skip)
+    btn_stop.pack(side="left", padx=5)
+    btn_skip.pack(side="left", padx=5)
+    _dlg_btns = [btn_stop, btn_skip]
     
     # Only show Force option for TABLEs (CASCADE CONSTRAINTS)
     if obj_type.upper() == 'TABLE':
         force_btn = tk.Button(btn_frame, text="Force Drop", width=12, command=force)
         force_btn.pack(side="left", padx=5)
+        _dlg_btns.append(force_btn)
         # Add tooltip explaining what Force does
         tk.Label(dlg, text="Force Drop: Drops table with CASCADE CONSTRAINTS", font=("Arial", 8), fg="gray").pack()
+    
+    _apply_dark_mode_to_buttons(_dlg_btns)
     
     dlg.wait_window()
     return result['choice']

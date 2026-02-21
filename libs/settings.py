@@ -739,6 +739,9 @@ def show_settings(parent=None):
                           background=[('selected', '#2a6bd6')],
                           foreground=[('selected', '#ffffff')])
                 category_frame.configure(bg='#000000')
+                # Apply dark mode to buttons
+                for btn in (btn_ok, btn_cancel, btn_apply):
+                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
             except Exception:
                 pass
         else:
@@ -753,6 +756,9 @@ def show_settings(parent=None):
                           background=[('selected', '#0078d7')],
                           foreground=[('selected', 'white')])
                 category_frame.configure(bg='SystemButtonFace')
+                # Restore light mode to buttons
+                for btn in (btn_ok, btn_cancel, btn_apply):
+                    btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
             except Exception:
                 pass
 

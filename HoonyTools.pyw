@@ -2012,6 +2012,16 @@ def launch_tool_gui():
                     pane_orig['listbox_options_set'] = True
                 except Exception:
                     pass
+                # Style buttons for dark mode (black background, white text)
+                try:
+                    root.option_add('*Button.background', '#000000')
+                    root.option_add('*Button.foreground', '#ffffff')
+                    root.option_add('*Button.activeBackground', '#222222')
+                    root.option_add('*Button.activeForeground', '#ffffff')
+                    root.option_add('*Button.highlightBackground', '#000000')
+                    pane_orig['button_options_set'] = True
+                except Exception:
+                    pass
                 # Style the top menu bar for pane-only dark mode
                 try:
                     root.option_add('*Menu.background', '#000000')
@@ -2060,6 +2070,78 @@ def launch_tool_gui():
                                     globals()['verse_inner'].config(bg='#000000')
                                 if 'verse_scrollbar' in globals():
                                     globals()['verse_scrollbar'].config(bg='#333333', troughcolor='#000000')
+                            except Exception:
+                                pass
+                            # Style all existing buttons in the main window for dark mode
+                            try:
+                                _dark_btn_style = {'bg': '#000000', 'fg': '#ffffff', 'activebackground': '#222222', 'activeforeground': '#ffffff'}
+                                # Verse buttons
+                                try:
+                                    verse_prev_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    verse_next_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                # Schema1 pane buttons
+                                try:
+                                    schema1_refresh_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema1_load_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema1_drop_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema1_view_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema1_mv_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema1_pk_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema1_index_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                # Schema2 pane buttons
+                                try:
+                                    schema2_refresh_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema2_load_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema2_drop_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema2_view_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema2_mv_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema2_pk_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema2_index_btn.config(**_dark_btn_style)
+                                except Exception:
+                                    pass
                             except Exception:
                                 pass
                     except Exception:
@@ -2194,6 +2276,15 @@ def launch_tool_gui():
                         root.option_add('*Listbox.selectBackground', '#2a6bd6')
                     except Exception:
                         pass
+                    # Restore button option defaults to light values
+                    try:
+                        root.option_add('*Button.background', 'SystemButtonFace')
+                        root.option_add('*Button.foreground', 'black')
+                        root.option_add('*Button.activeBackground', 'SystemButtonFace')
+                        root.option_add('*Button.activeForeground', 'black')
+                        root.option_add('*Button.highlightBackground', 'SystemButtonFace')
+                    except Exception:
+                        pass
                     # Restore menu bar to light appearance
                     try:
                         root.option_add('*Menu.background', '#d0d0d0')
@@ -2242,6 +2333,78 @@ def launch_tool_gui():
                                     globals()['verse_text'].config(bg='white', fg='black')
                                 if 'verse_inner' in globals():
                                     globals()['verse_inner'].config(bg='white')
+                            except Exception:
+                                pass
+                            # Restore all existing buttons in the main window to light mode
+                            try:
+                                _light_btn_style = {'bg': 'SystemButtonFace', 'fg': 'black', 'activebackground': 'SystemButtonFace', 'activeforeground': 'black'}
+                                # Verse buttons
+                                try:
+                                    verse_prev_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    verse_next_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                # Schema1 pane buttons
+                                try:
+                                    schema1_refresh_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema1_load_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema1_drop_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema1_view_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema1_mv_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema1_pk_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema1_index_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                # Schema2 pane buttons
+                                try:
+                                    schema2_refresh_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema2_load_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema2_drop_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema2_view_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema2_mv_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema2_pk_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
+                                try:
+                                    schema2_index_btn.config(**_light_btn_style)
+                                except Exception:
+                                    pass
                             except Exception:
                                 pass
                     except Exception:
