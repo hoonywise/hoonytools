@@ -11,10 +11,7 @@ from libs.paths import ASSETS_PATH
 import re
 
 # Theme support
-try:
-    from libs import gui_utils
-except Exception:
-    gui_utils = None
+from libs import gui_utils
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +107,10 @@ def run_mv_refresh_gui(on_finish=None):
 
     root = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
     root.title("Materialized View Manager")
+    
+    # Apply theme immediately after creating dialog, before adding widgets
+    gui_utils.apply_theme_to_dialog(root)
+    
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("hoonywise.hoonytools")
         icon_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
@@ -143,9 +144,6 @@ def run_mv_refresh_gui(on_finish=None):
     right = tk.Frame(root)
     right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
 
-    # List to track all buttons for dark mode styling
-    _all_buttons = []
-
     # Schema 1 MVs pane (LabelFrame with dynamic header and count)
     user_frame = tk.LabelFrame(left, padx=6, pady=6)
     user_frame.pack(fill="both", pady=(0, 8), expand=True)
@@ -165,10 +163,8 @@ def run_mv_refresh_gui(on_finish=None):
     user_btn_frame.pack(fill="x")
     btn_refresh_user = tk.Button(user_btn_frame, text="Refresh", width=8, command=lambda: load_user_mviews())
     btn_refresh_user.pack(side="left")
-    _all_buttons.append(btn_refresh_user)
     btn_reset_user = tk.Button(user_btn_frame, text="Reset", width=8, command=lambda: (mview_listbox_user.selection_clear(0, tk.END), on_select(None, source='user')))
     btn_reset_user.pack(side="left", padx=(6, 0))
-    _all_buttons.append(btn_reset_user)
 
     mview_listbox_user = tk.Listbox(user_frame, width=40, height=14, selectmode=tk.EXTENDED, exportselection=False)
     mview_listbox_user.pack(fill="both", expand=True)
@@ -190,10 +186,8 @@ def run_mv_refresh_gui(on_finish=None):
     dwh_btn_frame.pack(fill="x")
     btn_refresh_dwh = tk.Button(dwh_btn_frame, text="Refresh", width=8, command=lambda: refresh_dwh_mviews())
     btn_refresh_dwh.pack(side="left")
-    _all_buttons.append(btn_refresh_dwh)
     btn_reset_dwh = tk.Button(dwh_btn_frame, text="Reset", width=8, command=lambda: (mview_listbox_dwh.selection_clear(0, tk.END), on_select(None, source='dwh')))
     btn_reset_dwh.pack(side="left", padx=(6, 0))
-    _all_buttons.append(btn_reset_dwh)
 
     mview_listbox_dwh = tk.Listbox(dwh_frame, width=40, height=14, selectmode=tk.EXTENDED, exportselection=False)
     mview_listbox_dwh.pack(fill="both", expand=True)
@@ -228,58 +222,11 @@ def run_mv_refresh_gui(on_finish=None):
 
     info_text = tk.Text(right, height=8)
     info_text.pack(fill="x")
+    gui_utils.apply_theme_to_pane(info_text)
 
     sql_text = tk.Text(right, height=16)
     sql_text.pack(fill="both", expand=True, pady=(6, 0))
-
-    # Theme helper: detect launcher pane-only dark mode by checking ttk style
-    # lookups (launcher configures Pane.Treeview when toggling). Prefer using
-    # the launcher's callback registration API when available; fall back to
-    # polling the style lookup.
-    last_dark = None
-    def _detect_dark_from_style():
-        try:
-            if ttk:
-                st = ttk.Style()
-                bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-                if isinstance(bg, str) and bg.strip():
-                    b = bg.strip().lower()
-                    if b in ('#000000', '#000') or 'black' in b:
-                        return True
-        except Exception:
-            pass
-        return False
-
-    def _apply_text_theme(dark):
-        try:
-            if dark:
-                info_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
-                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
-                try:
-                    info_text.tag_configure('logtype', foreground='#66ccff', selectforeground='#ffffff')
-                except Exception:
-                    pass
-            else:
-                info_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
-                sql_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
-                try:
-                    info_text.tag_configure('logtype', foreground='blue', selectforeground='#ffffff')
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # Apply button styling for dark/light mode
-        try:
-            for btn in _all_buttons:
-                try:
-                    if dark:
-                        btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-                    else:
-                        btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
-                except Exception:
-                    pass
-        except Exception:
-            pass
+    gui_utils.apply_theme_to_pane(sql_text)
 
     # Helpers to update dynamic header labels and counts
     def update_user_header():
@@ -302,61 +249,28 @@ def run_mv_refresh_gui(on_finish=None):
         except Exception:
             pass
 
-    # Callback invoked by launcher when theme toggles
-    def _theme_cb(enable_dark: bool):
+    # Live theme update callback
+    def _on_theme_change(theme_key):
+        """Theme change callback - applies theme to all existing widgets."""
         try:
-            _apply_text_theme(bool(enable_dark))
+            gui_utils.apply_theme_to_existing_widgets(root)
+            # Re-apply pane theming for Text widgets
+            gui_utils.apply_theme_to_pane(info_text)
+            gui_utils.apply_theme_to_pane(sql_text)
         except Exception:
             pass
 
-    # Register with parent if possible; otherwise start polling as a fallback
+    # Register theme callback and unregister on destroy
     try:
-        if parent and hasattr(parent, 'register_theme_callback'):
-            try:
-                parent.register_theme_callback(_theme_cb)
-            except Exception:
-                pass
-
-            # Ensure we unregister when this window is destroyed
-            def _on_destroy(event=None):
+        gui_utils.register_theme_callback(_on_theme_change)
+        
+        def _on_destroy(event=None):
+            if event and event.widget == root:
                 try:
-                    if parent and hasattr(parent, 'unregister_theme_callback'):
-                        parent.unregister_theme_callback(_theme_cb)
+                    gui_utils.unregister_theme_callback(_on_theme_change)
                 except Exception:
                     pass
-            try:
-                root.bind('<Destroy>', _on_destroy)
-            except Exception:
-                pass
-
-            # Apply current style immediately
-            try:
-                _apply_text_theme(_detect_dark_from_style())
-            except Exception:
-                pass
-        else:
-            # Polling fallback
-            def _poll_theme():
-                nonlocal last_dark
-                try:
-                    dark = _detect_dark_from_style()
-                    if dark is not last_dark:
-                        last_dark = dark
-                        _apply_text_theme(dark)
-                except Exception:
-                    pass
-                try:
-                    root.after(600, _poll_theme)
-                except Exception:
-                    pass
-            try:
-                _apply_text_theme(_detect_dark_from_style())
-            except Exception:
-                pass
-            try:
-                root.after(600, _poll_theme)
-            except Exception:
-                pass
+        root.bind('<Destroy>', _on_destroy)
     except Exception:
         pass
 
@@ -949,13 +863,14 @@ def run_mv_refresh_gui(on_finish=None):
                                 try:
                                     dlg = tk.Toplevel(root)
                                     dlg.title(f"Existing MV Log on {table_name}")
+                                    
+                                    # Apply theme immediately after creating dialog
+                                    gui_utils.apply_theme_to_dialog(dlg)
+                                    
                                     dlg.grab_set()
                                 except Exception:
                                     ans = _safe_messagebox('askyesno', "Existing MV Log Detected", f"A materialized view log already exists on {table_name}.\nDrop and recreate?", dlg=root)
                                     return 'drop' if ans else None
-
-                                # Detect dark mode for pane-only styling (ScrolledText widgets)
-                                _is_dark = gui_utils.is_dark_theme() if gui_utils else False
 
                                 tk.Label(dlg, text=f"A materialized view log already exists on {table_name}.").pack(padx=12, pady=(8,4), anchor='w')
                                 
@@ -971,10 +886,7 @@ def run_mv_refresh_gui(on_finish=None):
                                 else:
                                     deps_box.insert('1.0', '(none detected)')
                                 deps_box.config(state='disabled')
-                                
-                                # Apply current theme to deps_box (pane-only)
-                                if _is_dark and gui_utils:
-                                    gui_utils.apply_theme_to_pane(deps_box)
+                                gui_utils.apply_theme_to_pane(deps_box)
 
                                 tk.Label(dlg, text="Existing log columns:").pack(padx=12, anchor='w')
                                 
@@ -994,10 +906,7 @@ def run_mv_refresh_gui(on_finish=None):
                                 ddl_box.pack(padx=12, pady=(4,6))
                                 ddl_box.insert('1.0', desired_sql_text)
                                 ddl_box.config(state='disabled')
-                                
-                                # Apply current theme to ddl_box (pane-only)
-                                if _is_dark and gui_utils:
-                                    gui_utils.apply_theme_to_pane(ddl_box)
+                                gui_utils.apply_theme_to_pane(ddl_box)
 
                                 def show_diag():
                                     try:
@@ -1080,6 +989,28 @@ def run_mv_refresh_gui(on_finish=None):
                                 btn_reuse.pack(side='left', padx=(0,6))
                                 btn_cancel_dlg.pack(side='left', padx=6)
                                 btn_drop.pack(side='left', padx=6)
+
+                                # Live theme update callback
+                                def _on_dlg_theme_change(theme_key):
+                                    try:
+                                        gui_utils.apply_theme_to_existing_widgets(dlg)
+                                        gui_utils.apply_theme_to_pane(deps_box)
+                                        gui_utils.apply_theme_to_pane(ddl_box)
+                                    except Exception:
+                                        pass
+                                
+                                # Register theme callback and unregister on destroy
+                                try:
+                                    gui_utils.register_theme_callback(_on_dlg_theme_change)
+                                    def _on_dlg_destroy(event=None):
+                                        if event and event.widget == dlg:
+                                            try:
+                                                gui_utils.unregister_theme_callback(_on_dlg_theme_change)
+                                            except Exception:
+                                                pass
+                                    dlg.bind('<Destroy>', _on_dlg_destroy)
+                                except Exception:
+                                    pass
 
                                 dlg.update_idletasks()
                                 dlg.geometry(f"{dlg.winfo_width()}x{dlg.winfo_height()}+{(dlg.winfo_screenwidth()//2)-(dlg.winfo_width()//2)}+{(dlg.winfo_screenheight()//2)-(dlg.winfo_height()//2)}")
@@ -1199,18 +1130,6 @@ def run_mv_refresh_gui(on_finish=None):
     btn_close.pack(side="right", padx=6)
     btn_refresh_mv.pack(side="right", padx=(6, 20))
     btn_create_logs.pack(side="right", padx=6)
-    _all_buttons.extend([btn_refresh_mv, btn_create_logs, btn_close])
-
-    # Apply initial dark mode styling to buttons
-    try:
-        if _detect_dark_from_style():
-            for btn in _all_buttons:
-                try:
-                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-                except Exception:
-                    pass
-    except Exception:
-        pass
 
     # bind both listboxes to the shared handler
     mview_listbox_user.bind('<<ListboxSelect>>', lambda e: on_select(e, source='user'))
