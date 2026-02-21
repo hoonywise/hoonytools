@@ -45,6 +45,7 @@ except Exception:
 from libs.oracle_db_connector import get_db_connection
 from libs import abort_manager
 from libs import session
+from libs import gui_utils
 
 def center_window(window, width, height):
     window.update_idletasks()
@@ -152,6 +153,10 @@ def prompt_schema_choice(parent=None):
     except Exception:
         win = Toplevel()
     win.title("Select Schema Scope")
+    
+    # Apply theme immediately after creating dialog
+    gui_utils.apply_theme_to_dialog(win)
+    
     center_window(win, 300, 140)
     win.resizable(False, False)
 
@@ -170,6 +175,26 @@ def prompt_schema_choice(parent=None):
     b2.pack(side="left", padx=5)
     b3.pack(side="left", padx=5)
 
+    # Live theme update callback
+    def _on_theme_change(theme_key):
+        try:
+            gui_utils.apply_theme_to_existing_widgets(win)
+        except Exception:
+            pass
+    
+    # Register theme callback and unregister on destroy
+    try:
+        gui_utils.register_theme_callback(_on_theme_change)
+        def _on_destroy(event=None):
+            if event and event.widget == win:
+                try:
+                    gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
+        win.bind('<Destroy>', _on_destroy)
+    except Exception:
+        pass
+
     b1.focus()
     b1.configure(takefocus=True)
     b2.configure(takefocus=True)
@@ -180,7 +205,7 @@ def prompt_schema_choice(parent=None):
     except Exception as e:
         # On some platforms or when another app has an active grab, grab_set may fail.
         # Fall back to a non-modal dialog and log the situation.
-        logger.warning(f"⚠️ Could not grab focus for schema choice dialog: {e}")
+        logger.warning(f"Could not grab focus for schema choice dialog: {e}")
     win.wait_window()
 
     return result["choice"]
@@ -298,6 +323,10 @@ def show_load_mode_dialog(parent, schema, table_name, df_columns):
     except Exception:
         pass
     win.title(f"Load Mode: {schema}.{table_name}")
+    
+    # Apply theme immediately after creating dialog
+    gui_utils.apply_theme_to_dialog(win)
+    
     center_window(win, 420, 320)
 
     Label(win, text=f"Choose how to load into {schema}.{table_name}", font=("Arial", 10, "bold")).pack(pady=(8, 6))
@@ -357,6 +386,26 @@ def show_load_mode_dialog(parent, schema, table_name, df_columns):
         pass
     Button(footer, text="Cancel", width=12, command=do_close).pack(side="right")
 
+    # Live theme update callback
+    def _on_theme_change(theme_key):
+        try:
+            gui_utils.apply_theme_to_existing_widgets(win)
+        except Exception:
+            pass
+    
+    # Register theme callback and unregister on destroy
+    try:
+        gui_utils.register_theme_callback(_on_theme_change)
+        def _on_destroy(event=None):
+            if event and event.widget == win:
+                try:
+                    gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
+        win.bind('<Destroy>', _on_destroy)
+    except Exception:
+        pass
+
     try:
         win.lift(); win.focus_force()
     except Exception:
@@ -408,6 +457,10 @@ def show_key_selector(parent, cols):
             win.transient(parent_win)
         except Exception:
             pass
+        
+        # Apply theme immediately after creating dialog
+        gui_utils.apply_theme_to_dialog(win)
+        
         try:
             try:
                 win.attributes('-topmost', True)
@@ -453,10 +506,30 @@ def show_key_selector(parent, cols):
     Button(btn_frame, text="OK", width=10, command=on_ok).pack(side="left", padx=8)
     Button(btn_frame, text="Cancel", width=10, command=on_cancel).pack(side="left", padx=8)
 
+    # Live theme update callback
+    def _on_theme_change(theme_key):
+        try:
+            gui_utils.apply_theme_to_existing_widgets(win)
+        except Exception:
+            pass
+    
+    # Register theme callback and unregister on destroy
+    try:
+        gui_utils.register_theme_callback(_on_theme_change)
+        def _on_destroy(event=None):
+            if event and event.widget == win:
+                try:
+                    gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
+        win.bind('<Destroy>', _on_destroy)
+    except Exception:
+        pass
+
     try:
         win.grab_set()
     except Exception as e:
-        logger.warning(f"⚠️ Could not grab focus for key selector: {e}")
+        logger.warning(f"Could not grab focus for key selector: {e}")
     win.wait_window()
     return result if result.get("key_columns") else None
 
@@ -472,6 +545,10 @@ def show_upsert_selector(parent, cols):
     # Try a simple standalone Toplevel first
     try:
         win = Toplevel()
+        
+        # Apply theme immediately after creating dialog
+        gui_utils.apply_theme_to_dialog(win)
+        
         try:
             win.attributes('-topmost', True)
         except Exception:
@@ -600,10 +677,30 @@ def show_upsert_selector(parent, cols):
         except Exception:
             pass
 
+        # Live theme update callback
+        def _on_theme_change(theme_key):
+            try:
+                gui_utils.apply_theme_to_existing_widgets(win)
+            except Exception:
+                pass
+        
+        # Register theme callback and unregister on destroy
+        try:
+            gui_utils.register_theme_callback(_on_theme_change)
+            def _on_destroy(event=None):
+                if event and event.widget == win:
+                    try:
+                        gui_utils.unregister_theme_callback(_on_theme_change)
+                    except Exception:
+                        pass
+            win.bind('<Destroy>', _on_destroy)
+        except Exception:
+            pass
+
         try:
             win.grab_set()
         except Exception as e:
-            logger.warning(f"⚠️ Could not grab focus for upsert selector: {e}")
+            logger.warning(f"Could not grab focus for upsert selector: {e}")
         win.wait_window()
         return nonlocal_result if nonlocal_result.get("key_columns") else None
     except Exception as e:
@@ -763,37 +860,16 @@ def show_sql_preview(parent, title, summary, sql):
     from tkinter import Toplevel, Text, Scrollbar, RIGHT, Y, BOTH, END, Label, Button, Frame, HORIZONTAL, X
     from tkinter import filedialog, messagebox
 
-    # -- Dark mode detection (same pattern as sql_view_loader / sql_mv_loader) --
-    _is_dark = False
-    try:
-        import tkinter.ttk as _ttk
-        _st = _ttk.Style()
-        _bg_check = _st.lookup('Pane.Treeview', 'background') or _st.lookup('Treeview', 'background')
-        if isinstance(_bg_check, str) and _bg_check.strip():
-            _b = _bg_check.strip().lower()
-            if _b in ('#000000', '#000') or 'black' in _b:
-                _is_dark = True
-    except Exception:
-        pass
-
-    # Color palette -- pane-only: only the SQL text area changes, frame/buttons stay default
-    if _is_dark:
-        _txt_bg = '#000000'
-        _txt_fg = '#e6e6e6'
-        _sel_bg = '#2a6bd6'
-        _ins_bg = '#ffffff'
-    else:
-        _txt_bg = 'white'
-        _txt_fg = 'black'
-        _sel_bg = '#2a6bd6'
-        _ins_bg = 'black'
-
     pv = Toplevel(parent) if parent is not None else Toplevel()
     try:
         pv.transient(parent)
     except Exception:
         pass
     pv.title(title)
+    
+    # Apply theme immediately after creating dialog
+    gui_utils.apply_theme_to_dialog(pv)
+    
     # Withdraw briefly so window manager does not place it at a default offset
     try:
         pv.withdraw()
@@ -810,7 +886,7 @@ def show_sql_preview(parent, title, summary, sql):
     except Exception:
         pass
 
-    # -- Build widgets (pane-only dark: only Text widget is themed) --
+    # Build widgets
     Label(pv, text=f"{summary}", font=("Arial", 10, "bold")).pack(pady=6)
 
     txt_frame = Frame(pv)
@@ -820,14 +896,16 @@ def show_sql_preview(parent, title, summary, sql):
     hsb = Scrollbar(txt_frame, orient=HORIZONTAL)
     hsb.pack(side='bottom', fill=X)
     txt = Text(txt_frame, wrap='none', yscrollcommand=vsb.set, xscrollcommand=hsb.set,
-               font=("Courier New", 10), bg=_txt_bg, fg=_txt_fg,
-               insertbackground=_ins_bg, selectbackground=_sel_bg, selectforeground='#ffffff')
+               font=("Courier New", 10))
     txt.pack(fill=BOTH, expand=True)
     vsb.config(command=txt.yview)
     hsb.config(command=txt.xview)
     formatted = format_sql_for_display(sql)
     txt.insert(END, formatted)
     txt.config(state='disabled')
+    
+    # Apply pane theme to the text widget explicitly
+    gui_utils.apply_theme_to_pane(txt)
 
     btns = Frame(pv)
     btns.pack(pady=8)
@@ -887,46 +965,29 @@ def show_sql_preview(parent, title, summary, sql):
     Button(btns, text="Save to .sql", width=12, command=_do_save).pack(side="left", padx=6)
     Button(btns, text="Cancel", width=10, command=_do_cancel).pack(side="left", padx=6)
 
-    # -- Theme callback for live toggle while preview is open (pane-only: only Text widget) --
-    def _apply_preview_theme(enable_dark):
+    # Live theme update callback
+    def _on_theme_change(theme_key):
         try:
-            if enable_dark:
-                tbg, tfg, ibg = '#000000', '#e6e6e6', '#ffffff'
-            else:
-                tbg, tfg, ibg = 'white', 'black', 'black'
+            gui_utils.apply_theme_to_existing_widgets(pv)
+            # Re-apply pane theme to text widget explicitly
             try:
                 txt.config(state='normal')
-                txt.config(bg=tbg, fg=tfg, insertbackground=ibg, selectbackground='#2a6bd6', selectforeground='#ffffff')
+                gui_utils.apply_theme_to_pane(txt)
                 txt.config(state='disabled')
             except Exception:
                 pass
         except Exception:
             pass
-
-    _cb_registered = [False]
+    
+    # Register theme callback and unregister on destroy
     try:
-        if parent and hasattr(parent, 'register_theme_callback'):
-            parent.register_theme_callback(_apply_preview_theme)
-            _cb_registered[0] = True
-        elif parent and hasattr(parent, 'master') and hasattr(parent.master, 'register_theme_callback'):
-            parent.master.register_theme_callback(_apply_preview_theme)
-            _cb_registered[0] = True
-    except Exception:
-        pass
-
-    def _on_destroy(event):
-        if event.widget is not pv:
-            return
-        try:
-            if _cb_registered[0]:
-                if parent and hasattr(parent, 'unregister_theme_callback'):
-                    parent.unregister_theme_callback(_apply_preview_theme)
-                elif parent and hasattr(parent, 'master') and hasattr(parent.master, 'unregister_theme_callback'):
-                    parent.master.unregister_theme_callback(_apply_preview_theme)
-        except Exception:
-            pass
-
-    try:
+        gui_utils.register_theme_callback(_on_theme_change)
+        def _on_destroy(event=None):
+            if event and event.widget == pv:
+                try:
+                    gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
         pv.bind('<Destroy>', _on_destroy)
     except Exception:
         pass
@@ -1214,11 +1275,15 @@ def select_sheets_gui(file, sheets):
 
     top = Toplevel()
     top.title(f"Select Sheets: {os.path.basename(file)}")
+    
+    # Apply theme immediately after creating dialog
+    gui_utils.apply_theme_to_dialog(top)
+    
     center_window(top, 500, 600)
 
     Label(
         top,
-        text="🔍 Columns named PIDM, TERM, and STUDENT_ID will be indexed (if present)",
+        text="Columns named PIDM, TERM, and STUDENT_ID will be indexed (if present)",
         font=("Arial", 9),
         fg="gray"
     ).pack(pady=(0, 10))
@@ -1265,10 +1330,30 @@ def select_sheets_gui(file, sheets):
         frame.pack(fill="x", padx=10, pady=2)
         vars_.append({"var": var, "entry": entry})
 
+    # Live theme update callback
+    def _on_theme_change(theme_key):
+        try:
+            gui_utils.apply_theme_to_existing_widgets(top)
+        except Exception:
+            pass
+    
+    # Register theme callback and unregister on destroy
+    try:
+        gui_utils.register_theme_callback(_on_theme_change)
+        def _on_destroy(event=None):
+            if event and event.widget == top:
+                try:
+                    gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
+        top.bind('<Destroy>', _on_destroy)
+    except Exception:
+        pass
+
     try:
         top.grab_set()
     except Exception as e:
-        logger.warning(f"⚠️ Could not grab focus for sheet selector: {e}")
+        logger.warning(f"Could not grab focus for sheet selector: {e}")
     top.wait_window()
     return result if result else None
 
@@ -1779,6 +1864,9 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
     else:
         win = tk.Tk()
 
+    # Apply theme immediately after creating dialog
+    gui_utils.apply_theme_to_dialog(win)
+
     schema_label = 'Schema 2' if schema_choice == 'dwh' else 'Schema 1'
     win.title(f'Data Loader - {schema_label}')
 
@@ -2278,6 +2366,10 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
         result = []
         dlg = Toplevel(win)
         dlg.title(f'Select Sheets: {os.path.basename(path)}')
+        
+        # Apply theme immediately after creating dialog
+        gui_utils.apply_theme_to_dialog(dlg)
+        
         dlg.transient(win)
         dlg.grab_set()
 
@@ -2302,6 +2394,26 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
         bf.pack(pady=8)
         Button(bf, text='OK', width=8, command=_ok).pack(side=LEFT, padx=4)
         Button(bf, text='Cancel', width=8, command=_cancel).pack(side=LEFT, padx=4)
+
+        # Live theme update callback
+        def _on_dlg_theme_change(theme_key):
+            try:
+                gui_utils.apply_theme_to_existing_widgets(dlg)
+            except Exception:
+                pass
+        
+        # Register theme callback and unregister on destroy
+        try:
+            gui_utils.register_theme_callback(_on_dlg_theme_change)
+            def _on_dlg_destroy(event=None):
+                if event and event.widget == dlg:
+                    try:
+                        gui_utils.unregister_theme_callback(_on_dlg_theme_change)
+                    except Exception:
+                        pass
+            dlg.bind('<Destroy>', _on_dlg_destroy)
+        except Exception:
+            pass
 
         dlg.protocol('WM_DELETE_WINDOW', _cancel)
         dlg.wait_window()
@@ -2825,6 +2937,26 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
             pass
 
     win.protocol('WM_DELETE_WINDOW', _on_window_close)
+
+    # Live theme update callback
+    def _on_theme_change(theme_key):
+        try:
+            gui_utils.apply_theme_to_existing_widgets(win)
+        except Exception:
+            pass
+    
+    # Register theme callback and unregister on destroy
+    try:
+        gui_utils.register_theme_callback(_on_theme_change)
+        def _on_theme_destroy(event=None):
+            if event and event.widget == win:
+                try:
+                    gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
+        win.bind('<Destroy>', _on_theme_destroy)
+    except Exception:
+        pass
 
     # --- Wait ---
     try:
