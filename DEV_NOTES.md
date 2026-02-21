@@ -1576,3 +1576,339 @@ else:
 #### Files Updated
 
 - `libs/settings.py` — Fixed `_save()` to preserve credentials when entry widgets don't exist
+
+---
+
+### 🎨 Entry #18: Theme System Architecture with Full Chrome Theming (v2.1.8)
+
+**Problem:** The simple Dark Mode toggle (on/off) was too limiting. Users wanted options between pure black and system light, similar to how VS Code offers multiple theme presets. Additionally, the initial "pane-only" approach was incomplete - users wanted the entire UI to be themed, not just content panes.
+
+**Solution:** Implemented a comprehensive theme system with:
+- 7 preset themes spanning the spectrum from darkest to lightest
+- **22 color keys** for full UI customization
+- Full chrome theming for the entire UI (buttons, labels, frames, menus, etc.)
+
+#### Theme System Design
+
+**Core principle: Full chrome theming.** All UI elements are themed, not just content panes. Each preset defines colors for every UI element type, creating a cohesive visual experience.
+
+**Preset themes (dark to light):**
+1. **Pure Black** (`#000000` window) — What Dark Mode used to be
+2. **Midnight** (`#010409` window) — GitHub Dark style
+3. **Charcoal** (`#181818` window) — VS Code Dark style
+4. **Slate** (`#252525` window) — Softer dark
+5. **Graphite** (`#313335` window) — Medium grey (IntelliJ style)
+6. **Silver** (`#c0c0c0` window) — Light grey, distinctly different from System Light
+7. **System Light** (`SystemButtonFace`) — Windows default, respects high contrast
+
+**Complete color keys (22 total):**
+```python
+COLOR_KEYS = [
+    # Content panes
+    'pane_bg', 'pane_fg', 'select_bg', 'insert_bg',
+    # Window chrome
+    'window_bg', 'border_bg',
+    # Labels
+    'label_bg', 'label_fg',
+    # LabelFrame
+    'labelframe_bg', 'labelframe_fg',
+    # Buttons
+    'button_bg', 'button_fg', 'button_active_bg', 'button_active_fg',
+    # Entry fields
+    'entry_bg', 'entry_fg',
+    # Menu
+    'menu_bg', 'menu_fg', 'menu_active_bg', 'menu_active_fg',
+    # Checkbox/Radio
+    'checkbox_bg', 'checkbox_fg', 'checkbox_select',
+    # Scrollbar
+    'scrollbar_bg', 'scrollbar_fg',
+]
+```
+
+#### Implementation Components
+
+**1. `libs/gui_utils.py` — Theme infrastructure:**
+
+Per-widget styling functions:
+```python
+apply_theme_to_pane(widget)      # ScrolledText, Text
+apply_theme_to_window(widget)    # Tk, Toplevel, Frame
+apply_theme_to_label(widget)     # Label
+apply_theme_to_labelframe(widget)
+apply_theme_to_button(widget)    # Button
+apply_theme_to_entry(widget)     # Entry
+apply_theme_to_menu(widget)      # Menu
+apply_theme_to_checkbox(widget)  # Checkbutton, Radiobutton
+apply_theme_to_scrollbar(widget)
+apply_theme_to_widget(widget, widget_type='auto')  # Auto-detect
+```
+
+TTK and option database configuration:
+```python
+configure_ttk_styles(style)      # Treeview, TCombobox, TButton, etc.
+configure_root_options(root)     # *Listbox.*, *Button.*, *Menu.*, etc.
+```
+
+**2. `HoonyTools.pyw` — Unified `apply_full_theme()`:**
+
+Replaced separate `apply_current_theme()` and `_restore_light_theme()` with a single unified function that:
+- Calls `gui_utils.configure_ttk_styles()` and `configure_root_options()`
+- Applies theme to root window, menu bar, verse pane, all buttons
+- Recreates Treeview widgets with appropriate style
+- Registers with `gui_utils.register_theme_callback()` for live updates
+
+**3. Settings dialog (`libs/settings.py`):**
+- Registers `_apply_theme` callback with `gui_utils`
+- On theme change, applies theme to entire Settings dialog (window, frames, buttons, category tree, content area)
+
+**4. Child dialogs (`sql_mv_loader.py`, `mv_refresh_gui.py`):**
+- Register with `gui_utils.register_theme_callback()`
+- Apply full chrome theming using `gui_utils.apply_theme_to_*()` functions
+- Unregister callback on window destroy
+
+#### Color Relationship Philosophy
+
+**Independent values, not derived.** Each color key in a preset is explicitly defined, allowing for:
+- Full customization freedom when custom colors are implemented
+- No hidden dependencies between color keys
+- Preset serves as starting template for customization
+
+For example, `label_bg` could be different from `window_bg` if the user wants it that way.
+
+#### View Menu Removal
+
+The View menu (which only contained Dark Mode toggle) was removed entirely. Theme selection is now exclusively in Settings > Appearance. This simplifies the UI and centralizes all settings in one place.
+
+#### Backward Compatibility
+
+- `gui_utils.is_dark_mode_active()` now calls `is_dark_theme()` internally
+- `set_panes_dark()` / `set_panes_light()` legacy functions still work
+- Legacy constants (`DARK_BG`, `DARK_FG`, etc.) preserved for any external code
+- `apply_dark_mode_to_widget()` and `style_dialog_for_dark_mode()` still work
+
+#### Phase 2: Custom Colors (Implemented)
+
+The "Customize..." button in Settings > Appearance now opens a `CustomizeColorsDialog`:
+
+**UI Design:**
+- Scrollable list of all 22 color keys, grouped by category
+- Groups: Content Panes, Window Chrome, Labels, LabelFrame, Buttons, Entry Fields, Menus, Checkboxes, Scrollbars
+- Each row: label, clickable color swatch, hex value display
+- Clicking a swatch opens `tkinter.colorchooser.askcolor()`
+
+**Workflow:**
+1. User selects any preset from dropdown
+2. Clicks "Customize..."
+3. Dialog opens with current preset's colors pre-filled
+4. User picks colors by clicking swatches
+5. "Apply" previews changes (saves colors and sets theme to "Custom")
+6. "OK" saves and closes; "Cancel" reverts to original theme
+7. Dropdown now shows "Custom" selected
+
+**Storage:**
+- Custom colors stored in `config.ini` under `[theme]` section with `custom_` prefix
+- Example: `custom_pane_bg = #1a1a2e`, `custom_button_fg = #ffffff`
+- When `preset = custom`, `get_color()` reads from these custom keys with fallback to Charcoal
+
+**New functions in `gui_utils.py`:**
+```python
+load_custom_colors_from_config()   # Returns dict of custom color overrides
+save_custom_color_to_config(key, hex_value)  # Save single color
+save_all_custom_colors(colors)     # Save all colors at once
+get_colors_for_preset(preset_key)  # Get colors for any preset without changing current theme
+```
+
+#### Files Updated
+
+- `libs/gui_utils.py` — 22 color keys, 7 presets + Custom, per-widget styling functions, custom color persistence
+- `libs/settings.py` — Full chrome theming, CustomizeColorsDialog class, registered with gui_utils callbacks
+- `HoonyTools.pyw` — New unified `apply_full_theme()`, removed View menu
+- `loaders/sql_mv_loader.py` — Full chrome theming for MV Builder dialog
+- `tools/mv_refresh_gui.py` — Uses `gui_utils` theme API
+
+---
+
+### 🎨 Entry #23: Comprehensive Dialog Theming & Splash Screen Controls (v2.2.0)
+
+This session delivered comprehensive theme support across all tool dialogs, splash screen configuration controls in Settings, and fixed the Settings Cancel button to properly restore original values.
+
+#### Goals Accomplished
+
+1. **All tool dialogs now have comprehensive theming** using `gui_utils.apply_theme_to_dialog()` and `apply_theme_to_existing_widgets()`
+2. **Splash screen controls** added to Settings → Appearance (enable/disable toggle + opacity slider)
+3. **Settings Cancel button** now properly restores original theme, splash_enabled, and splash_opacity values
+4. **Entry disabled state theming** fixed for proper display of disabled fields
+5. **Splash fade-in bug** fixed - now reaches target opacity correctly
+6. **Debug button removed** from MV Loader's Existing MV Log dialog
+
+#### Key Discoveries
+
+**1. Entry Disabled State Theming**
+
+Tkinter Entry widgets have separate `disabledBackground` and `disabledForeground` options that must be set explicitly for proper theming:
+
+```python
+# In gui_utils.configure_root_options()
+root.option_add('*Entry.disabledBackground', entry_bg)
+root.option_add('*Entry.disabledForeground', entry_fg)
+
+# In gui_utils.apply_theme_to_entry()
+widget.config(disabledbackground=entry_bg, disabledforeground=entry_fg)
+```
+
+Without these, disabled Entry widgets show system default colors even when the rest of the dialog is themed.
+
+**2. Splash Screen Fade-In Bug**
+
+Original code in `HoonyTools.pyw`:
+```python
+def _fade_in():
+    alpha = splash.attributes('-alpha')
+    if alpha < 1.0:  # BUG: When alpha reaches 1.0, condition is False
+        alpha += 0.05
+        splash.attributes('-alpha', alpha)
+        splash.after(30, _fade_in)
+```
+
+The final `splash.attributes('-alpha', 1.0)` was never called because the condition `alpha < 1.0` becomes False when alpha reaches 1.0. Fixed by using `<=` and checking against `target_opacity`:
+
+```python
+def _fade_in():
+    alpha = splash.attributes('-alpha')
+    if alpha < target_opacity:
+        alpha = min(alpha + 0.05, target_opacity)
+        splash.attributes('-alpha', alpha)
+        splash.after(30, _fade_in)
+```
+
+**3. Settings Cancel Restoration Bug**
+
+When switching categories in Settings dialog, `_on_category_select()` clears `entry_refs` but only preserves `_parent`, `_status_label`, `_win`. The original values (`_original_theme`, `_original_splash_enabled`, `_original_splash_opacity`) were being lost.
+
+**Before (broken):**
+```python
+preserved = {
+    '_parent': entry_refs.get('_parent'),
+    '_status_label': entry_refs.get('_status_label'),
+    '_win': entry_refs.get('_win'),
+}
+entry_refs.clear()
+entry_refs.update(preserved)
+```
+
+**After (fixed):**
+```python
+preserved = {
+    '_parent': entry_refs.get('_parent'),
+    '_status_label': entry_refs.get('_status_label'),
+    '_win': entry_refs.get('_win'),
+    '_original_theme': entry_refs.get('_original_theme'),
+    '_original_splash_enabled': entry_refs.get('_original_splash_enabled'),
+    '_original_splash_opacity': entry_refs.get('_original_splash_opacity'),
+}
+entry_refs.clear()
+entry_refs.update(preserved)
+```
+
+**4. Checkbox Function Name**
+
+The function is `gui_utils.apply_theme_to_checkbox()` (not `apply_theme_to_checkbutton`). This applies to both `tk.Checkbutton` and `tk.Radiobutton` widgets.
+
+**5. Default Values for Fresh Install**
+
+When no `config.ini` exists:
+- `splash_enabled` defaults to `True`
+- `splash_opacity` defaults to `1.0`
+- `theme` preset defaults to `system_light`
+
+#### Theme Application Pattern
+
+**For new dialogs (apply BEFORE adding widgets):**
+```python
+win = tk.Toplevel(parent)
+gui_utils.apply_theme_to_dialog(win)  # Apply immediately after creation
+# Now add widgets...
+```
+
+**For live theme updates via callbacks:**
+```python
+def _apply_theme(is_dark_unused):
+    gui_utils.apply_theme_to_existing_widgets(win)
+
+gui_utils.register_theme_callback(_apply_theme)
+win.bind('<Destroy>', lambda e: gui_utils.unregister_theme_callback(_apply_theme) if e.widget == win else None)
+```
+
+**Preserving semantic colors:**
+
+`apply_theme_to_existing_widgets()` automatically detects and preserves non-default foreground colors. For example, red/green status labels keep their semantic colors:
+
+```python
+# This label keeps its red color even after theme change
+status_label.config(fg='red')  # Set before or after theme application
+```
+
+The function checks if `widget.cget('fg')` differs from the system default before overwriting.
+
+#### Splash Screen Settings Implementation
+
+**Config.ini structure:**
+```ini
+[Appearance]
+preset = charcoal
+splash_enabled = true
+splash_opacity = 0.85
+```
+
+**Settings UI (in Appearance panel):**
+- Checkbox: "Show splash screen on startup"
+- Slider: Opacity (0-100%), disabled when checkbox unchecked
+- Changes save immediately on toggle/slide
+
+**HoonyTools.pyw splash logic:**
+```python
+splash_enabled = cfg.getboolean('Appearance', 'splash_enabled', fallback=True)
+target_opacity = cfg.getfloat('Appearance', 'splash_opacity', fallback=1.0)
+
+if splash_enabled:
+    _show_splash(target_opacity)
+```
+
+#### Files Modified
+
+| File | Changes |
+|------|---------|
+| `libs/gui_utils.py` | Added `disabledBackground`/`disabledForeground` to `configure_root_options()` and `apply_theme_to_entry()` |
+| `libs/settings.py` | Splash screen controls UI, preserved original values in `_on_category_select()`, Cancel restores original theme/splash values |
+| `HoonyTools.pyw` | Splash reads `splash_enabled`/`splash_opacity` from config, fixed fade-in to use `target_opacity` |
+| `loaders/sql_mv_loader.py` | 3 dialogs themed with `apply_theme_to_dialog()`, removed debug button from Existing MV Log dialog |
+| `loaders/sql_view_loader.py` | 1 dialog themed |
+| `loaders/excel_csv_loader.py` | 8 dialogs themed |
+| `tools/mv_refresh_gui.py` | 2 dialogs themed |
+| `tools/pk_designate_gui.py` | 2 dialogs themed, Entry disabled state now themes correctly |
+| `tools/index_gui.py` | 1 dialog themed |
+| `tools/object_cleanup_gui.py` | 4 dialogs themed |
+| `CHANGELOG.md` | Updated with v2.2.0 release notes |
+
+#### Testing Checklist
+
+1. **Theme persistence**: Select Charcoal theme, close Settings, reopen — should still be Charcoal
+2. **Dialog theming**: Open any tool dialog — entire dialog should match current theme
+3. **Live theme update**: Open a tool dialog, change theme in Settings — dialog should update immediately
+4. **Semantic colors preserved**: Red/green status labels should keep their colors after theme change
+5. **Disabled Entry theming**: PK Designator threshold field (disabled) should match theme
+6. **Splash toggle**: Disable splash in Settings, restart app — no splash screen
+7. **Splash opacity**: Set opacity to 50%, restart app — splash should be semi-transparent
+8. **Settings Cancel**: Change theme, click Cancel — original theme should restore
+9. **Settings Cancel after tab switch**: Change theme, switch to Connections tab, click Cancel — original theme should still restore
+10. **Fresh install defaults**: Delete `config.ini`, launch app — splash enabled at 100% opacity, System Light theme
+
+#### Architecture Notes
+
+- **`apply_theme_to_dialog(win)`**: Call immediately after `Toplevel()` creation, BEFORE adding widgets. Sets window background and configures ttk styles.
+
+- **`apply_theme_to_existing_widgets(win)`**: Recursively walks widget tree and applies appropriate theme to each widget based on its class. Safe to call multiple times.
+
+- **Theme callback registration**: Use `register_theme_callback(fn)` for live updates. Callback receives `is_dark` boolean (for backward compatibility) but should use `get_color()` for actual colors.
+
+- **Splash settings are global**: Not per-theme. Stored in `[Appearance]` section alongside `preset` but independent of theme colors.

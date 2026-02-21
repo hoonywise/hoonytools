@@ -4,6 +4,149 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🎨 v2.2.0 — Comprehensive Dialog Theming & Splash Screen Controls (2026-02-21)
+
+This release implements comprehensive theme support across all tool dialogs, adds splash screen controls, and fixes several theming and settings-related bugs.
+
+### Added
+
+- **Comprehensive Dialog Theming**: All tool dialogs now support full theme system with live updates:
+  - `apply_theme_to_dialog(win)` - Apply theme immediately after creating a Toplevel dialog
+  - `apply_theme_to_existing_widgets(win)` - Update all widgets when theme changes live
+  - Widgets created after `apply_theme_to_dialog()` automatically inherit theme colors via Tk option database
+  - Semantic colors (red/green status labels) are automatically preserved during theme updates
+
+- **Splash Screen Settings** (Settings → Appearance):
+  - "Show splash screen on startup" checkbox - disable to skip splash and launch GUI immediately
+  - Opacity slider (0-100%) - control maximum opacity of splash screen
+  - Settings persist in `config.ini` under `[Appearance]` section
+  - Opacity slider is grayed out when splash is disabled (visual feedback)
+
+- **Entry Widget Disabled State Theming**: Added `disabledBackground` and `disabledForeground` support in `configure_root_options()` and `apply_theme_to_entry()` for proper theming of disabled Entry widgets (e.g., threshold field in PK Designator)
+
+### Changed
+
+- **Theme Callback System**: All tool dialogs now use `gui_utils.register_theme_callback()` for live theme updates instead of polling or parent-based callbacks
+
+- **Settings Cancel Button**: Now properly restores original values when Cancel is pressed:
+  - Restores theme preset to original selection
+  - Restores splash screen enabled state
+  - Restores splash opacity value
+  - Fixes bug where category switching cleared original values (preserved in `entry_refs`)
+
+- **Splash Screen Fade-In Bug Fixed**: Splash screen now reaches full target opacity instead of stopping at 95% due to floating-point comparison issue
+
+### Removed
+
+- **Debug Button in MV Loader**: Removed "Show debug info" button from Existing MV Log dialog (was a development remnant)
+
+- **Old Theming Code**: Removed from all tool dialogs:
+  - `_detect_dark_from_style()` functions
+  - `_apply_dark_mode_to_buttons()` functions
+  - `_apply_entry_theme()` functions
+  - `_all_buttons` lists and manual button styling
+  - Polling-based theme detection (`_poll_theme()`)
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `libs/gui_utils.py` | Added Entry disabled state options, fixed `insertbackground` color |
+| `libs/settings.py` | Added Splash Screen settings (checkbox + opacity slider), Cancel restoration logic, preserved original values across category switches |
+| `HoonyTools.pyw` | Splash screen reads `splash_enabled` and `splash_opacity` from config, fixed fade-in to reach target opacity |
+| `loaders/sql_mv_loader.py` | Full dialog theming, removed debug button and diagnostic code |
+| `loaders/sql_view_loader.py` | Full dialog theming with live updates |
+| `loaders/excel_csv_loader.py` | Full dialog theming for 8 dialogs |
+| `tools/mv_refresh_gui.py` | Full dialog theming with live updates |
+| `tools/pk_designate_gui.py` | Full dialog theming, fixed threshold Entry theming |
+| `tools/index_gui.py` | Full dialog theming with live updates |
+| `tools/object_cleanup_gui.py` | Full dialog theming for 4 dialogs |
+
+### Default Settings (Fresh Install)
+
+| Setting | Default Value |
+|---------|---------------|
+| Splash Screen | Enabled |
+| Splash Opacity | 100% |
+| Theme | System Light |
+
+---
+
+## 🎨 v2.1.8 — Theme System with Full Chrome Theming & Custom Colors (2026-02-21)
+
+This release introduces a comprehensive theme system with 7 preset themes, **full chrome theming**, and **custom color support**. The entire UI (buttons, labels, frames, menus, borders) can now be themed. Users can customize any of the 22 color keys via the new Customize Colors dialog.
+
+### Added
+
+- **Theme System Infrastructure** (`libs/gui_utils.py`):
+  - 7 preset themes + Custom: Pure Black, Midnight, Charcoal, Slate, Graphite, Silver, System Light, Custom
+  - **22 color keys** for full UI customization:
+    - Content panes: `pane_bg`, `pane_fg`, `select_bg`, `insert_bg`
+    - Window chrome: `window_bg`, `border_bg`
+    - Labels: `label_bg`, `label_fg`
+    - LabelFrames: `labelframe_bg`, `labelframe_fg`
+    - Buttons: `button_bg`, `button_fg`, `button_active_bg`, `button_active_fg`
+    - Entry fields: `entry_bg`, `entry_fg`
+    - Menus: `menu_bg`, `menu_fg`, `menu_active_bg`, `menu_active_fg`
+    - Checkboxes: `checkbox_bg`, `checkbox_fg`, `checkbox_select`
+    - Scrollbars: `scrollbar_bg`, `scrollbar_fg`
+  - Per-widget styling functions: `apply_theme_to_pane()`, `apply_theme_to_window()`, `apply_theme_to_button()`, `apply_theme_to_label()`, `apply_theme_to_entry()`, `apply_theme_to_menu()`, `apply_theme_to_checkbox()`, `apply_theme_to_scrollbar()`, `apply_theme_to_widget()`
+  - TTK style configuration: `configure_ttk_styles()`
+  - Root option database configuration: `configure_root_options()`
+  - Callback registration for live theme updates across all windows
+  - Automatic migration from legacy `dark_mode` setting to new `theme.preset`
+  - Custom color persistence: `load_custom_colors_from_config()`, `save_custom_color_to_config()`, `save_all_custom_colors()`
+
+- **Customize Colors Dialog** (`libs/settings.py`):
+  - New `CustomizeColorsDialog` class for editing all 22 color keys
+  - Scrollable interface with colors grouped by category (Content Panes, Window Chrome, Buttons, etc.)
+  - Clickable color swatches that open the system color picker
+  - Live preview via "Apply" button
+  - "Reset to Preset" option to discard customizations
+  - Custom colors stored in `config.ini` with `custom_` prefix (e.g., `custom_pane_bg`)
+
+- **Theme Dropdown in Settings**: New "Themes" section in Appearance panel with:
+  - Dropdown to select preset theme (Pure Black to System Light, plus Custom)
+  - Live preview - changes apply immediately when selecting
+  - "Customize..." button opens the Customize Colors dialog
+
+- **Unified `apply_full_theme()` function**: Replaces separate `set_panes_dark()`/`set_panes_light()` functions with a single function that reads all colors from the theme system
+
+### Changed
+
+- **Full Chrome Theming**: All preset themes now apply colors to the **entire UI**, including:
+  - Window backgrounds
+  - All buttons (verse navigation, schema pane buttons)
+  - Menu bar and menu items
+  - Labels and LabelFrames
+  - Entry fields
+  - Scrollbars
+  - Borders and separators
+
+- **Config Structure**: Theme is now stored in `[theme]` section with `preset` key. Legacy `[preferences]` → `dark_mode` is auto-migrated and removed.
+
+- **System Light uses Windows system colors**: The System Light theme uses Windows system color names (e.g., `SystemButtonFace`, `SystemButtonText`) to respect user's Windows theme and high contrast settings
+
+### Removed
+
+- **View Menu**: Removed entirely from menu bar. Theme selection is now in Settings > Appearance.
+
+- **Dark Mode Checkbox**: Replaced by Theme dropdown in Settings. "Dark Mode" is now the "Pure Black" preset theme.
+
+- **Separate dark/light theme functions**: Replaced `apply_current_theme()` + `_restore_light_theme()` with unified `apply_full_theme()`
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `libs/gui_utils.py` | Complete rewrite: 22 color keys, 7 fully-defined presets, per-widget styling functions, TTK style configuration |
+| `libs/settings.py` | Theme dropdown, full chrome theming for Settings dialog, registered with gui_utils callbacks |
+| `HoonyTools.pyw` | Removed View menu, new unified `apply_full_theme()`, full chrome theming |
+| `loaders/sql_mv_loader.py` | Full chrome theming for MV Builder dialog |
+| `tools/mv_refresh_gui.py` | Updated to use `gui_utils` theme API |
+
+---
+
 ## 🔧 v2.1.7 — Settings Bug Fix & Logging Cleanup (2026-02-21)
 
 This patch release fixes a critical bug where toggling dark mode in Settings would clear saved credentials, causing login popups to appear for all tools.

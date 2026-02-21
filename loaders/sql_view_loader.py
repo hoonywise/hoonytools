@@ -3,6 +3,7 @@ from tkinter import messagebox, scrolledtext
 import logging
 from libs.oracle_db_connector import get_db_connection
 from libs import session
+from libs import gui_utils
 import ctypes
 from libs.paths import ASSETS_PATH
 
@@ -35,71 +36,6 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
         session.register_connection(parent if parent else _tk_default_root, conn, schema_key)
     except Exception:
         logger.debug('Failed to register connection', exc_info=True)
-    
-    # Theme support for pane-only dark mode (polling fallback)
-    try:
-        import tkinter.ttk as _ttk
-    except Exception:
-        _ttk = None
-    _last_dark = None
-    _poll_id = None
-    _all_buttons = []  # Will be populated when buttons are created
-
-    def _detect_dark_from_style():
-        try:
-            if _ttk:
-                st = _ttk.Style()
-                bg = st.lookup('Pane.Treeview', 'background') or st.lookup('Treeview', 'background')
-                if isinstance(bg, str) and bg.strip():
-                    b = bg.strip().lower()
-                    if b in ('#000000', '#000') or 'black' in b:
-                        return True
-        except Exception:
-            pass
-        return False
-
-    def _apply_theme(dark: bool):
-        # Only apply dark colors to the main SQL pane. Do not recolor frames
-        # or other chrome — the launcher wants pane-only dark mode.
-        try:
-            if dark:
-                sql_text.config(bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
-            else:
-                sql_text.config(bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
-        except Exception:
-            pass
-        # Apply button styling for dark/light mode
-        try:
-            for btn in _all_buttons:
-                if dark:
-                    btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
-                else:
-                    btn.config(bg='SystemButtonFace', fg='SystemButtonText', activebackground='SystemButtonFace', activeforeground='SystemButtonText')
-        except Exception:
-            pass
-
-    def _poll_theme():
-        nonlocal _last_dark, _poll_id
-        try:
-            dark = _detect_dark_from_style()
-            if dark is not _last_dark:
-                _last_dark = dark
-                _apply_theme(dark)
-        except Exception:
-            pass
-        try:
-            _poll_id = builder_window.after(600, _poll_theme)
-        except Exception:
-            _poll_id = None
-
-    def _stop_polling(event=None):
-        nonlocal _poll_id
-        try:
-            if _poll_id:
-                builder_window.after_cancel(_poll_id)
-                _poll_id = None
-        except Exception:
-            pass
 
     # Use shared safe messagebox helper when available for consistent parenting
     try:
@@ -190,16 +126,13 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
         builder_window.destroy()
         # on_finish is called in the finally block after window closes
 
-    # Detect initial dark mode BEFORE creating widgets to avoid a white flash
-    try:
-        _initial_dark = _detect_dark_from_style()
-    except Exception:
-        _initial_dark = False
-
     # Create Toplevel with optional parent so the window can be modal
     builder_window = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
     builder_window.title("SQL View Loader")
     builder_window.geometry("1300x740")
+    
+    # Apply theme immediately after creating dialog, before adding widgets
+    gui_utils.apply_theme_to_dialog(builder_window)
 
     # If launched from the main launcher, make the window transient and modal
     grabbed = False
@@ -217,6 +150,33 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
                 grabbed = True
             except Exception:
                 grabbed = False
+    except Exception:
+        pass
+    
+    # Live theme update callback
+    def _on_theme_change(theme_key):
+        """Theme change callback - applies theme to all existing widgets."""
+        try:
+            gui_utils.apply_theme_to_existing_widgets(builder_window)
+            # Re-apply pane theming for ScrolledText
+            try:
+                gui_utils.apply_theme_to_pane(sql_text)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    # Register theme callback and unregister on destroy
+    try:
+        gui_utils.register_theme_callback(_on_theme_change)
+        
+        def _on_destroy(event=None):
+            if event and event.widget == builder_window:
+                try:
+                    gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
+        builder_window.bind('<Destroy>', _on_destroy)
     except Exception:
         pass
 
@@ -270,15 +230,11 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
 
     tk.Label(builder_window, text="Enter SQL to turn into a VIEW:", font=("Arial", 11, "bold")).pack(pady=(10, 5))
 
-    # Create SQL text with initial theme to avoid visible white -> black flip
-    try:
-        if _initial_dark:
-            sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='#000000', fg='#ffffff', insertbackground='#ffffff', selectbackground='#2a6bd6')
-        else:
-            sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10), bg='white', fg='black', insertbackground='black', selectbackground='#2a6bd6')
-    except Exception:
-        sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10))
+    # Create SQL text - theme colors are inherited from option database
+    sql_text = scrolledtext.ScrolledText(builder_window, width=120, height=25, font=("Courier New", 10))
     sql_text.pack(padx=10, pady=(0, 10), fill="both", expand=False)
+    # Apply pane theming explicitly for best results
+    gui_utils.apply_theme_to_pane(sql_text)
 
     # Shared container for name row and buttons to ensure alignment
     control_container = tk.Frame(builder_window)
@@ -289,20 +245,13 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
     name_row.pack(pady=(0, 10))
 
     tk.Label(name_row, text="View Name:").pack(side="left", padx=(0, 5))
-    # Create the view name entry with initial theme to avoid flash
-    try:
-        if _initial_dark:
-            view_name_entry = tk.Entry(name_row, width=33, bg='#000000', fg='#ffffff', insertbackground='#ffffff')
-        else:
-            view_name_entry = tk.Entry(name_row, width=33)
-    except Exception:
-        view_name_entry = tk.Entry(name_row, width=33)
+    # Create the view name entry - theme colors are inherited from option database
+    view_name_entry = tk.Entry(name_row, width=33)
     view_name_entry.pack(side="left")
 
-    # Import SQL button
+    # Import SQL button - theme colors are inherited from option database
     btn_import_sql = tk.Button(name_row, text="Import SQL", command=load_sql_from_file, width=10)
     btn_import_sql.pack(side="left", padx=(10, 0))
-    _all_buttons.append(btn_import_sql)
 
     # Options row - checkboxes for view options (centered)
     options_row = tk.Frame(control_container)
@@ -319,17 +268,11 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
     btn_frame = tk.Frame(control_container)
     btn_frame.pack()
 
-    # Create buttons with references for dark mode styling
+    # Create buttons - theme colors are inherited from option database
     btn_create = tk.Button(btn_frame, text="Create", command=on_submit, width=10)
     btn_cancel = tk.Button(btn_frame, text="Close", command=on_cancel, width=10)
     btn_create.pack(side="left", padx=10)
     btn_cancel.pack(side="left", padx=10)
-    _all_buttons.extend([btn_create, btn_cancel])
-    
-    # Apply initial button theme if dark mode is active
-    if _initial_dark:
-        for btn in _all_buttons:
-            btn.config(bg='#000000', fg='#ffffff', activebackground='#222222', activeforeground='#ffffff')
 
     # Center on screen
     builder_window.update_idletasks()
@@ -338,48 +281,6 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
     x = (builder_window.winfo_screenwidth() // 2) - (width // 2)
     y = (builder_window.winfo_screenheight() // 2) - (height // 2)
     builder_window.geometry(f"{width}x{height}+{x}+{y}")
-
-    # Register theme callback with parent when available; otherwise fall back to polling
-    def _theme_cb(enable_dark: bool):
-        try:
-            _apply_theme(bool(enable_dark))
-        except Exception:
-            pass
-
-    try:
-        if parent is not None and hasattr(parent, 'register_theme_callback'):
-            try:
-                parent.register_theme_callback(_theme_cb)
-                # ensure we unregister when this window is destroyed
-                def _on_destroy(event=None):
-                    try:
-                        if parent and hasattr(parent, 'unregister_theme_callback'):
-                            parent.unregister_theme_callback(_theme_cb)
-                    except Exception:
-                        pass
-                try:
-                    builder_window.bind('<Destroy>', _on_destroy)
-                except Exception:
-                    pass
-                # Apply current style immediately
-                try:
-                    _apply_theme(_detect_dark_from_style())
-                except Exception:
-                    pass
-            except Exception:
-                pass
-        else:
-            # Polling fallback: start polling to pick up subsequent theme changes
-            try:
-                builder_window.after(600, _poll_theme)
-            except Exception:
-                pass
-            try:
-                builder_window.bind('<Destroy>', _stop_polling)
-            except Exception:
-                pass
-    except Exception:
-        pass
 
     # Run modal or standalone mainloop depending on whether a parent was provided
     try:
