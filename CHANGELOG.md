@@ -4,6 +4,67 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🔧 v2.2.1 — Deep Code Review: 26 Bug Fixes Across All Tools (2026-02-22)
+
+This release delivers two rounds of comprehensive code review targeting cross-tool interaction bugs, data integrity issues, resource leaks, and UI reliability problems. All changes are minimal, targeted fixes verified with syntax checks.
+
+### Fixed (Round 1 — Initial Review & Cleanup)
+
+- **Bible Books duplicate key**: Fixed duplicate `"jn"` key in `bible_books.py` — John now uses `"jo"` to match `en_kjv.json`
+- **SQL spacing bug**: Fixed missing spaces in f-string SQL in `pk_designate_gui.py`
+- **Wrong config key**: Fixed `'username'` → `'user'` dict key mismatch in `HoonyTools.pyw` (2 locations)
+- **Incomplete dark theme detection**: Added 7 missing dark themes to `is_dark_theme()` in `gui_utils.py`
+- **Broken getattr(globals())**: Fixed invalid `getattr(globals(), ...)` pattern in `abort_manager.py`
+- **Thread safety**: Added `threading.Lock` for `created_tables` set in `abort_manager.py`
+- **Destroy binding overwrite**: Fixed `<Destroy>` binding overwrite in `excel_csv_loader.py` with `add='+'`
+- **MouseWheel leak**: Added `unbind_all("<MouseWheel>")` in destroy handlers (2 locations)
+- **Dead code removal**: Removed dead `eval`/`dir` code block and unused `_all_buttons` list
+- **Bare except clauses**: Fixed bare `except:` → `except Exception:` (2 locations)
+- **Unused imports**: Removed unused imports across 8 files
+- **Dead function**: Removed unused `create_materialized_view_logs` function in `mv_refresh_gui.py`
+
+### Fixed (Post-Review)
+
+- **Wrong-schema operations**: Fixed `stored_credentials` usage → `get_credentials('schema1')` in index and drop launchers
+- **Log auto-scroll broken**: Fixed `yview_moveto` locking scroll position → replaced with `vbar.set`
+
+### Fixed (Round 2 — Deep Per-Tool Review)
+
+- **NaN data corruption**: Fixed `df.astype(str).fillna('')` → `df.fillna('').astype(str)` in Excel/CSV loader (4 locations) — prevented NaN from becoming literal `"nan"` strings in Oracle
+- **Wrong-schema commit**: Fixed `conn.commit()` → `active_conn.commit()` in MV Manager's `do_create_logs()` — was committing on schema1 connection even when operating on schema2 (4 commit calls)
+- **Dead code path (MV log detection)**: Removed `'detect_tables_from_sql' in globals()` and `'detect_existing_mlog' in globals()` checks that always failed because these were locally-scoped imports, not module globals — this silently disabled the entire MV log detection feature
+- **Multi-select crash**: Added guard in `do_create_logs()` for multi-selection dict shape (no `'source'` key) — now shows "select single MV" message instead of crashing
+- **Wrong-schema diagnostics**: Fixed `show_diag()` to use `active_conn.cursor()` instead of hardcoded `conn.cursor()` (schema1)
+- **Connection nuke on close**: Added `schema=` parameter to `session.close_connections()` calls in 4 tool files (7 call sites) — previously closed ALL schema connections when any tool closed
+- **Logger name mismatch**: Fixed 6 bare logger names (e.g., `"abort_manager"`) to full module paths (e.g., `"libs.abort_manager"`) and added 7 missing tool module loggers — tool logs now reach the GUI log area
+- **Status light stuck red**: Added `on_finish()` callback when connection fails in `sql_view_loader.py` and `sql_mv_loader.py` — status light now resets to idle on cancel
+- **Dark theme text invisible**: Replaced hardcoded `fg='#333'` with theme-aware color in PK Designator help text
+- **SQL injection safety**: Added double-quoting for `{schema}` and `{column}` identifiers in DELETE statement in `object_cleanup_gui.py`
+- **Stale connection refs**: Added `session.unregister_connection()` before closing ephemeral connections in 3 launcher fallback paths
+- **Cursor leaks**: Fixed `rc_cur` and `null_cur` not closed on exception in `pk_designate_gui.py` — added `finally` blocks
+- **Unique constraint indexes**: Added `'U'` to constraint type filter in `_drop_table_indexes()` so unique constraint indexes aren't dropped directly (which would fail with ORA-02429)
+- **CSV BOM handling**: Added `encoding='utf-8-sig'` to `pd.read_csv()` calls in Excel/CSV loader for Windows-exported CSV files
+- **MV Manager orphaned window**: Added `parent=` parameter to `run_mv_refresh_gui()` and launcher now passes `parent=root`
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `HoonyTools.pyw` | Fixed logger names (13 modules), ephemeral connection cleanup, MV Manager parent parameter |
+| `tools/mv_refresh_gui.py` | Fixed wrong-schema commit (4 calls), removed dead globals() checks, multi-select guard, show_diag() connection fix, added parent parameter |
+| `tools/pk_designate_gui.py` | Theme-aware help text color, cursor leak fixes (2 locations), scoped close_connections |
+| `tools/index_gui.py` | Scoped close_connections to schema_key |
+| `tools/object_cleanup_gui.py` | SQL identifier quoting, unique constraint filter, scoped close_connections |
+| `loaders/excel_csv_loader.py` | NaN fix (4 locations), CSV encoding, scoped close_connections (3 locations) |
+| `loaders/sql_view_loader.py` | on_finish callback on connection failure |
+| `loaders/sql_mv_loader.py` | on_finish callback on connection failure |
+| `libs/abort_manager.py` | Thread-safe created_tables, fixed getattr pattern |
+| `libs/bible_books.py` | Fixed duplicate key |
+| `libs/gui_utils.py` | Expanded is_dark_theme() coverage |
+| `libs/oracle_db_connector.py` | Removed unused imports |
+
+---
+
 ## 🎨 v2.2.0 — Comprehensive Dialog Theming & Splash Screen Controls (2026-02-21)
 
 This release implements comprehensive theme support across all tool dialogs, adds splash screen controls, and fixes several theming and settings-related bugs.

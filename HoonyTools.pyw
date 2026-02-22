@@ -16,7 +16,7 @@ import webbrowser
 from configparser import ConfigParser
 from libs import gui_utils
 
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.2.1"
 
 
 # Theme helpers
