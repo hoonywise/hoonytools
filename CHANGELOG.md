@@ -51,6 +51,9 @@ This release delivers two rounds of comprehensive code review targeting cross-to
 ### Improved
 
 - **Auto-uppercase view/MV names**: View and MV name entry fields in SQL View Loader and SQL MV Loader now auto-uppercase as you type — Oracle stores unquoted identifiers as uppercase, so this prevents accidental case-sensitive object creation
+- **Mass drop order of operations**: Reversed drop order from TABLE-first to dependent-objects-first (PK → INDEX → MVIEW LOG → MV → VIEW → TABLE). Dependent objects now drop explicitly before their parent tables, preventing ORA-12083 and constraint violation errors during mass drops
+- **Default CASCADE CONSTRAINTS PURGE**: Table drops in mass-drop mode now use `CASCADE CONSTRAINTS PURGE` by default instead of plain `PURGE` — handles FK references from tables outside the drop selection without requiring the "Force Drop" fallback
+- **User-friendly connection error messages**: Replaced verbose Python tracebacks in the log pane with clean single-line error messages for 13 specific Oracle/driver error codes (ORA-01017, ORA-12543, ORA-12170, ORA-12541, ORA-12528, ORA-12514, ORA-12154, ORA-01034, ORA-12537/12547, DPY-4026, DPY-4011, DPY-6005). Each error includes actionable guidance in the popup dialog. Full tracebacks are still available at DEBUG level for troubleshooting
 
 ### Files Modified
 
@@ -60,14 +63,14 @@ This release delivers two rounds of comprehensive code review targeting cross-to
 | `tools/mv_refresh_gui.py` | Fixed wrong-schema commit (4 calls), removed dead globals() checks, multi-select guard, show_diag() connection fix, added parent parameter |
 | `tools/pk_designate_gui.py` | Theme-aware help text color, cursor leak fixes (2 locations), scoped close_connections |
 | `tools/index_gui.py` | Scoped close_connections to schema_key |
-| `tools/object_cleanup_gui.py` | SQL identifier quoting, unique constraint filter, scoped close_connections |
+| `tools/object_cleanup_gui.py` | SQL identifier quoting, unique constraint filter, scoped close_connections, revised mass-drop order (dependent objects first), default CASCADE CONSTRAINTS PURGE |
 | `loaders/excel_csv_loader.py` | NaN fix (4 locations), CSV encoding, scoped close_connections (3 locations) |
 | `loaders/sql_view_loader.py` | on_finish callback on connection failure, auto-uppercase view name entry |
 | `loaders/sql_mv_loader.py` | on_finish callback on connection failure, auto-uppercase MV name entry |
 | `libs/abort_manager.py` | Thread-safe created_tables, fixed getattr pattern |
 | `libs/bible_books.py` | Fixed duplicate key |
 | `libs/gui_utils.py` | Expanded is_dark_theme() coverage |
-| `libs/oracle_db_connector.py` | Removed unused imports |
+| `libs/oracle_db_connector.py` | Removed unused imports, user-friendly connection error messages (13 specific ORA/DPY handlers) |
 
 ---
 

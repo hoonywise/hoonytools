@@ -431,16 +431,87 @@ def _prompt_for_credentials(schema, root):
 
 
 def _handle_connection_error(e):
-    """Handle database connection errors with appropriate messages."""
+    """Handle database connection errors with user-friendly messages.
+    
+    Logs a clean single-line message for the GUI log pane and shows
+    a dialog with actionable guidance. Full tracebacks are logged at
+    DEBUG level only, keeping the log pane readable for end users.
+    """
     error_str = str(e)
     
+    # --- Authentication errors ---
     if "ORA-01017" in error_str:
-        logger.warning("Oracle login failed: Invalid username or password.")
-        show_error_safe("Invalid Credentials", "Username or password is incorrect. Please try again.")
+        logger.error("Connection failed: Invalid username or password.")
+        show_error_safe("Invalid Credentials", "Username or password is incorrect.\nPlease try again.")
+    
+    # --- Network / connectivity errors ---
+    elif "ORA-12543" in error_str:
+        logger.error("Connection failed: Database host is unreachable.")
+        show_error_safe("Connection Error",
+                        "Database host is unreachable.\n\n"
+                        "Check your network connection or verify the database server is running.")
     elif "ORA-12170" in error_str:
-        msg = "Could not connect to Oracle: Timeout.\n\nMake sure you are connected to VPN if working remotely."
-        logger.warning(msg)
-        show_error_safe("VPN Required", msg)
+        logger.error("Connection failed: Connection timed out.")
+        show_error_safe("Connection Timeout",
+                        "Could not connect to Oracle: Timeout.\n\n"
+                        "Make sure you are connected to VPN if working remotely.")
+    elif "ORA-12541" in error_str:
+        logger.error("Connection failed: No listener on the database host.")
+        show_error_safe("Connection Error",
+                        "Database listener is not running.\n\n"
+                        "The database server may be down. Contact your DBA.")
+    elif "ORA-12528" in error_str:
+        logger.error("Connection failed: Database is blocking new connections.")
+        show_error_safe("Connection Error",
+                        "Database is blocking new connections.\n\n"
+                        "It may be starting up or shutting down. Try again shortly.")
+    
+    # --- Service / TNS resolution errors ---
+    elif "ORA-12514" in error_str:
+        logger.error("Connection failed: Database service not found.")
+        show_error_safe("Connection Error",
+                        "Database service not found.\n\n"
+                        "Check the DSN (service name) in Settings.")
+    elif "ORA-12154" in error_str:
+        logger.error("Connection failed: Could not resolve connect identifier.")
+        show_error_safe("Connection Error",
+                        "Could not resolve database connect string.\n\n"
+                        "Check the DSN in Settings or verify tnsnames.ora configuration.")
+    
+    # --- Database availability errors ---
+    elif "ORA-01034" in error_str:
+        logger.error("Connection failed: Oracle database is not available.")
+        show_error_safe("Connection Error",
+                        "Oracle database is not available.\n\n"
+                        "The database may be shut down. Contact your DBA.")
+    elif "ORA-12537" in error_str or "ORA-12547" in error_str:
+        logger.error("Connection failed: Network connection lost.")
+        show_error_safe("Connection Error",
+                        "Network connection to database was lost.\n\n"
+                        "Check your network connection and try again.")
+    
+    # --- Oracle client / driver errors ---
+    elif "DPY-4026" in error_str:
+        logger.error("Connection failed: Could not find tnsnames.ora.")
+        show_error_safe("Configuration Error",
+                        "Could not find tnsnames.ora.\n\n"
+                        "Check Oracle client configuration or use a direct DSN\n"
+                        "(e.g., host:port/service_name) in Settings.")
+    elif "DPY-4011" in error_str:
+        logger.error("Connection failed: Connection closed by database or network.")
+        show_error_safe("Connection Error",
+                        "Connection was closed by the database or network.\n\n"
+                        "The database may have restarted. Try again.")
+    elif "DPY-6005" in error_str:
+        logger.error("Connection failed: Cannot connect to database.")
+        show_error_safe("Connection Error",
+                        "Cannot connect to database.\n\n"
+                        "Verify the host, port, and service name in Settings.")
+    
+    # --- Generic fallback ---
     else:
-        logger.exception(f"Oracle connection failed: {e}")
+        # Clean single-line error for the log pane
+        logger.error(f"Connection failed: {e}")
+        # Full traceback at DEBUG level for troubleshooting
+        logger.debug("Connection error details:", exc_info=True)
         show_error_safe("Connection Error", f"Failed to connect to Oracle:\n{e}")
