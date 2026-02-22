@@ -704,7 +704,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
                 results.append((t, False, str(e)))
         return results
     def on_submit():
-        mv_name = mv_name_entry.get().strip()
+        mv_name = mv_name_entry.get().strip().upper()
         sql_query = sql_text.get("1.0", tk.END).strip()
         build_mode = build_var.get()
         refresh_method = refresh_method_var.get()
@@ -1119,6 +1119,18 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     # Create MV name entry - theme colors are inherited from option database
     mv_name_entry = tk.Entry(name_row, width=33)
     mv_name_entry.pack(side="left")
+
+    # Auto-uppercase: Oracle stores unquoted identifiers as uppercase
+    def _force_uppercase(event):
+        w = event.widget
+        val = w.get()
+        upper = val.upper()
+        if val != upper:
+            pos = w.index(tk.INSERT)
+            w.delete(0, tk.END)
+            w.insert(0, upper)
+            w.icursor(pos)
+    mv_name_entry.bind('<KeyRelease>', _force_uppercase)
 
     # Import SQL button - theme colors are inherited from option database
     btn_import_sql = tk.Button(name_row, text="Import SQL", command=load_sql_from_file, width=10)
