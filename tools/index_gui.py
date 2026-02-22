@@ -339,21 +339,30 @@ def main(parent=None, schema_key=None, object_name=None, object_type=None, on_fi
 
         cur = conn.cursor()
         try:
-            # Get all indexes and their columns for this table
+            # Get all indexes and their columns for this table,
+            # with PK-backing detection via LEFT JOIN to all_constraints
             cur.execute('''
                 SELECT ai.index_name,
                        ai.uniqueness,
-                       LISTAGG(aic.column_name, ', ') WITHIN GROUP (ORDER BY aic.column_position) AS cols
+                       LISTAGG(aic.column_name, ', ') WITHIN GROUP (ORDER BY aic.column_position) AS cols,
+                       CASE WHEN ac.constraint_name IS NOT NULL THEN 'Y' ELSE 'N' END AS is_pk
                 FROM all_indexes ai
                 JOIN all_ind_columns aic
                   ON ai.owner = aic.index_owner AND ai.index_name = aic.index_name
+                LEFT JOIN all_constraints ac
+                  ON ac.owner = ai.owner
+                 AND ac.index_name = ai.index_name
+                 AND ac.constraint_type = 'P'
                 WHERE ai.table_owner = :own AND ai.table_name = :tbl
-                GROUP BY ai.index_name, ai.uniqueness
+                GROUP BY ai.index_name, ai.uniqueness, ac.constraint_name
                 ORDER BY ai.index_name
             ''', [owner, object_name])
             rows = cur.fetchall()
-            for idx_name, uniqueness, cols in rows:
-                type_str = uniqueness if uniqueness else 'NONUNIQUE'
+            for idx_name, uniqueness, cols, is_pk in rows:
+                if is_pk == 'Y':
+                    type_str = 'PK INDEX'
+                else:
+                    type_str = uniqueness if uniqueness else 'NONUNIQUE'
                 if idx_tree:
                     idx_tree.insert("", "end", values=(idx_name, cols, type_str))
                 else:
@@ -543,8 +552,20 @@ def main(parent=None, schema_key=None, object_name=None, object_type=None, on_fi
             return
 
         item = idx_tree.item(sel[0])
-        idx_name = item['values'][0] if item.get('values') else None
+        vals = item.get('values', [])
+        idx_name = vals[0] if vals else None
         if not idx_name:
+            return
+
+        # Block drop attempts on PK-backing indexes
+        idx_type = vals[2] if len(vals) > 2 else ''
+        if idx_type == 'PK INDEX':
+            _safe_messagebox('showinfo', 'Cannot Drop PK Index',
+                             f'{idx_name} is a PRIMARY KEY backing index '
+                             f'and cannot be dropped directly.\n\n'
+                             f'To remove it, drop the PRIMARY KEY constraint\n'
+                             f'from the main object pane.',
+                             dlg=win)
             return
 
         if not _safe_messagebox('askyesno', 'Confirm Drop',
@@ -559,7 +580,8 @@ def main(parent=None, schema_key=None, object_name=None, object_type=None, on_fi
             _safe_messagebox('showinfo', 'Success', f'Index {idx_name} dropped.', dlg=win)
             load_existing_indexes()
         except Exception as e:
-            logger.exception(f'Failed to drop index: {e}')
+            logger.error(f'Failed to drop index: {e}')
+            logger.debug('Drop index error details:', exc_info=True)
             _safe_messagebox('showerror', 'Error', f'Failed to drop index: {e}', dlg=win)
         finally:
             cur.close()

@@ -693,25 +693,24 @@ def _show_error_dialog(parent, obj_name, obj_type, error_msg, remaining=0):
 
 def _sort_objects_for_drop(objects):
     """
-    Sort objects so that TABLEs are dropped first (which auto-drops associated MLOGs, indexes, etc.),
-    followed by other object types. This prevents errors when dependent objects are selected
-    alongside their parent tables.
+    Sort objects so that dependent objects are dropped BEFORE their parent tables.
+    This ensures clean drops without ORA errors from constraint/dependency violations.
     
-    Drop order priority:
-    1. TABLEs (highest priority - drops first, auto-drops MLOGs and indexes)
-    2. MATERIALIZED VIEWs
-    3. VIEWs
-    4. MVIEW LOGs (materialized view logs)
-    5. INDEXes
-    6. PRIMARY KEYs
+    Drop order priority (dependent objects first, tables last):
+    1. PRIMARY KEYs   - free constraints first, prevents 'resource busy' on table drops
+    2. INDEXes        - remove explicit indexes before table drops
+    3. MVIEW LOGs     - drop before their master tables (avoids ORA-12083)
+    4. MATERIALIZED VIEWs - drop before base tables they reference in queries
+    5. VIEWs          - drop before tables they reference
+    6. TABLEs         - drop last with CASCADE CONSTRAINTS PURGE; all deps already gone
     """
     type_order = {
-        'TABLE': 0,
-        'MATERIALIZED VIEW': 1,
-        'VIEW': 2,
-        'MVIEW LOG': 3,
-        'INDEX': 4,
-        'PRIMARY KEY': 5,
+        'PRIMARY KEY': 0,
+        'INDEX': 1,
+        'MVIEW LOG': 2,
+        'MATERIALIZED VIEW': 3,
+        'VIEW': 4,
+        'TABLE': 5,
     }
     
     def sort_key(obj):
@@ -764,14 +763,12 @@ def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_com
     if not objects:
         return False
     
-    # Sort objects so TABLEs are dropped first (to auto-drop dependent objects)
+    # Sort objects: dependent objects first (PK, INDEX, MLOG, MV, VIEW), tables last
     sorted_objects = _sort_objects_for_drop(objects)
     
-    # Build a set of table names being dropped (to skip dependent objects later)
-    tables_being_dropped = {
-        obj['name'].upper() for obj in sorted_objects 
-        if obj['type'].upper() == 'TABLE'
-    }
+    # Track objects that get auto-dropped as a side effect of other drops
+    # (e.g., dropping a TABLE auto-drops its MLOGs and indexes)
+    auto_dropped_names = set()
     
     # Build confirmation message
     obj_names = [f"{o['name']} ({o['type']})" for o in sorted_objects]
@@ -811,30 +808,33 @@ def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_com
     
     dropped_count = 0
     skipped_count = 0
-    auto_skipped_count = 0  # Objects skipped because parent table was dropped
+    auto_skipped_count = 0  # Objects auto-dropped by a previous operation or already gone
     
     for i, obj in enumerate(sorted_objects):
         obj_name = obj['name']
         obj_type = obj['type'].upper()
         remaining = len(sorted_objects) - i - 1
         
-        # Check if this object's parent table is being dropped - if so, skip silently
-        # (the object will be auto-dropped with the table)
-        parent_table = _get_table_for_object(obj)
-        if parent_table and parent_table.upper() in tables_being_dropped and obj_type != 'TABLE':
-            logger.info(f"Skipping {obj_type} {obj_name} - parent table {parent_table} is being dropped")
+        # Check if this object was already auto-dropped as a side effect of a previous drop
+        if obj_name.upper() in auto_dropped_names:
+            logger.info(f"Skipping {obj_type} {obj_name} - already auto-dropped by a previous operation")
             auto_skipped_count += 1
             continue
         
         try:
-            # For TABLEs, first drop associated indexes automatically (no confirmation)
+            # For TABLEs, drop any remaining indexes not in the user's selection
+            # (user-selected indexes were already dropped earlier in the loop)
             if obj_type == 'TABLE':
                 _drop_table_indexes(cursor, schema, obj_name)
             
             # Execute the drop based on object type
             if obj_type == 'TABLE':
-                cursor.execute(f'DROP TABLE "{schema}"."{obj_name}" PURGE')
+                cursor.execute(f'DROP TABLE "{schema}"."{obj_name}" CASCADE CONSTRAINTS PURGE')
                 logger.info(f"Dropped TABLE: {schema}.{obj_name}")
+                # TABLE drop auto-removes MLOGs, indexes, and constraints — mark them
+                # so later items in the loop are auto-skipped if they were also selected
+                auto_dropped_names.add(f"MLOG$_{obj_name}".upper())
+                auto_dropped_names.add(f"MLOG${obj_name}".upper())
             elif obj_type == 'VIEW':
                 cursor.execute(f'DROP VIEW "{schema}"."{obj_name}"')
                 logger.info(f"Dropped VIEW: {schema}.{obj_name}")

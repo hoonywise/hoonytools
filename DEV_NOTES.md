@@ -2065,6 +2065,44 @@ Fix: added `<KeyRelease>` binding to the name entry widgets in both `sql_view_lo
 - **3 additional** (duplicate logging, schema2 refresh asymmetry, auto-uppercase)
 - **0 regressions** — all files pass syntax checks
 
+**8. Mass drop order of operations was inverted.**
+
+The `_sort_objects_for_drop()` function in `object_cleanup_gui.py` dropped TABLEs first (priority 0), with dependent objects (indexes, PKs, MVs, MLOGs) dropping after. This is backwards — dropping a TABLE first can fail with:
+- **ORA-12083** if the table has an MLOG and an MV depends on that log
+- **ORA-02449** if another table has a FK referencing the table being dropped (without CASCADE CONSTRAINTS)
+- Orphaned/invalid MVs and views if their base table is pulled out from under them
+
+The correct order drops dependent objects BEFORE their parent tables:
+
+| Priority | Type | Reason |
+|----------|------|--------|
+| 0 | PRIMARY KEY | Free constraints first — prevents 'resource busy' |
+| 1 | INDEX | Remove explicit indexes before table drops |
+| 2 | MVIEW LOG | Drop before master tables (avoids ORA-12083) |
+| 3 | MATERIALIZED VIEW | Drop before base tables they reference |
+| 4 | VIEW | Drop before tables they reference |
+| 5 | TABLE | Drop last — all deps already gone |
+
+Additionally, the default TABLE drop was changed from `PURGE` to `CASCADE CONSTRAINTS PURGE`. In a mass-drop scenario, the user has already confirmed via dialog — `CASCADE CONSTRAINTS` handles FK references from tables NOT in the drop selection without requiring the user to click through "Force Drop" error dialogs. The Force Drop button remains as a fallback for other error types.
+
+The auto-skip logic was also updated: the old static `tables_being_dropped` set (pre-built before the loop) was replaced with a dynamic `auto_dropped_names` set that tracks objects auto-dropped as side effects (e.g., when a TABLE drop auto-removes its MLOG). Combined with the existing ORA-00942/ORA-01418 error catch, this provides robust handling for all edge cases.
+
+**9. Connection error tracebacks polluted the log pane.**
+
+The `_handle_connection_error()` function in `libs/oracle_db_connector.py` used `logger.exception()` for its generic fallback, which dumps the full Python traceback into the GUI log pane. For common issues like wrong password, unreachable host, or missing tnsnames.ora, users saw 10+ lines of internal Python stack frames instead of a clear error message.
+
+Fix: rewrote `_handle_connection_error()` (~85 lines) with specific handlers for 13 ORA/DPY error codes organized into four categories:
+
+| Category | Errors | Example Message |
+|----------|--------|-----------------|
+| Authentication | ORA-01017 | "Invalid username or password" |
+| Network / Connectivity | ORA-12543, ORA-12170, ORA-12541, ORA-12528, ORA-12537, ORA-12547 | "Database host is unreachable" |
+| Service / TNS Resolution | ORA-12514, ORA-12154 | "Database service not found" |
+| Database Availability | ORA-01034 | "Oracle database is not available" |
+| Client / Driver | DPY-4026, DPY-4011, DPY-6005 | "Could not find tnsnames.ora" |
+
+Each handler: (1) logs a clean `logger.error()` single-liner for the GUI log pane, and (2) shows a popup with actionable guidance (e.g., "Check your network connection" or "Verify the DSN in Settings"). The generic fallback now uses `logger.error()` + `logger.debug(exc_info=True)` so full tracebacks are available in the log file for troubleshooting but don't clutter the GUI.
+
 #### Follow-ups (Not Addressed)
 
 1. **Thread safety in Excel loader** — complex threading with abort logic, event queues, and shared state. A focused concurrency audit could be worthwhile.
