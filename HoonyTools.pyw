@@ -136,8 +136,6 @@ from libs.bible_books import book_lookup
 should_abort = False
 auto_scroll_enabled = True
 is_gui_running = True
-# Guard to prevent scheduling multiple schema2 login prompts concurrently
-dwh_prompting = False
 
 # Load Bible JSON from libs/en_kjv.json with robust lookup (works in dev and PyInstaller bundles)
 BIBLE_VERSES = []
@@ -1246,216 +1244,130 @@ def launch_tool_gui():
 
     def refresh_schema2_objects():
         schema2_status.config(text="Loading...")
-
-        # Helper: spawn a worker that connects using explicit credentials (no UI prompts)
-        def _start_worker_with_creds(creds):
-            def worker():
-                import oracledb
-                # Ensure Oracle client is initialized (helps tnsnames resolution in thick mode)
-                try:
-                    oracledb.init_oracle_client()
-                except Exception:
-                    # init may fail or be unnecessary (thin mode); ignore
-                    pass
-                rows = []
-                cur = None
-                conn = None
-                try:
-                    conn = oracledb.connect(user=creds["user"], password=creds["password"], dsn=creds["dsn"])
-                    cur = conn.cursor()
-                    owner = conn.username.upper()
-                    
-                    # Query for tables, views, materialized views with PK info
-                    # Exclude TABLEs that are backing tables for materialized views (same name as an MV)
-                    cur.execute("""
-                        SELECT ao.object_name,
-                               ao.object_type,
-                               (
-                                 SELECT LISTAGG(acc.column_name, ', ') WITHIN GROUP (ORDER BY acc.position)
-                                 FROM all_constraints ac
-                                 JOIN all_cons_columns acc
-                                   ON ac.owner = acc.owner AND ac.constraint_name = acc.constraint_name
-                                 WHERE ac.owner = ao.owner
-                                   AND ac.table_name = ao.object_name
-                                   AND ac.constraint_type = 'P'
-                               ) AS primary_key_cols
-                        FROM all_objects ao
-                        WHERE ao.owner = :owner
-                        AND ao.object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
-                        AND NOT (
-                            ao.object_type = 'TABLE' 
-                            AND EXISTS (
-                                SELECT 1 FROM all_objects mv 
-                                WHERE mv.owner = ao.owner 
-                                AND mv.object_name = ao.object_name 
-                                AND mv.object_type = 'MATERIALIZED VIEW'
-                            )
+        def worker():
+            from libs.oracle_db_connector import get_db_connection
+            conn = get_db_connection(schema='schema2', root=root)
+            if not conn:
+                if is_gui_running:
+                    try:
+                        root.after(0, lambda: schema2_status.config(text="No connection"))
+                    except Exception:
+                        pass
+                return
+            try:
+                cur = conn.cursor()
+                owner = conn.username.upper()
+                
+                # Query for tables, views, materialized views with PK info
+                # Exclude TABLEs that are backing tables for materialized views (same name as an MV)
+                cur.execute("""
+                    SELECT ao.object_name,
+                           ao.object_type,
+                           (
+                             SELECT LISTAGG(acc.column_name, ', ') WITHIN GROUP (ORDER BY acc.position)
+                             FROM all_constraints ac
+                             JOIN all_cons_columns acc
+                               ON ac.owner = acc.owner AND ac.constraint_name = acc.constraint_name
+                             WHERE ac.owner = ao.owner
+                               AND ac.table_name = ao.object_name
+                               AND ac.constraint_type = 'P'
+                           ) AS primary_key_cols
+                    FROM all_objects ao
+                    WHERE ao.owner = :owner
+                    AND ao.object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')
+                    AND NOT (
+                        ao.object_type = 'TABLE' 
+                        AND EXISTS (
+                            SELECT 1 FROM all_objects mv 
+                            WHERE mv.owner = ao.owner 
+                            AND mv.object_name = ao.object_name 
+                            AND mv.object_type = 'MATERIALIZED VIEW'
                         )
-                        ORDER BY ao.object_type, ao.object_name
-                    """, [owner])
-                    obj_rows = cur.fetchall()
-                    
-                    # Query for user-created indexes (excluding system and PK-backing indexes)
-                    cur.execute("""
-                        SELECT ai.index_name,
-                               'INDEX' AS object_type,
-                               ai.table_name
-                        FROM all_indexes ai
-                        WHERE ai.owner = :owner
-                          AND ai.index_name NOT LIKE 'SYS_%'
-                          AND ai.index_name NOT LIKE 'BIN$%'
-                          AND NOT EXISTS (
-                            SELECT 1 FROM all_constraints ac
-                            WHERE ac.owner = ai.owner
-                              AND ac.constraint_type = 'P'
-                              AND ac.index_name = ai.index_name
-                          )
-                        ORDER BY ai.index_name
-                    """, [owner])
-                    idx_rows = cur.fetchall()
-                    
-                    # Query for primary key constraints (as droppable objects)
-                    cur.execute("""
-                        SELECT ac.constraint_name,
-                               'PRIMARY KEY' AS object_type,
-                               ac.table_name
-                        FROM all_constraints ac
-                        WHERE ac.owner = :owner
+                    )
+                    ORDER BY ao.object_type, ao.object_name
+                """, [owner])
+                obj_rows = cur.fetchall()
+                
+                # Query for user-created indexes (excluding system and PK-backing indexes)
+                cur.execute("""
+                    SELECT ai.index_name,
+                           'INDEX' AS object_type,
+                           ai.table_name
+                    FROM all_indexes ai
+                    WHERE ai.owner = :owner
+                      AND ai.index_name NOT LIKE 'SYS_%'
+                      AND ai.index_name NOT LIKE 'BIN$%'
+                      AND NOT EXISTS (
+                        SELECT 1 FROM all_constraints ac
+                        WHERE ac.owner = ai.owner
                           AND ac.constraint_type = 'P'
-                        ORDER BY ac.table_name, ac.constraint_name
-                    """, [owner])
-                    pk_rows = cur.fetchall()
-                    
-                    # Format rows for display: (name, type, info)
-                    # For tables/views/mvs: info = "PK: col1, col2" or empty
-                    # For indexes: info = "Table: TABLE_NAME"
-                    # For PKs: info = "Table: TABLE_NAME"
-                    # For MLOGs: type = "MVIEW LOG", info = "Table: BASE_TABLE"
-                    formatted_rows = []
-                    for name, obj_type, pk_cols in obj_rows:
-                        # Detect MLOG tables (materialized view logs) - they start with MLOG$
-                        if obj_type == 'TABLE' and name.upper().startswith('MLOG$'):
-                            # Extract base table name from MLOG$_TABLENAME or MLOG$TABLENAME
-                            base_table = name[5:].lstrip('_')  # Remove MLOG$ and optional underscore
-                            formatted_rows.append((name, 'MVIEW LOG', f"Table: {base_table}"))
-                        else:
-                            info = f"PK: {pk_cols}" if pk_cols else ""
-                            formatted_rows.append((name, obj_type, info))
-                    for idx_name, obj_type, table_name in idx_rows:
-                        info = f"Table: {table_name}" if table_name else ""
-                        formatted_rows.append((idx_name, obj_type, info))
-                    for pk_name, obj_type, table_name in pk_rows:
-                        info = f"Table: {table_name}" if table_name else ""
-                        formatted_rows.append((pk_name, obj_type, info))
-                    
-                    rows = formatted_rows
-                except Exception as e:
-                    rows = []
-                    err_text = str(e)
-                    # Treat certain errors as expected environment/tns issues and avoid noisy stacktraces.
-                    if ("DPY-4026" in err_text) or ("tnsnames" in err_text.lower()) or isinstance(e, FileNotFoundError):
-                        # Informational: tnsnames/tns error detected; prompt the user to repair schema2 login.
-                        logger.info(f"schema2 connect encountered tns/tnsnames issue; will prompt user: {err_text}")
-                        # Update status label and schedule a single main-thread prompt to repair schema2 creds/config if not already prompting
-                        try:
-                            try:
-                                root.after(0, lambda: schema2_status.config(text="Prompting for login..."))
-                            except Exception:
-                                pass
-                            from libs import session as _session
-                            global dwh_prompting
-                            if not dwh_prompting:
-                                dwh_prompting = True
-                                def prompt_and_retry():
-                                    try:
-                                        from libs.oracle_db_connector import get_db_connection
-                                        from libs import session as _s
-                                        conn2 = get_db_connection(schema='schema2', root=root)
-                                        if conn2:
-                                            try:
-                                                conn2.close()
-                                            except Exception:
-                                                pass
-                                            new_creds = _s.get_credentials('schema2')
-                                            if new_creds:
-                                                # retry using new creds
-                                                _start_worker_with_creds(new_creds)
-                                    finally:
-                                        try:
-                                            # allow future prompts
-                                            dwh_prompting = False
-                                        except Exception:
-                                            pass
-                                try:
-                                    root.after(0, prompt_and_retry)
-                                except Exception:
-                                    dwh_prompting = False
-                        except Exception:
-                            logger.warning("Failed to schedule schema2 login prompt after tns error.")
+                          AND ac.index_name = ai.index_name
+                      )
+                    ORDER BY ai.index_name
+                """, [owner])
+                idx_rows = cur.fetchall()
+                
+                # Query for primary key constraints (as droppable objects)
+                cur.execute("""
+                    SELECT ac.constraint_name,
+                           'PRIMARY KEY' AS object_type,
+                           ac.table_name
+                    FROM all_constraints ac
+                    WHERE ac.owner = :owner
+                      AND ac.constraint_type = 'P'
+                    ORDER BY ac.table_name, ac.constraint_name
+                """, [owner])
+                pk_rows = cur.fetchall()
+                
+                # Format rows for display: (name, type, info)
+                # For tables/views/mvs: info = "PK: col1, col2" or empty
+                # For indexes: info = "Table: TABLE_NAME"
+                # For PKs: info = "Table: TABLE_NAME"
+                # For MLOGs: type = "MVIEW LOG", info = "Table: BASE_TABLE"
+                formatted_rows = []
+                for name, obj_type, pk_cols in obj_rows:
+                    # Detect MLOG tables (materialized view logs) - they start with MLOG$
+                    if obj_type == 'TABLE' and name.upper().startswith('MLOG$'):
+                        # Extract base table name from MLOG$_TABLENAME or MLOG$TABLENAME
+                        base_table = name[5:].lstrip('_')  # Remove MLOG$ and optional underscore
+                        formatted_rows.append((name, 'MVIEW LOG', f"Table: {base_table}"))
                     else:
-                        # Unexpected errors: log stacktrace so we can diagnose
-                        logger.exception(f"Failed to list schema2 objects: {e}")
-                finally:
-                    try:
-                        if cur:
-                            cur.close()
-                    except Exception:
-                        pass
-                    try:
-                        if conn:
-                            conn.close()
-                    except Exception:
-                        pass
-
-                if not rows:
-                    if is_gui_running:
-                        try:
-                            root.after(0, lambda: (_populate_treeview(schema2_tree, rows), schema2_count_label.config(text="No Objects"), schema2_status.config(text="")))
-                        except Exception:
-                            pass
-                else:
-                    if is_gui_running:
-                        try:
-                            root.after(0, lambda: (_populate_treeview(schema2_tree, rows), schema2_count_label.config(text=f"{len(rows)} Objects"), schema2_status.config(text="")))
-                        except Exception:
-                            pass
-
-            threading.Thread(target=worker, daemon=True).start()
-
-        # Decide whether we can use saved creds (no UI) or need to prompt on the main thread
-        from libs import session
-
-        creds = session.get_credentials('schema2')
-
-        if creds:
-            # Use the saved credentials in a background thread
-            _start_worker_with_creds(creds)
-            return
-
-        # No saved creds: prompt on the main thread (get_db_connection will handle prompting)
-        from libs.oracle_db_connector import get_db_connection
-        conn = get_db_connection(schema='schema2', root=root)
-        if not conn:
-            if is_gui_running:
+                        info = f"PK: {pk_cols}" if pk_cols else ""
+                        formatted_rows.append((name, obj_type, info))
+                for idx_name, obj_type, table_name in idx_rows:
+                    info = f"Table: {table_name}" if table_name else ""
+                    formatted_rows.append((idx_name, obj_type, info))
+                for pk_name, obj_type, table_name in pk_rows:
+                    info = f"Table: {table_name}" if table_name else ""
+                    formatted_rows.append((pk_name, obj_type, info))
+                
+                rows = formatted_rows
+            except Exception as e:
+                rows = []
+                logger.exception(f"Failed to list schema2 objects: {e}")
+            finally:
                 try:
-                    root.after(0, lambda: schema2_status.config(text="Not logged in"))
+                    cur.close()
                 except Exception:
                     pass
-            return
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
-        # If get_db_connection returned a connection, close it and use the stored session credentials
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-        # Credentials should have been set by get_db_connection when prompting
-        creds = session.get_credentials('schema2')
-        if not creds:
-            root.after(0, lambda: schema2_status.config(text="No credentials"))
-            return
-
-        _start_worker_with_creds(creds)
+            if not rows:
+                if is_gui_running:
+                    try:
+                        root.after(0, lambda: (_populate_treeview(schema2_tree, rows), schema2_count_label.config(text="No Objects"), schema2_status.config(text="")))
+                    except Exception:
+                        pass
+            else:
+                if is_gui_running:
+                    try:
+                        root.after(0, lambda: (_populate_treeview(schema2_tree, rows), schema2_count_label.config(text=f"{len(rows)} Objects"), schema2_status.config(text="")))
+                    except Exception:
+                        pass
+        threading.Thread(target=worker, daemon=True).start()
 
     # Wire buttons
     schema1_refresh_btn.config(command=refresh_schema1_objects)
@@ -1930,11 +1842,9 @@ def launch_tool_gui():
         "tools.index_gui",
         "tools.mv_refresh_gui",
     ]:
-        logging.getLogger(mod).propagate = True
         logging.getLogger(mod).handlers.clear()
-        logging.getLogger(mod).addHandler(stream_handler)
-        logging.getLogger(mod).addHandler(file_handler)
-        logging.getLogger(mod).setLevel(logging.INFO)    
+        logging.getLogger(mod).propagate = True
+        logging.getLogger(mod).setLevel(logging.INFO)
 
     stream_logs()
     
