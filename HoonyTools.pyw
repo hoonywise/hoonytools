@@ -1845,7 +1845,7 @@ def launch_tool_gui():
         else:
             auto_scroll_enabled = False
 
-    log_text.config(yscrollcommand=lambda *args: [on_scroll(*args), log_text.yview_moveto(args[0])])
+    log_text.config(yscrollcommand=lambda *args: [on_scroll(*args), log_text.vbar.set(*args)])
     
     # Setup root logger
     # Ensure stdout/stderr use UTF-8 where supported to avoid encode errors
