@@ -45,19 +45,25 @@ This release delivers two rounds of comprehensive code review targeting cross-to
 - **Unique constraint indexes**: Added `'U'` to constraint type filter in `_drop_table_indexes()` so unique constraint indexes aren't dropped directly (which would fail with ORA-02429)
 - **CSV BOM handling**: Added `encoding='utf-8-sig'` to `pd.read_csv()` calls in Excel/CSV loader for Windows-exported CSV files
 - **MV Manager orphaned window**: Added `parent=` parameter to `run_mv_refresh_gui()` and launcher now passes `parent=root`
+- **Duplicate log messages**: Every log message appeared twice because per-module loggers had handlers AND `propagate=True` — removed per-module handlers so messages only flow through the root logger
+- **Schema2 refresh asymmetry**: `refresh_schema2_objects()` used raw `oracledb.connect()` bypassing `get_db_connection()` — no "Connected" log message, no session registration. Refactored to mirror schema1's pattern using `get_db_connection(schema='schema2', root=root)`
+
+### Improved
+
+- **Auto-uppercase view/MV names**: View and MV name entry fields in SQL View Loader and SQL MV Loader now auto-uppercase as you type — Oracle stores unquoted identifiers as uppercase, so this prevents accidental case-sensitive object creation
 
 ### Files Modified
 
 | File | Changes |
 |------|---------|
-| `HoonyTools.pyw` | Fixed logger names (13 modules), ephemeral connection cleanup, MV Manager parent parameter |
+| `HoonyTools.pyw` | Fixed logger names (13 modules), ephemeral connection cleanup, MV Manager parent parameter, fixed duplicate logging (removed per-module handlers), refactored schema2 refresh to use `get_db_connection()`, removed unused `dwh_prompting` global |
 | `tools/mv_refresh_gui.py` | Fixed wrong-schema commit (4 calls), removed dead globals() checks, multi-select guard, show_diag() connection fix, added parent parameter |
 | `tools/pk_designate_gui.py` | Theme-aware help text color, cursor leak fixes (2 locations), scoped close_connections |
 | `tools/index_gui.py` | Scoped close_connections to schema_key |
 | `tools/object_cleanup_gui.py` | SQL identifier quoting, unique constraint filter, scoped close_connections |
 | `loaders/excel_csv_loader.py` | NaN fix (4 locations), CSV encoding, scoped close_connections (3 locations) |
-| `loaders/sql_view_loader.py` | on_finish callback on connection failure |
-| `loaders/sql_mv_loader.py` | on_finish callback on connection failure |
+| `loaders/sql_view_loader.py` | on_finish callback on connection failure, auto-uppercase view name entry |
+| `loaders/sql_mv_loader.py` | on_finish callback on connection failure, auto-uppercase MV name entry |
 | `libs/abort_manager.py` | Thread-safe created_tables, fixed getattr pattern |
 | `libs/bible_books.py` | Fixed duplicate key |
 | `libs/gui_utils.py` | Expanded is_dark_theme() coverage |

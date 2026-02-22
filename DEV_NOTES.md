@@ -2036,12 +2036,33 @@ df = df.fillna('').astype(str)
 - **Pre-existing LSP type inference errors** — these are static analysis false positives (e.g., `_default_root` import, `Misc | None` assignments) and not runtime bugs.
 - **Dead functions identified but not removed** — `select_sheets_gui()`, `show_replace_column_selector()`, `load_multiple_files()` in `excel_csv_loader.py` remain for now to minimize risk.
 
+#### Additional Fixes (Post-Review, Same Session)
+
+**5. Duplicate log messages — every line appeared twice.**
+
+During runtime testing, every log message (including "Connected to...", "Oracle client initialized", and "Dropped TABLE...") appeared exactly twice in the GUI log pane. Root cause: the logging config at `HoonyTools.pyw:1830-1849` added `stream_handler` and `file_handler` to both the root logger AND each per-module logger, while also setting `propagate = True` on the module loggers. With propagation enabled, each message hit the module logger's handlers (first copy) then propagated to the root logger's handlers (second copy).
+
+Fix: removed per-module `addHandler()` calls. Module loggers now only need `handlers.clear()`, `propagate = True`, and `setLevel(logging.INFO)` — messages flow up to the root logger which has the two handlers.
+
+**6. Schema2 refresh used raw `oracledb.connect()` — no logging, no session registration.**
+
+During testing, clicking Refresh on schema1 showed `"Connected to HOONYDB as dwh (schema1)"` in the log, but clicking Refresh on schema2 showed nothing. Investigation revealed `refresh_schema2_objects()` had a completely different connection path from schema1: it extracted credentials manually and called `oracledb.connect()` directly, bypassing `get_db_connection()`. This meant no "Connected" log message, no `session.register_connection()` call, and ~210 lines of special tnsnames/DPY-4026 error handling with retry logic.
+
+Fix: refactored `refresh_schema2_objects()` to mirror `refresh_schema1_objects()` exactly — a simple worker that calls `get_db_connection(schema='schema2', root=root)`. The `get_db_connection()` function already handles credential prompting (from background threads via `_prompt_for_credentials`), logging, error handling, and session registration. This reduced the function from ~210 lines to ~120 lines and eliminated the `dwh_prompting` global variable.
+
+**7. Auto-uppercase view/MV name entry fields.**
+
+Oracle stores unquoted identifiers as uppercase in the data dictionary. If a user typed `V_SETUP_SALES_TEST_large`, Oracle would create it as `"V_SETUP_SALES_TEST_large"` (case-sensitive, quoted) rather than the expected `V_SETUP_SALES_TEST_LARGE`. This is a common source of confusion when querying the data dictionary later.
+
+Fix: added `<KeyRelease>` binding to the name entry widgets in both `sql_view_loader.py` and `sql_mv_loader.py` that auto-uppercases the value as the user types. Also added `.upper()` in `on_submit()` as a safety net for programmatic inserts. The binding preserves cursor position and only triggers widget updates when the value actually changes.
+
 #### Statistics
 
-- **26 total fixes** across 12 files
+- **29 total fixes** across 12 files (26 from review + 3 from runtime testing)
 - **5 high priority** (data corruption, wrong-schema operations, dead features)
 - **12 medium priority** (resource leaks, UI bugs, logging, SQL safety)
 - **2 low priority** (encoding, window parenting)
+- **3 additional** (duplicate logging, schema2 refresh asymmetry, auto-uppercase)
 - **0 regressions** — all files pass syntax checks
 
 #### Follow-ups (Not Addressed)
