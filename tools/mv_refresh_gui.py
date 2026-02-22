@@ -80,31 +80,6 @@ def run_mv_refresh_gui(on_finish=None):
                         return False
                     return None
 
-    def create_materialized_view_logs(cursor, conn, tables, log_type, include_new_values=True):
-        for t in tables:
-            try:
-                # If a helper is available, detect an existing log and surface via logs
-                if detect_existing_mlog:
-                    try:
-                        meta = detect_existing_mlog(cursor, t)
-                        if meta.get('exists'):
-                            logger.info(f"Existing MV log detected for {t}: {meta.get('log_tables')}")
-                    except Exception:
-                        pass
-
-                sql = f"CREATE MATERIALIZED VIEW LOG ON {t} \n"
-                if log_type == 'ROWID':
-                    sql += "  WITH ROWID\n"
-                else:
-                    sql += "  WITH PRIMARY KEY\n"
-                if include_new_values:
-                    sql += "  INCLUDING NEW VALUES"
-                cursor.execute(sql)
-                conn.commit()
-                logger.info(f"✅ Created materialized view log on {t}")
-            except Exception as e:
-                logger.warning(f"Could not create MV log on {t}: {e}")
-
     root = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
     root.title("Materialized View Manager")
     

@@ -7,7 +7,6 @@ from libs import session
 from libs import gui_utils
 import ctypes
 from libs.paths import ASSETS_PATH
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

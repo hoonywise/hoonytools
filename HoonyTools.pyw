@@ -1,6 +1,6 @@
 ﻿import tkinter as tk
 from tkinter import scrolledtext, ttk
-import tkinter.font as tkfont
+
 import logging
 import threading
 from io import StringIO
@@ -506,7 +506,7 @@ def show_splash():
                  bg=splash_bg, fg=splash_fg).pack(side="left")
 
         splash.hoony_logo = hoony_logo  # Prevent garbage collection
-    except:
+    except Exception:
         tk.Label(splash, text="HoonyTools Launcher", font=("Arial", 18, "bold"),
                  bg=splash_bg, fg=splash_fg).pack(pady=(40, 10))
 
@@ -1490,8 +1490,9 @@ def launch_tool_gui():
         # Determine user schema from session credentials
         from libs import session as _sess
         owner = None
-        if _sess.stored_credentials:
-            owner = _sess.stored_credentials.get('username', '').upper()
+        creds = _sess.get_credentials('schema1')
+        if creds:
+            owner = creds.get('user', '').upper()
         if not owner:
             try:
                 from libs.oracle_db_connector import get_db_connection
@@ -1606,8 +1607,9 @@ def launch_tool_gui():
         # Get schema name from session credentials
         from libs import session as _sess
         owner = None
-        if _sess.stored_credentials:
-            owner = _sess.stored_credentials.get('username', '').upper()
+        creds = _sess.get_credentials('schema1')
+        if creds:
+            owner = creds.get('user', '').upper()
         if not owner:
             try:
                 from libs.oracle_db_connector import get_db_connection
@@ -1831,7 +1833,7 @@ def launch_tool_gui():
         def winfo_exists(self):
             try:
                 return self.canvas.winfo_exists()
-            except:
+            except Exception:
                 return False
     
     status_light = StatusLight(status_canvas, status_circle)
@@ -2039,22 +2041,6 @@ def launch_tool_gui():
                 gui_utils.apply_theme_to_scrollbar(globals()['verse_scrollbar'])
         except Exception:
             pass
-        
-        # Style all buttons in main window
-        _all_buttons = [
-            'verse_prev_btn', 'verse_next_btn',
-            'schema1_refresh_btn', 'schema1_load_btn', 'schema1_drop_btn',
-            'schema1_view_btn', 'schema1_mv_btn', 'schema1_pk_btn', 'schema1_index_btn',
-            'schema2_refresh_btn', 'schema2_load_btn', 'schema2_drop_btn',
-            'schema2_view_btn', 'schema2_mv_btn', 'schema2_pk_btn', 'schema2_index_btn',
-        ]
-        for btn_name in _all_buttons:
-            try:
-                if btn_name in dir():
-                    btn = eval(btn_name)
-                    gui_utils.apply_theme_to_button(btn)
-            except Exception:
-                pass
         
         # Apply button theme using locals/nonlocals directly
         try:

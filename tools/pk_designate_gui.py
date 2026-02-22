@@ -604,7 +604,7 @@ def main(parent=None, schema_choice=None, on_finish=None):
         cur = conn.cursor()
         try:
             # get row count
-            count_sql = f'SELECT COUNT(*) FROM { _quote_ident(owner) }.{ _quote_ident(tbl) }'
+            count_sql = f'SELECT COUNT(*) FROM {_quote_ident(owner)}.{_quote_ident(tbl)}'
             logger.info('Running row count SQL: %s', count_sql)
             cur.execute(count_sql)
             total = cur.fetchone()[0]

@@ -1,14 +1,16 @@
-should_abort = False
-created_tables = set()
-current_connection = None
-cleanup_done = False
-prompt_event = None
-
 import logging
 import threading
 import oracledb
 from libs import session
+
 logger = logging.getLogger(__name__)
+
+should_abort = False
+created_tables = set()
+_tables_lock = threading.Lock()
+current_connection = None
+cleanup_done = False
+prompt_event = None
 
 
 def is_expected_disconnect(exc: Exception) -> bool:
@@ -64,7 +66,8 @@ def cancel_prompt_event():
 def reset():
     global should_abort, created_tables, cleanup_done, current_connection
     should_abort = False
-    created_tables.clear()
+    with _tables_lock:
+        created_tables.clear()
     try:
         current_connection = None
     except Exception:
@@ -82,16 +85,17 @@ def register_created_table(table_name, schema=None):
     If schema is provided, store as "SCHEMA.TABLE" (both uppercased) so
     cleanup can drop it even if the connection or cursor is unavailable.
     """
-    try:
-        if schema:
-            created_tables.add(f"{schema.upper()}.{table_name.upper()}")
-        else:
-            created_tables.add(table_name.upper())
-    except Exception:
+    with _tables_lock:
         try:
-            created_tables.add(str(table_name).upper())
+            if schema:
+                created_tables.add(f"{schema.upper()}.{table_name.upper()}")
+            else:
+                created_tables.add(table_name.upper())
         except Exception:
-            pass
+            try:
+                created_tables.add(str(table_name).upper())
+            except Exception:
+                pass
 
 def register_connection(conn):
     """Register the currently active DB connection so external abort handlers
@@ -124,7 +128,7 @@ def cleanup_on_abort(conn, cursor):
     global cleanup_done, current_connection
 
     # Idempotent: if cleanup has already been performed, return quickly.
-    if getattr(globals(), 'cleanup_done', False) or cleanup_done:
+    if cleanup_done:
         logger.debug("cleanup_on_abort called but cleanup already performed; returning")
         return
 
@@ -175,8 +179,10 @@ def cleanup_on_abort(conn, cursor):
                 schema = None
 
         # Drop any created tables when we have enough context
-        if created_tables and cursor:
-            for table in list(created_tables):
+        with _tables_lock:
+            tables_snapshot = list(created_tables)
+        if tables_snapshot and cursor:
+            for table in tables_snapshot:
                 # If the table is already stored as SCHEMA.TABLE use it directly.
                 try:
                     if '.' in table:
@@ -186,11 +192,8 @@ def cleanup_on_abort(conn, cursor):
                     try:
                         cursor.execute(f'DROP TABLE {drop_name} PURGE')
                         logger.info(f"🗑️ Dropped table from abort cleanup: {drop_name}")
-                        try:
-                            # Remove from tracking so fallback does not retry already-dropped tables
+                        with _tables_lock:
                             created_tables.discard(table)
-                        except Exception:
-                            pass
                     except Exception as e:
                         # DPY-1001 is expected when the connection/driver has been closed
                         if is_expected_disconnect(e):
@@ -200,7 +203,7 @@ def cleanup_on_abort(conn, cursor):
                 except Exception as e:
                     logger.warning(f"⚠️ Error while attempting to drop table {table}: {e}")
         else:
-            if created_tables and not cursor:
+            if tables_snapshot and not cursor:
                 logger.debug("Skipping table drops: no cursor available during abort cleanup")
 
         # If there are remaining created_tables that we couldn't drop because
@@ -210,10 +213,12 @@ def cleanup_on_abort(conn, cursor):
         # fully-qualified names. This helps when the worker's connection was
         # closed to interrupt DB calls and the original cursor is unusable.
         try:
-            if created_tables:
+            with _tables_lock:
+                remaining_tables = list(created_tables)
+            if remaining_tables:
                 # Determine whether any created table looks like SCHEMA2.<TABLE>
                 # (check if table name contains a dot prefix)
-                needs_schema2 = any(isinstance(t, str) and '.' in t for t in created_tables)
+                needs_schema2 = any(isinstance(t, str) and '.' in t for t in remaining_tables)
                 creds = None
                 # Prefer schema2 credentials for schema2-targeted drops
                 try:
@@ -226,7 +231,7 @@ def cleanup_on_abort(conn, cursor):
 
                 if creds:
                     try:
-                        logger.debug(f"Attempting fallback cleanup connection to drop remaining tables: {created_tables}")
+                        logger.debug(f"Attempting fallback cleanup connection to drop remaining tables: {remaining_tables}")
                         try:
                             # use oracledb directly to avoid UI prompts
                             fb_conn = oracledb.connect(user=creds.get('user'), password=creds.get('password'), dsn=creds.get('dsn'))
@@ -237,15 +242,13 @@ def cleanup_on_abort(conn, cursor):
                             fb_cur = None
                             try:
                                 fb_cur = fb_conn.cursor()
-                                for table in list(created_tables):
+                                for table in remaining_tables:
                                     try:
                                         # table may already be fully-qualified (SCHEMA.TABLE)
                                         fb_cur.execute(f"DROP TABLE {table} PURGE")
                                         logger.info(f"🗑️ Dropped table from abort cleanup (fallback): {table}")
-                                        try:
+                                        with _tables_lock:
                                             created_tables.discard(table)
-                                        except Exception:
-                                            pass
                                     except Exception as e:
                                         if is_expected_disconnect(e):
                                             logger.debug(f"Could not drop {table} during fallback cleanup (expected): {e}")
@@ -288,7 +291,8 @@ def cleanup_on_abort(conn, cursor):
         # should_abort state for the caller to inspect/reset. Mark cleanup_done
         # so subsequent calls return early.
         try:
-            created_tables.clear()
+            with _tables_lock:
+                created_tables.clear()
         except Exception:
             pass
 

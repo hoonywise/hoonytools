@@ -6,7 +6,7 @@ try:
 except Exception:
     ttk = None
 from tkinter import Toplevel, Listbox, Scrollbar, Button, Label, Entry, StringVar, IntVar
-from tkinter.constants import MULTIPLE, END, LEFT, RIGHT, Y, BOTH, EXTENDED
+from tkinter.constants import END, LEFT, RIGHT, Y, BOTH, EXTENDED
 
 from libs.oracle_db_connector import get_db_connection
 from libs import session

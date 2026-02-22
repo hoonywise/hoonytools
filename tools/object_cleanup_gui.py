@@ -1,9 +1,5 @@
-import sys
-from pathlib import Path
-from libs.paths import PROJECT_PATH as BASE_PATH
-import oracledb
 import logging
-from tkinter import Toplevel, Label, Checkbutton, IntVar, Button, simpledialog, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, Y, BOTH
+from tkinter import Toplevel, Label, Checkbutton, IntVar, Button, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, Y, BOTH
 from tkinter import _default_root
 try:
     import tkinter.ttk as ttk

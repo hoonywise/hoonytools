@@ -41,7 +41,7 @@ book_lookup = {
     "mt": "Matthew",
     "mk": "Mark",
     "lk": "Luke",
-    "jn": "John",
+    "jo": "John",
     "ac": "Acts",
     "rm": "Romans",
     "1co": "1 Corinthians",

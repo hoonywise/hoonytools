@@ -8,8 +8,6 @@ import threading
 import queue as _queue
 import tkinter as tk
 from tkinter import Tk, filedialog, simpledialog, Toplevel, Label, Checkbutton, IntVar, Button, Entry
-import sys
-from pathlib import Path
 from libs.table_utils import create_index_if_columns_exist
 from typing import Any, Dict
 
@@ -672,8 +670,10 @@ def show_upsert_selector(parent, cols):
         Button(btn_inner, text="Cancel", width=10, command=on_cancel).pack(side="left")
 
         # Mouse wheel support
+        _mw_handler = None
         try:
-            canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+            _mw_handler = lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+            canvas.bind_all("<MouseWheel>", _mw_handler)
         except Exception:
             pass
 
@@ -691,6 +691,10 @@ def show_upsert_selector(parent, cols):
                 if event and event.widget == win:
                     try:
                         gui_utils.unregister_theme_callback(_on_theme_change)
+                    except Exception:
+                        pass
+                    try:
+                        canvas.unbind_all("<MouseWheel>")
                     except Exception:
                         pass
             win.bind('<Destroy>', _on_destroy)
@@ -1310,7 +1314,8 @@ def select_sheets_gui(file, sheets):
     canvas.pack(side=LEFT, fill=BOTH, expand=True)
     scrollbar.pack(side=RIGHT, fill=Y)
 
-    canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+    _mw_handler = lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+    canvas.bind_all("<MouseWheel>", _mw_handler)
 
     vars_ = []
     for sheet in sheets:
@@ -1325,7 +1330,7 @@ def select_sheets_gui(file, sheets):
         
         if len(vars_) == 0:
             entry.focus()
-            entry.select_range(0, 'end')  # ✅ Highlight entire prefilled name    
+            entry.select_range(0, 'end')  # Highlight entire prefilled name    
         
         frame.pack(fill="x", padx=10, pady=2)
         vars_.append({"var": var, "entry": entry})
@@ -1344,6 +1349,10 @@ def select_sheets_gui(file, sheets):
             if event and event.widget == top:
                 try:
                     gui_utils.unregister_theme_callback(_on_theme_change)
+                except Exception:
+                    pass
+                try:
+                    canvas.unbind_all("<MouseWheel>")
                 except Exception:
                     pass
         top.bind('<Destroy>', _on_destroy)
@@ -2954,7 +2963,7 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
                     gui_utils.unregister_theme_callback(_on_theme_change)
                 except Exception:
                     pass
-        win.bind('<Destroy>', _on_theme_destroy)
+        win.bind('<Destroy>', _on_theme_destroy, add='+')
     except Exception:
         pass
 

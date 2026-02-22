@@ -804,7 +804,11 @@ def is_dark_theme() -> bool:
     Returns:
         True if current theme is dark (pure_black through graphite)
     """
-    dark_themes = {'pure_black', 'midnight', 'charcoal', 'slate', 'graphite'}
+    dark_themes = {
+        'pure_black', 'high_contrast', 'midnight', 'dracula',
+        'one_dark', 'monokai', 'gruvbox_dark', 'charcoal',
+        'nord', 'slate', 'solarized_dark', 'graphite',
+    }
     return _current_theme in dark_themes
 
 
