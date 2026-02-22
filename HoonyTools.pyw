@@ -1500,6 +1500,10 @@ def launch_tool_gui():
                 if conn:
                     owner = conn.username.upper()
                     try:
+                        session.unregister_connection(root, conn, 'schema1')
+                    except Exception:
+                        pass
+                    try:
                         conn.close()
                     except Exception:
                         pass
@@ -1617,6 +1621,10 @@ def launch_tool_gui():
                 if conn:
                     owner = conn.username.upper()
                     try:
+                        session.unregister_connection(root, conn, 'schema1')
+                    except Exception:
+                        pass
+                    try:
                         conn.close()
                     except Exception:
                         pass
@@ -1658,6 +1666,10 @@ def launch_tool_gui():
                 conn = get_db_connection(schema='schema2', root=root)
                 if conn:
                     owner = conn.username.upper()
+                    try:
+                        session.unregister_connection(root, conn, 'schema2')
+                    except Exception:
+                        pass
                     try:
                         conn.close()
                     except Exception:
@@ -1904,12 +1916,19 @@ def launch_tool_gui():
     logger.addHandler(file_handler)
     
     for mod in [
-        "abort_manager",
-        "oracle_db_connector",
-        "table_utils",
-        "excel_csv_loader",
-        "sql_view_loader",
-        "object_cleanup_gui",
+        "libs.abort_manager",
+        "libs.oracle_db_connector",
+        "libs.table_utils",
+        "libs.gui_utils",
+        "libs.session",
+        "libs.mv_log_utils",
+        "loaders.excel_csv_loader",
+        "loaders.sql_view_loader",
+        "loaders.sql_mv_loader",
+        "tools.object_cleanup_gui",
+        "tools.pk_designate_gui",
+        "tools.index_gui",
+        "tools.mv_refresh_gui",
     ]:
         logging.getLogger(mod).propagate = True
         logging.getLogger(mod).handlers.clear()
@@ -2387,7 +2406,7 @@ def launch_tool_gui():
                         refresh_schema1_objects()
                     if session.get_credentials('schema2'):
                         refresh_schema2_objects()
-                run_mv_refresh_gui(on_finish=on_close)
+                run_mv_refresh_gui(parent=root, on_finish=on_close)
             except Exception as e:
                 try:
                     from tkinter import messagebox

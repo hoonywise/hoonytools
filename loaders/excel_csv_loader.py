@@ -1492,11 +1492,11 @@ def load_multiple_files(launcher_root=None):
                     file_name = os.path.splitext(os.path.basename(file_path))[0].replace('-', '_').replace(' ', '_').upper()
 
                     if file_path.lower().endswith('.csv'):
-                        df = pd.read_csv(file_path)
+                        df = pd.read_csv(file_path, encoding='utf-8-sig')
                         df = clean_column_names(df)
                         file_prefix = file_name
                         df.columns = [col.replace(f"{file_prefix}_", "") for col in df.columns]
-                        df = df.astype(str).fillna('')
+                        df = df.fillna('').astype(str)
                         table_name = file_name
                         from tkinter.simpledialog import askstring
                         # askstring may not accept a positional parent across Tk versions;
@@ -1744,7 +1744,7 @@ def load_multiple_files(launcher_root=None):
 
             try:
                 try:
-                    session.close_connections(parent)
+                    session.close_connections(parent, schema=schema_key)
                 except Exception:
                     logger.debug('Session cleanup failed', exc_info=True)
                 if created_temp_root:
@@ -2098,7 +2098,7 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
                 import threading as _thr
                 def _close_conns():
                     try:
-                        session.close_connections(parent)
+                        session.close_connections(parent, schema=schema_key)
                     except Exception:
                         logger.debug('Failed to close connections during abort', exc_info=True)
                 _thr.Thread(target=_close_conns, daemon=True).start()
@@ -2300,12 +2300,12 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
                 if (path, None) in existing_paths:
                     continue
                 try:
-                    df = pd.read_csv(path)
+                    df = pd.read_csv(path, encoding='utf-8-sig')
                     df = clean_column_names(df)
                     file_name = os.path.splitext(os.path.basename(path))[0]
                     file_prefix = file_name.replace('-', '_').replace(' ', '_').upper()
                     df.columns = [col.replace(f"{file_prefix}_", "") for col in df.columns]
-                    df = df.astype(str).fillna('')
+                    df = df.fillna('').astype(str)
                     tbl_name = _sanitize_table_name(file_name)
                     col_sizes = _compute_col_sizes(df)
                     file_entries.append({
@@ -2343,7 +2343,7 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
                         try:
                             df = pd.read_excel(xls, sheet_name=sheet)
                             df = clean_column_names(df)
-                            df = df.astype(str).fillna('')
+                            df = df.fillna('').astype(str)
                             if len(sheets) > 1:
                                 tbl_name = _sanitize_table_name(f'{file_name}_{sheet}')
                             else:
@@ -2554,7 +2554,7 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
                 if is_single:
                     # Merge all DataFrames into one
                     combined_df = pd.concat([e['df'] for e in _entries_snapshot], ignore_index=True)
-                    combined_df = combined_df.astype(str).fillna('')
+                    combined_df = combined_df.fillna('').astype(str)
                     tbl_name = _single_tbl
                     col_sizes = _compute_col_sizes(combined_df) if use_tight else None
 
@@ -2937,7 +2937,7 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
         except Exception:
             logger.debug('Failed to close connection on window close', exc_info=True)
         try:
-            session.close_connections(parent)
+            session.close_connections(parent, schema=schema_key)
         except Exception:
             pass
         try:

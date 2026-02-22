@@ -550,7 +550,7 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
     for table in selected:
         try:
             column = "ACYR" if table.startswith("SCFF_") else "GI03_TERM_ID"
-            cursor.execute(f'DELETE FROM {schema}."{table}" WHERE {column} = :1', [value])
+            cursor.execute(f'DELETE FROM "{schema}"."{table}" WHERE "{column}" = :1', [value])
             logger.info(f"🧹 Deleted from {schema}.{table} where {column} = {value}")
         except Exception as e:
             logger.warning(f"⚠️ Failed to delete from {table}: {e}")
@@ -594,7 +594,7 @@ def _drop_table_indexes(cursor, schema, table_name):
               AND NOT EXISTS (
                 SELECT 1 FROM all_constraints ac
                 WHERE ac.owner = ai.owner
-                  AND ac.constraint_type = 'P'
+                  AND ac.constraint_type IN ('P', 'U')
                   AND ac.index_name = ai.index_name
               )
         """, {'owner': schema, 'table_name': table_name})
@@ -925,7 +925,7 @@ def drop_objects(schema_choice, schema_name, objects, parent_window=None, on_com
     
     # Cleanup session connections
     try:
-        session.close_connections(parent_window)
+        session.close_connections(parent_window, schema=schema_key)
     except Exception:
         logger.debug('Session cleanup failed', exc_info=True)
     

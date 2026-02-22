@@ -611,7 +611,7 @@ def main(parent=None, schema_key=None, object_name=None, object_type=None, on_fi
     # Cleanup session connections
     try:
         target = parent if parent else win
-        session.close_connections(target)
+        session.close_connections(target, schema=schema_key)
     except Exception:
         logger.debug('Session cleanup failed', exc_info=True)
 
