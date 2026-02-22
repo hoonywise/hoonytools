@@ -54,6 +54,7 @@ This release delivers two rounds of comprehensive code review targeting cross-to
 - **Mass drop order of operations**: Reversed drop order from TABLE-first to dependent-objects-first (PK → INDEX → MVIEW LOG → MV → VIEW → TABLE). Dependent objects now drop explicitly before their parent tables, preventing ORA-12083 and constraint violation errors during mass drops
 - **Default CASCADE CONSTRAINTS PURGE**: Table drops in mass-drop mode now use `CASCADE CONSTRAINTS PURGE` by default instead of plain `PURGE` — handles FK references from tables outside the drop selection without requiring the "Force Drop" fallback
 - **User-friendly connection error messages**: Replaced verbose Python tracebacks in the log pane with clean single-line error messages for 13 specific Oracle/driver error codes (ORA-01017, ORA-12543, ORA-12170, ORA-12541, ORA-12528, ORA-12514, ORA-12154, ORA-01034, ORA-12537/12547, DPY-4026, DPY-4011, DPY-6005). Each error includes actionable guidance in the popup dialog. Full tracebacks are still available at DEBUG level for troubleshooting
+- **PK-backing index identification in Index Manager**: PK-backing indexes now display as `PK INDEX` type instead of `UNIQUE`, making them visually distinct from regular indexes. Attempting to drop a PK-backing index shows a friendly message directing the user to drop the PRIMARY KEY constraint from the main object pane instead of failing with ORA-02429
 
 ### Files Modified
 
@@ -62,7 +63,7 @@ This release delivers two rounds of comprehensive code review targeting cross-to
 | `HoonyTools.pyw` | Fixed logger names (13 modules), ephemeral connection cleanup, MV Manager parent parameter, fixed duplicate logging (removed per-module handlers), refactored schema2 refresh to use `get_db_connection()`, removed unused `dwh_prompting` global |
 | `tools/mv_refresh_gui.py` | Fixed wrong-schema commit (4 calls), removed dead globals() checks, multi-select guard, show_diag() connection fix, added parent parameter |
 | `tools/pk_designate_gui.py` | Theme-aware help text color, cursor leak fixes (2 locations), scoped close_connections |
-| `tools/index_gui.py` | Scoped close_connections to schema_key |
+| `tools/index_gui.py` | Scoped close_connections to schema_key, PK-backing index detection (`PK INDEX` type label), blocked drop with friendly message, clean error logging |
 | `tools/object_cleanup_gui.py` | SQL identifier quoting, unique constraint filter, scoped close_connections, revised mass-drop order (dependent objects first), default CASCADE CONSTRAINTS PURGE |
 | `loaders/excel_csv_loader.py` | NaN fix (4 locations), CSV encoding, scoped close_connections (3 locations) |
 | `loaders/sql_view_loader.py` | on_finish callback on connection failure, auto-uppercase view name entry |
