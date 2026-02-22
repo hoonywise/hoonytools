@@ -358,7 +358,8 @@ def main(parent=None, schema_choice=None, on_finish=None):
         "Threshold behavior: when 'Use row threshold' is checked, DISTINCT checks run only if table rows <= threshold.\n"
         "If unchecked, DISTINCT checks are always performed. Threshold and checkbox state are saved between runs."
     )
-    Label(ctrl, text=help_text, wraplength=280, justify='left', fg='#333').pack(pady=(6,0))
+    _help_fg = '#aaa' if gui_utils.is_dark_theme() else '#333'
+    Label(ctrl, text=help_text, wraplength=280, justify='left', fg=_help_fg).pack(pady=(6,0))
 
     # Settings persistence
     settings_file = Path(base_path) / 'libs' / 'pk_designate_settings.json'
@@ -445,16 +446,22 @@ def main(parent=None, schema_choice=None, on_finish=None):
                 table_stats[tbl]['columns'][col] = {'nullable': nullable, 'distinct': None}
             # fetch and cache rowcount for tooltip/threshold logic
             if table_stats[tbl]['rowcount'] is None:
+                rc_cur = None
                 try:
                     rc_cur = conn.cursor()
                     rc_sql = f'SELECT COUNT(*) FROM {_quote_ident(owner)}.{_quote_ident(tbl)}'
                     rc_cur.execute(rc_sql)
                     rc = rc_cur.fetchone()[0]
                     table_stats[tbl]['rowcount'] = rc
-                    rc_cur.close()
                 except Exception:
                     table_stats[tbl]['rowcount'] = -1
                     logger.exception('Failed to fetch rowcount for %s', tbl)
+                finally:
+                    if rc_cur:
+                        try:
+                            rc_cur.close()
+                        except Exception:
+                            pass
             # pre-generate a sane constraint name
             cname = _sanitize_constraint_name(f'PK_{tbl}')
             constraint_name_var.set(cname)
@@ -604,7 +611,7 @@ def main(parent=None, schema_choice=None, on_finish=None):
         cur = conn.cursor()
         try:
             # get row count
-            count_sql = f'SELECT COUNT(*) FROM { _quote_ident(owner) }.{ _quote_ident(tbl) }'
+            count_sql = f'SELECT COUNT(*) FROM {_quote_ident(owner)}.{_quote_ident(tbl)}'
             logger.info('Running row count SQL: %s', count_sql)
             cur.execute(count_sql)
             total = cur.fetchone()[0]
@@ -615,16 +622,22 @@ def main(parent=None, schema_choice=None, on_finish=None):
             for col, nullable in cols_info:
                 # If column is declared nullable, run a data-level null check; skip if any nulls
                 if nullable == 'Y':
+                    null_cur = None
                     try:
                         null_cur = conn.cursor()
                         null_sql = f'SELECT COUNT(*) FROM {_quote_ident(owner)}.{_quote_ident(tbl)} WHERE {_quote_ident(col)} IS NULL'
                         logger.info('Running null check SQL: %s', null_sql)
                         null_cur.execute(null_sql)
                         nulls = null_cur.fetchone()[0]
-                        null_cur.close()
                     except Exception:
                         nulls = 1
                         logger.exception('Null check failed for %s.%s', tbl, col)
+                    finally:
+                        if null_cur:
+                            try:
+                                null_cur.close()
+                            except Exception:
+                                pass
                     if nulls > 0:
                         # column contains nulls -> cannot be single-column PK
                         logger.info('Column %s contains %s null(s); skipping', col, nulls)
@@ -794,7 +807,7 @@ def main(parent=None, schema_choice=None, on_finish=None):
     # Ensure session cleanup for this window/parent
     try:
         target = parent if parent else win
-        session.close_connections(target)
+        session.close_connections(target, schema=schema)
     except Exception:
         logger.debug('Session cleanup failed', exc_info=True)
 

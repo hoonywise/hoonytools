@@ -32,7 +32,7 @@ def _center_window(window, width, height):
     # Try DPI-aware, multi-monitor centering on Windows
     try:
         if sys.platform.startswith("win"):
-            from ctypes import Structure, byref, c_long, c_ulong, windll, POINTER
+            from ctypes import Structure, byref, c_long, c_ulong, windll
 
             class POINT(Structure):
                 _fields_ = [("x", c_long), ("y", c_long)]

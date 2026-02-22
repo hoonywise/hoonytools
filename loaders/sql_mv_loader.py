@@ -7,7 +7,6 @@ from libs import session
 from libs import gui_utils
 import ctypes
 from libs.paths import ASSETS_PATH
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,12 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     conn = get_db_connection(schema=schema_key, root=parent)
     if not conn:
         # User cancelled or connection failed - don't show the GUI
-        # Don't call on_finish here - it would trigger a refresh which prompts again
+        # Still call on_finish so the launcher can reset the status light
+        if on_finish:
+            try:
+                on_finish()
+            except Exception:
+                pass
         return
     
     # Register connection for cleanup

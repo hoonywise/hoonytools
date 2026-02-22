@@ -16,14 +16,16 @@ from libs import gui_utils
 logger = logging.getLogger(__name__)
 
 
-def run_mv_refresh_gui(on_finish=None):
-    # Backwards-compatible parameter handling: the launcher may pass a parent
-    # window (root) as the first argument. If a non-callable is passed, treat
-    # it as parent and clear on_finish.
-    parent = None
-    if on_finish is not None and not callable(on_finish):
-        parent = on_finish
-        on_finish = None
+def run_mv_refresh_gui(parent=None, on_finish=None):
+    # Backwards-compatible parameter handling: if called with a single
+    # positional arg that is not callable, treat it as the parent window.
+    if parent is not None and not callable(parent) and on_finish is None:
+        # Called as run_mv_refresh_gui(root_widget) — treat as parent
+        pass
+    elif parent is not None and callable(parent):
+        # Called as run_mv_refresh_gui(some_callable) — legacy positional on_finish
+        on_finish = parent
+        parent = None
 
     conn = get_db_connection()
     if not conn:
@@ -79,31 +81,6 @@ def run_mv_refresh_gui(on_finish=None):
                     if fn_name.startswith('ask'):
                         return False
                     return None
-
-    def create_materialized_view_logs(cursor, conn, tables, log_type, include_new_values=True):
-        for t in tables:
-            try:
-                # If a helper is available, detect an existing log and surface via logs
-                if detect_existing_mlog:
-                    try:
-                        meta = detect_existing_mlog(cursor, t)
-                        if meta.get('exists'):
-                            logger.info(f"Existing MV log detected for {t}: {meta.get('log_tables')}")
-                    except Exception:
-                        pass
-
-                sql = f"CREATE MATERIALIZED VIEW LOG ON {t} \n"
-                if log_type == 'ROWID':
-                    sql += "  WITH ROWID\n"
-                else:
-                    sql += "  WITH PRIMARY KEY\n"
-                if include_new_values:
-                    sql += "  INCLUDING NEW VALUES"
-                cursor.execute(sql)
-                conn.commit()
-                logger.info(f"✅ Created materialized view log on {t}")
-            except Exception as e:
-                logger.warning(f"Could not create MV log on {t}: {e}")
 
     root = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
     root.title("Materialized View Manager")
@@ -577,7 +554,7 @@ def run_mv_refresh_gui(on_finish=None):
         log_info = ''
         try:
             mv_sql = query or ''
-            if mv_sql and 'detect_tables_from_sql' in globals():
+            if mv_sql:
                 bases = detect_tables_from_sql(mv_sql)
             else:
                 bases = []
@@ -784,12 +761,17 @@ def run_mv_refresh_gui(on_finish=None):
         if not sel:
             _safe_messagebox('showwarning', "Select MV", "Please select a materialized view first.", dlg=root)
             return
+        # Multi-selection stores a different dict shape (no 'source' key)
+        if 'source' not in sel:
+            _safe_messagebox('showwarning', "Single Select", "Please select a single materialized view to create logs.", dlg=root)
+            return
         source = sel.get('source')
         qualified = sel.get('qualified')
         # lookup row and query
         if source == 'user':
             row = getattr(root, '_mview_rows_user', {}).get(sel.get('name'))
             mv_query = row[6] if row and len(row) > 6 else (row[5] if row and len(row) > 5 else '')
+            active_conn = conn
             active_cursor = conn.cursor()
         else:
             # ensure schema2 conn
@@ -818,7 +800,8 @@ def run_mv_refresh_gui(on_finish=None):
             # stored as (owner,) + row
             mv_row = row[1:] if row else None
             mv_query = mv_row[6] if mv_row and len(mv_row) > 6 else (mv_row[5] if mv_row and len(mv_row) > 5 else '')
-            active_cursor = getattr(root, '_dwh_conn').cursor()
+            active_conn = dconn
+            active_cursor = dconn.cursor()
         tables = detect_tables_from_sql(mv_query)
         if not tables:
             _safe_messagebox('showinfo', "No tables", "Could not detect base tables from the MV query.", dlg=root)
@@ -840,7 +823,7 @@ def run_mv_refresh_gui(on_finish=None):
                 try:
                     # If helper available, detect existing log and offer reuse/drop
                     choice = None
-                    if 'detect_existing_mlog' in globals() and detect_existing_mlog:
+                    if detect_existing_mlog:
                         try:
                             meta = detect_existing_mlog(cur, t)
                         except Exception:
@@ -912,7 +895,7 @@ def run_mv_refresh_gui(on_finish=None):
                                     try:
                                         meta_text = str(meta_info or {})
                                         try:
-                                            cursor = conn.cursor()
+                                            cursor = active_conn.cursor()
                                             mlog_name = None
                                             master_name = table_name.split('.')[-1].upper()
                                             diag_lines = []
@@ -1037,7 +1020,7 @@ def run_mv_refresh_gui(on_finish=None):
                     elif choice == 'drop':
                         try:
                             cur.execute(f"DROP MATERIALIZED VIEW LOG ON {t}")
-                            conn.commit()
+                            active_conn.commit()
                         except Exception as e:
                             results.append((t, False, f"drop_failed: {e}"))
                             continue
@@ -1052,7 +1035,7 @@ def run_mv_refresh_gui(on_finish=None):
                         if include_new_var.get():
                             sql += "  INCLUDING NEW VALUES"
                         cur.execute(sql)
-                        conn.commit()
+                        active_conn.commit()
                         results.append((t, True, None))
                     except Exception as e:
                         err = str(e)
@@ -1065,10 +1048,10 @@ def run_mv_refresh_gui(on_finish=None):
                             if do_drop:
                                 try:
                                     cur.execute(f"DROP MATERIALIZED VIEW LOG ON {t}")
-                                    conn.commit()
+                                    active_conn.commit()
                                     # try create again
                                     cur.execute(sql)
-                                    conn.commit()
+                                    active_conn.commit()
                                     results.append((t, True, None))
                                     continue
                                 except Exception as e2:

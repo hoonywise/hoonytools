@@ -6,16 +6,13 @@ Provides credential prompting and connection management for dual schema support.
 import oracledb
 import logging
 import tkinter as tk
-from tkinter import Tk, simpledialog, messagebox
+from tkinter import messagebox
 import threading
 from libs import session
 import queue
 from libs import abort_manager
 from configparser import ConfigParser
 from libs.paths import PROJECT_PATH as BASE_PATH
-
-config = ConfigParser()
-config.read(BASE_PATH / "libs" / "config.ini")
 
 logger = logging.getLogger(__name__)
 

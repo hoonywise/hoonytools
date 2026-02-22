@@ -6,7 +6,7 @@ try:
 except Exception:
     ttk = None
 from tkinter import Toplevel, Listbox, Scrollbar, Button, Label, Entry, StringVar, IntVar
-from tkinter.constants import MULTIPLE, END, LEFT, RIGHT, Y, BOTH, EXTENDED
+from tkinter.constants import END, LEFT, RIGHT, Y, BOTH, EXTENDED
 
 from libs.oracle_db_connector import get_db_connection
 from libs import session
@@ -611,7 +611,7 @@ def main(parent=None, schema_key=None, object_name=None, object_type=None, on_fi
     # Cleanup session connections
     try:
         target = parent if parent else win
-        session.close_connections(target)
+        session.close_connections(target, schema=schema_key)
     except Exception:
         logger.debug('Session cleanup failed', exc_info=True)
 
