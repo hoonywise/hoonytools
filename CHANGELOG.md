@@ -1,10 +1,10 @@
-# 📝 Changelog
+# Changelog
 
 All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
-## 🌐 v2.2.2 — Cross-Platform Compatibility: macOS & Linux Support (2026-02-23)
+## v2.2.2 — Cross-Platform Compatibility: macOS & Linux Support (2026-02-23)
 
 This release removes all Windows-specific dependencies from the runtime code path, making HoonyTools compatible with macOS and Linux in addition to Windows. The GUI, theme system, icon handling, splash screen, system tray, and build pipeline are all now cross-platform.
 
@@ -65,7 +65,7 @@ This release removes all Windows-specific dependencies from the runtime code pat
 
 ---
 
-## 🔧 v2.2.1 — Deep Code Review: 26 Bug Fixes Across All Tools (2026-02-22)
+## v2.2.1 — Deep Code Review: 26 Bug Fixes Across All Tools (2026-02-22)
 
 This release delivers two rounds of comprehensive code review targeting cross-tool interaction bugs, data integrity issues, resource leaks, and UI reliability problems. All changes are minimal, targeted fixes verified with syntax checks.
 
@@ -136,7 +136,7 @@ This release delivers two rounds of comprehensive code review targeting cross-to
 
 ---
 
-## 🎨 v2.2.0 — Comprehensive Dialog Theming & Splash Screen Controls (2026-02-21)
+## v2.2.0 — Comprehensive Dialog Theming & Splash Screen Controls (2026-02-21)
 
 This release implements comprehensive theme support across all tool dialogs, adds splash screen controls, and fixes several theming and settings-related bugs.
 
@@ -204,7 +204,7 @@ This release implements comprehensive theme support across all tool dialogs, add
 
 ---
 
-## 🎨 v2.1.8 — Theme System with Full Chrome Theming & Custom Colors (2026-02-21)
+## v2.1.8 — Theme System with Full Chrome Theming & Custom Colors (2026-02-21)
 
 This release introduces a comprehensive theme system with 7 preset themes, **full chrome theming**, and **custom color support**. The entire UI (buttons, labels, frames, menus, borders) can now be themed. Users can customize any of the 22 color keys via the new Customize Colors dialog.
 
@@ -279,7 +279,7 @@ This release introduces a comprehensive theme system with 7 preset themes, **ful
 
 ---
 
-## 🔧 v2.1.7 — Settings Bug Fix & Logging Cleanup (2026-02-21)
+## v2.1.7 — Settings Bug Fix & Logging Cleanup (2026-02-21)
 
 This patch release fixes a critical bug where toggling dark mode in Settings would clear saved credentials, causing login popups to appear for all tools.
 
@@ -307,7 +307,7 @@ This patch release fixes a critical bug where toggling dark mode in Settings wou
 
 ---
 
-## 🔧 v2.1.6 — Dual Schema Clean-Up & Dark Mode Improvements (2026-02-21)
+## v2.1.6 — Dual Schema Clean-Up & Dark Mode Improvements (2026-02-21)
 
 This release removes all hardcoded schema references (previously 'DWH' and 'User') and introduces clean dual schema support with consistent "Schema 1" / "Schema 2" terminology. Also adds dark mode support to additional dialogs.
 
@@ -372,7 +372,7 @@ This release removes all hardcoded schema references (previously 'DWH' and 'User
 
 ---
 
-## 🔧 v2.1.5 — Auto-Refresh, Tool UX Improvements & View Options (2026-02-21)
+## v2.1.5 — Auto-Refresh, Tool UX Improvements & View Options (2026-02-21)
 
 This release adds automatic object pane refresh on startup and tool close, fixes MV Loader connection handling for consecutive creations, and introduces several UI/UX improvements across the View Loader, MV Loader, and MV Manager.
 
@@ -438,7 +438,7 @@ This release adds automatic object pane refresh on startup and tool close, fixes
 
 ---
 
-## 🔧 v2.1.1 — MV Manager Multi-Select & UX Improvements (2026-02-20)
+## v2.1.1 — MV Manager Multi-Select & UX Improvements (2026-02-20)
 
 This patch release enhances the Materialized View Manager with improved multi-select UX, Reset buttons, single-click refresh, and better result display.
 
@@ -487,7 +487,7 @@ This patch release enhances the Materialized View Manager with improved multi-se
 
 ---
 
-## 🚀 v2.1.0 — Settings Menu GUI (2026-02-20)
+## v2.1.0 — Settings Menu GUI (2026-02-20)
 
 This release introduces a comprehensive Settings GUI accessible via the File menu, enabling users to configure application preferences without editing config files directly.
 
@@ -533,7 +533,7 @@ This release introduces a comprehensive Settings GUI accessible via the File men
 
 ---
 
-## 🚀 v2.0.0 — Major Refactoring: Unified Session, Streamlined UI, Word of God Verse Pane (2026-02-20)
+## v2.0.0 — Major Refactoring: Unified Session, Streamlined UI, Word of God Verse Pane (2026-02-20)
 
 This major release delivers a comprehensive refactoring of credential handling, removes the toolbar combobox in favor of direct menu and button access, and introduces an elegant Bible verse display pane.
 
@@ -596,7 +596,7 @@ This major release delivers a comprehensive refactoring of credential handling, 
 
 ---
 
-## 🚀 v1.5.5 — Integrated Drop Button & Status Indicator (2026-02-20)
+## v1.5.5 — Integrated Drop Button & Status Indicator (2026-02-20)
 
 This release integrates the Object Dropper functionality directly into the main GUI's left pane, adds comprehensive status indicator support, and introduces sortable column headers with multi-select capability.
 
@@ -612,9 +612,9 @@ This release integrates the Object Dropper functionality directly into the main 
 - **Smart Drop Order**: When batch-dropping, TABLEs are dropped first (auto-dropping their indexes/MLOGs), then other objects. Dependent objects selected alongside their parent table are auto-skipped.
 - **Force Drop Option**: Error dialog includes "Force Drop" button for TABLEs that uses `CASCADE CONSTRAINTS PURGE` to handle foreign key dependencies.
 - **Status Indicator**: Canvas-based colored circle replaces emoji indicator for better visibility:
-  - 🟢 Green: Idle
-  - 🔴 Red: Busy (loading/dropping)
-  - 🟡 Amber: Aborting
+  - Green: Idle
+  - Red: Busy (loading/dropping)
+  - Amber: Aborting
 - **Status Indicator for Data Loader**: The Excel/CSV loader now updates the main GUI's status indicator during load operations and abort processing.
 
 ### Changed
@@ -638,7 +638,7 @@ This release integrates the Object Dropper functionality directly into the main 
 
 ---
 
-## 🚀 v1.5.1 — SQL Preview Window Dark Mode (2026-02-20)
+## v1.5.1 — SQL Preview Window Dark Mode (2026-02-20)
 
 This patch adds pane-only dark mode support to the SQL preview window in the Excel/CSV loader.
 
@@ -657,7 +657,7 @@ This patch adds pane-only dark mode support to the SQL preview window in the Exc
 
 ---
 
-## 🚀 v1.5.0 — Data Loader Overhaul + Index Tool (2026-02-20)
+## v1.5.0 — Data Loader Overhaul + Index Tool (2026-02-20)
 
 This release delivers a complete overhaul of the Excel/CSV loader with a new structured dialog, tight VARCHAR2 sizing for index-friendly columns, inline index selection, and integrated abort functionality. The auto-indexing of PIDM/TERM/STUDENT_ID columns has been removed in favor of user-controlled indexing.
 
@@ -702,7 +702,7 @@ This release delivers a complete overhaul of the Excel/CSV loader with a new str
 
 ---
 
-## 🚀 v1.4.6 — Dark mode persistence + selection highlight improvements (2026-02-20)
+## v1.4.6 — Dark mode persistence + selection highlight improvements (2026-02-20)
 
 This patch adds persistent dark mode preference storage and improves dark mode visual fidelity across the launcher and tool windows.
 
@@ -731,7 +731,7 @@ This patch adds persistent dark mode preference storage and improves dark mode v
 
 ---
 
-## 🚀 v1.4.5 — Pane-only dark mode + modal dialog hygiene (2026-02-20)
+## v1.4.5 — Pane-only dark mode + modal dialog hygiene (2026-02-20)
 
 This patch refines pane-only dark mode behavior for SQL loaders and hardens dialog parenting so tool windows remain properly modal to the launcher.
 
@@ -757,7 +757,7 @@ This patch refines pane-only dark mode behavior for SQL loaders and hardens dial
 
 ---
 
-## 🚀 v1.4.0 — Abort & Prompt Robustness Improvements (2026-02-19)
+## v1.4.0 — Abort & Prompt Robustness Improvements (2026-02-19)
 
 This release improves the Excel/CSV loader and launcher Abort flow so UI remains responsive and cleanup is robust for both user and shared DWH logins.
 
@@ -793,7 +793,7 @@ This release improves the Excel/CSV loader and launcher Abort flow so UI remains
 
 ---
 
-## 🚀 v1.3.7 — Focus & DWH session reliability fixes (2026-02-19)
+## v1.3.7 — Focus & DWH session reliability fixes (2026-02-19)
 
 This patch improves Toplevel/dialog focus and stacking behavior after messageboxes, and makes shared DWH connection registration and cleanup more robust.
 
@@ -825,7 +825,7 @@ This patch improves Toplevel/dialog focus and stacking behavior after messagebox
 
 ---
 
-## 🚀 v1.3.6 — Fix: Ensure DWH connection always closed on early exits (2026-02-19)
+## v1.3.6 — Fix: Ensure DWH connection always closed on early exits (2026-02-19)
 
 This patch fixes a connection leak in the SQL Materialized View Loader when the "Load to DWH" (shared login) option is used but the user cancels or errors out during the materialized-view-log creation flow.
 
@@ -849,7 +849,7 @@ This patch fixes a connection leak in the SQL Materialized View Loader when the 
 
 ---
 
-## 🚀 v1.3.5 — UI & DWH Refresh Improvements (2026-02-19)
+## v1.3.5 — UI & DWH Refresh Improvements (2026-02-19)
 
 This patch contains several UI improvements and fixes to the DWH refresh/login flow implemented during the current development session.
 
@@ -886,7 +886,7 @@ This patch contains several UI improvements and fixes to the DWH refresh/login f
 
 ---
 
-## 🚀 v1.3.0 — Materialized View Manager & Loader Improvements (2026-02-19)
+## v1.3.0 — Materialized View Manager & Loader Improvements (2026-02-19)
 
 This release adds safer, centralized materialized-view-log detection and management across the SQL MV Loader and the new Materialized View Manager.
 
@@ -913,7 +913,7 @@ This release adds safer, centralized materialized-view-log detection and managem
 
 ---
 
-## 🚀 v1.2.2 — Rename Table Cleanup → Object Cleanup; MV / MLOG / PK support (2026-02-18)
+## v1.2.2 — Rename Table Cleanup → Object Cleanup; MV / MLOG / PK support (2026-02-18)
 
 This release renames the old Table Cleanup tool to a more capable Object Cleanup tool and extends its capabilities to handle Oracle objects beyond simple tables and views.
 
@@ -932,7 +932,7 @@ This release renames the old Table Cleanup tool to a more capable Object Cleanup
 
 ---
 
-## 🚀 v1.2.1 — Fix: Preserve saved user creds & session DWH reuse (2026-02-18)
+## v1.2.1 — Fix: Preserve saved user creds & session DWH reuse (2026-02-18)
 
 Small but important fixes to ensure credentials are not accidentally overwritten and that DWH logins are reused in-memory during a GUI session.
 
@@ -948,7 +948,7 @@ Small but important fixes to ensure credentials are not accidentally overwritten
 
 ---
 
-## 🚀 v1.2.0 – Formatted SQL Preview, Copy & Save (2026-02-18)
+## v1.2.0 – Formatted SQL Preview, Copy & Save (2026-02-18)
 
 This release adds a formatted SQL preview for loader operations with convenient copy and save actions, and robustness improvements to the preview UI.
 
@@ -969,7 +969,7 @@ This release adds a formatted SQL preview for loader operations with convenient 
 
 ---
 
-## 🔖 v1.1.1 — Credential Isolation Update (2025-04-21)
+## v1.1.1 — Credential Isolation Update (2025-04-21)
 
 This release completes a foundational enhancement for multi-schema workflows across all HoonyTools utilities.
 
@@ -1003,7 +1003,7 @@ This release completes a foundational enhancement for multi-schema workflows acr
 
 ---
 
-## 🚀 v1.1.0 – Login System Overhaul, Thread Safety, and Versioned Packaging
+## v1.1.0 – Login System Overhaul, Thread Safety, and Versioned Packaging
 
 This milestone release introduces a secure and consistent login flow, thread-safe execution, session-based memory, and a modernized build system with versioned output.
 
@@ -1050,7 +1050,7 @@ This milestone release introduces a secure and consistent login flow, thread-saf
 
 ---
 
-## 🔁 v1.0.3 – Switch to Python Launcher + ZIP Packaging
+## v1.0.3 – Switch to Python Launcher + ZIP Packaging
 
 This release replaces the standalone `.exe` launcher with a Python-based GUI runner (`.pyw` + `run.bat`), allowing HoonyTools to be distributed cleanly as a ZIP without triggering antivirus or requiring expensive code signing.
 
@@ -1106,7 +1106,7 @@ This release replaces the standalone `.exe` launcher with a Python-based GUI run
 
 ### Docs
 
-- Added 📈 Automatic Indexing section to README
+- Added Automatic Indexing section to README
 - Clarified SCFF loader behavior and folder logic
 
 ---
@@ -1117,7 +1117,7 @@ This release fixes a mislabeling issue across SCFF-related scripts and documenta
 
 In addition, licensing language has been refined across the splash screen, README, and LICENSE files to replace "institutional use" with the more neutral term "enterprise use." This ensures clarity while encouraging responsible adoption within larger teams or departments.
 
-🔧 Changes Included:
+Changes Included:
 
 - Renamed all references of `AIDY` to `ACYR` across:
   - `scff_data_loader.py`
@@ -1128,7 +1128,7 @@ In addition, licensing language has been refined across the splash screen, READM
 - Reworded licensing language to refer to "enterprise use" instead of "institutional use"
 - Splash screen text updated to reflect softer messaging
 
-✅ This update aligns the SCFF tools with naming standards and improves the user experience and adoption clarity for workplace environments.
+This update aligns the SCFF tools with naming standards and improves the user experience and adoption clarity for workplace environments.
 
 ---
 
@@ -1138,7 +1138,7 @@ HoonyTools v1.0.0 is now live!
 
 This marks the first public release of HoonyTools — a portable, no-install Python utility suite designed for analysts and data teams working with Oracle.
 
-🔧 Highlights
+Highlights
 
 - **SQL View Loader**  
   Create or replace Oracle views directly from pasted SQL, with support for your own schema or shared DWH.
@@ -1161,10 +1161,10 @@ This marks the first public release of HoonyTools — a portable, no-install Pyt
 - **Abort-Safe Execution**  
   Tools track new tables and rollback inserts on abort, keeping your Oracle schema clean.
 
-🧭 GUI Tool Legend
+GUI Tool Legend
 
 | Icon | Meaning                      |
 |------|------------------------------|
-| ✅   | Uses your Oracle session login |
-| 🔒   | Uses shared DWH schema login  |
+| Yes  | Uses your Oracle session login |
+| No   | Uses shared DWH schema login  |
 | 🆕   | New in this version           |

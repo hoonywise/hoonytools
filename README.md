@@ -22,7 +22,7 @@ Contact: hoonywise@proton.me
 
 ---
 
-## 🧑‍💻 Quick Start
+## Quick Start
 
 ### Both EXE and Python PYW Versions Available
 
@@ -54,7 +54,7 @@ HoonyTools is distributed in two formats from the [Releases](https://github.com/
 
 ---
 
-## 🗂️ Folder Structure
+## Folder Structure
 
 > EXE version will create the necessary folders automatically.
 
@@ -95,23 +95,23 @@ HoonyTools/
 
 ---
 
-## 🛠️ Setup Requirements
+## Setup Requirements
 
 To run HoonyTools python package, you’ll need the following installed and configured (exe does not require any additional setup):
 
 ---
 
-### ✅ Python 3.13 or Higher
+### Python 3.13 or Higher
 
 1. Install from the official site:  
-   👉 [https://www.python.org/downloads/](https://www.python.org/downloads/)
+   [https://www.python.org/downloads/](https://www.python.org/downloads/)
 
 2. During installation, make sure to check:  
-   ✅ “Add Python to PATH”
+    “Add Python to PATH”
 
 ---
 
-### 🧩 Required Python Packages
+### Required Python Packages
 
 Once Python is installed, run the following from the HoonyTools folder:
 
@@ -129,7 +129,7 @@ This installs all required libraries including:
 
 ---
 
-### 🛢️ Oracle Instant Client
+### Oracle Instant Client
 
 To connect to Oracle databases, the **Oracle Instant Client** must be installed and properly configured:
 
@@ -163,11 +163,11 @@ To connect to Oracle databases, the **Oracle Instant Client** must be installed 
 
 If you can connect via `sqlplus`, HoonyTools will work too.
 
-📥 [Download Oracle Instant Client](https://www.oracle.com/database/technologies/instant-client/downloads.html)
+[Download Oracle Instant Client](https://www.oracle.com/database/technologies/instant-client/downloads.html)
 
 ---
 
-## 🚀 How to Launch
+## How to Launch
 
 - **Windows (EXE)**: Double-click `HoonyTools.exe`
 - **Windows (PYW)**: Double-click `HoonyTools.pyw`
@@ -177,7 +177,7 @@ All methods launch the GUI immediately with no terminal window (on Windows).
 
 ---
 
-### 🧭 GUI Usage
+### GUI Usage
 
 Once launched, the GUI gives access to all tools via an intuitive interface:
 
@@ -198,7 +198,7 @@ You can run as often as needed — no admin rights or elevated privileges requir
 
 ---
 
-## 🛠 Available Tools (7)
+## Available Tools (7)
 
 ### 1. SQL View Loader
 - Instantly create Oracle views from pasted SQL queries.
@@ -244,11 +244,11 @@ You can run as often as needed — no admin rights or elevated privileges requir
 - Drop tables, views, materialized views, materialized view logs, and primary key constraints.
 - Works with both User schema and DWH schema.
 - Prefers materialized views when an underlying table shares the same name to avoid failures.
-- ⚠️ **Use with caution** — these actions are destructive and irreversible.
+- **Use with caution** — these actions are destructive and irreversible.
 
 ---
 
-## ✨ Features
+## Features
 
 ### Settings
 - Access via `File → Settings` or keyboard shortcut `Ctrl+Alt+S`.
@@ -270,7 +270,7 @@ You can run as often as needed — no admin rights or elevated privileges requir
 
 ---
 
-## ⚙️ Configuring Credentials via Settings
+## Configuring Credentials via Settings
 
 Instead of entering credentials at each login prompt, you can pre-configure them in Settings:
 
@@ -285,11 +285,11 @@ Once configured:
 - Tools will connect automatically without prompting for login
 - To update credentials later, simply return to Settings
 
-> 💡 **Tip:** You can also check "Save password" in the login popup when prompted. This saves credentials to `libs/config.ini` for future sessions.
+> **Tip:** You can also check "Save password" in the login popup when prompted. This saves credentials to `libs/config.ini` for future sessions.
 
 ---
 
-## 🌐 Platform Compatibility
+## Platform Compatibility
 
 HoonyTools runs on **Windows**, **macOS**, and **Linux**. The GUI, theme system, and all tools work across all three platforms.
 
@@ -311,7 +311,7 @@ HoonyTools runs on **Windows**, **macOS**, and **Linux**. The GUI, theme system,
 
 ---
 
-## 🔨 Building & Packaging
+## Building & Packaging
 
 A cross-platform Python build script is included for building standalone binaries and packaging source releases.
 
@@ -337,7 +337,7 @@ Running `python build_pkg.py 2.2.2` produces two release ZIPs in `dist/`:
 
 ---
 
-## 📌 Notes for Users
+## Notes for Users
 
 - Ensure your **Oracle Instant Client** is properly installed and configured (see setup section above).
 - You must be connected to your institution’s network or VPN if the Oracle database is not publicly accessible.
@@ -348,18 +348,18 @@ Running `python build_pkg.py 2.2.2` produces two release ZIPs in `dist/`:
 - **Use caution when working with production databases**. Certain tools (e.g., loaders and Object Cleanup) can delete and overwrite data.
 - For best results, always review your files before running a loader, and monitor the logging window for any errors or warnings.
 
-> 🧠 **Note:** This toolset interacts directly with the Oracle Data Warehouse (DWH). Ensure you understand the impact of any actions, particularly when loading data with loaders or using cleanup tools.
+> **Note:** This toolset interacts directly with the Oracle Data Warehouse (DWH). Ensure you understand the impact of any actions, particularly when loading data with loaders or using cleanup tools.
 
-> 💡 **Tip:** To reset your saved DWH credentials (e.g., if the DSN or password changes), simply delete the `libs/config.ini` file. The next time you launch a DWH-related tool, HoonyTools will prompt you to enter new login information and ask whether to save it again.
+> **Tip:** To reset your saved DWH credentials (e.g., if the DSN or password changes), simply delete the `libs/config.ini` file. The next time you launch a DWH-related tool, HoonyTools will prompt you to enter new login information and ask whether to save it again.
 
 ---
 
-## 📜 License
+## License
 
 HoonyTools is free for individual, non-commercial use.  
 Use across departments or organizations may require a license.
 
-📩 **For enterprise use or questions, contact:**  
+**For enterprise use or questions, contact:**  
 **[hoonywise@proton.me](mailto:hoonywise@proton.me)**
 
 For full terms, see [LICENSE.md](LICENSE.md).
