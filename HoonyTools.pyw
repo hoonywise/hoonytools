@@ -8,15 +8,19 @@ import ctypes
 import sys
 from pathlib import Path
 from PIL import Image, ImageTk
-import pystray
-from pystray import MenuItem as item
+try:
+    import pystray
+    from pystray import MenuItem as item
+    HAS_PYSTRAY = True
+except ImportError:
+    HAS_PYSTRAY = False
 import json
 import random
 import webbrowser
 from configparser import ConfigParser
 from libs import gui_utils
 
-APP_VERSION = "2.2.1"
+APP_VERSION = "2.2.2"
 
 
 # Theme helpers
@@ -488,7 +492,13 @@ def show_splash():
     splash.overrideredirect(True)
     splash.config(bg=splash_bg)
     center_window(splash, 420, 260)
-    splash.attributes('-alpha', 0.0)
+
+    # Detect if window transparency is supported (may not be on some Linux WMs)
+    _splash_alpha_supported = True
+    try:
+        splash.attributes('-alpha', 0.0)
+    except tk.TclError:
+        _splash_alpha_supported = False
 
     # === HoonyTools Logo + Title ===
     try:
@@ -528,6 +538,10 @@ def show_splash():
     footer_version.pack(side="bottom", pady=(0, 12))
 
     def fade_in(alpha=0.0):
+        if not _splash_alpha_supported:
+            # No transparency support — show immediately, then schedule fade_out
+            splash.after(3000, fade_out)
+            return
         if alpha < target_opacity:
             splash.attributes('-alpha', alpha)
             splash.after(30, lambda: fade_in(min(alpha + 0.05, target_opacity)))
@@ -537,6 +551,9 @@ def show_splash():
             splash.after(3000, fade_out)  # hold full splash (logo + labels) for 3s
 
     def fade_out(alpha=None):
+        if not _splash_alpha_supported:
+            splash.destroy()
+            return
         if alpha is None:
             alpha = target_opacity
         if alpha > 0.0:
@@ -731,9 +748,13 @@ def launch_tool_gui():
     globals()['left_pane'] = left_pane
     globals()['right_pane'] = right_pane
 
-    # âœ… Set GUI icon (.ico for taskbar)
-    icon_ico_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
-    root.iconbitmap(default=icon_ico_path)
+    # Set GUI icon (.ico for taskbar — Windows only)
+    if sys.platform.startswith("win"):
+        try:
+            icon_ico_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
+            root.iconbitmap(default=icon_ico_path)
+        except Exception:
+            pass
 
     # âœ… Set window icon (.png for title bar)
     icon_path = ASSETS_PATH / "assets" / "hoonywise_300.png"
@@ -1865,7 +1886,8 @@ def launch_tool_gui():
             tray_icon.run()
 
     # ðŸ§  Start it in the background so GUI stays responsive
-    threading.Thread(target=setup_tray_icon, daemon=True).start()    
+    if HAS_PYSTRAY:
+        threading.Thread(target=setup_tray_icon, daemon=True).start()
     
     import traceback
     def excepthook(type, value, tb):

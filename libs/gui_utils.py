@@ -672,43 +672,43 @@ PRESET_THEMES = {
         'splash_muted_fg': '#93a1a1',
     },
     'system_light': {
-        # Content panes
-        'pane_bg': 'SystemWindow',
-        'pane_fg': 'SystemWindowText',
-        'select_bg': 'SystemHighlight',
-        'insert_bg': 'SystemWindowText',
+        # Content panes (cross-platform hex equivalents of Windows system colors)
+        'pane_bg': '#ffffff',
+        'pane_fg': '#000000',
+        'select_bg': '#0078d4',
+        'insert_bg': '#000000',
         # Window chrome
-        'window_bg': 'SystemButtonFace',
-        'border_bg': 'SystemButtonShadow',
+        'window_bg': '#f0f0f0',
+        'border_bg': '#a0a0a0',
         # Labels
-        'label_bg': 'SystemButtonFace',
-        'label_fg': 'SystemButtonText',
+        'label_bg': '#f0f0f0',
+        'label_fg': '#000000',
         # LabelFrame
-        'labelframe_bg': 'SystemButtonFace',
-        'labelframe_fg': 'SystemButtonText',
+        'labelframe_bg': '#f0f0f0',
+        'labelframe_fg': '#000000',
         # Buttons
-        'button_bg': 'SystemButtonFace',
-        'button_fg': 'SystemButtonText',
-        'button_active_bg': 'SystemButtonFace',
-        'button_active_fg': 'SystemButtonText',
+        'button_bg': '#f0f0f0',
+        'button_fg': '#000000',
+        'button_active_bg': '#e0e0e0',
+        'button_active_fg': '#000000',
         # Entry fields
-        'entry_bg': 'SystemWindow',
-        'entry_fg': 'SystemWindowText',
+        'entry_bg': '#ffffff',
+        'entry_fg': '#000000',
         # Menu
-        'menu_bg': 'SystemMenu',
-        'menu_fg': 'SystemMenuText',
-        'menu_active_bg': 'SystemHighlight',
-        'menu_active_fg': 'SystemHighlightText',
+        'menu_bg': '#f0f0f0',
+        'menu_fg': '#000000',
+        'menu_active_bg': '#0078d4',
+        'menu_active_fg': '#ffffff',
         # Checkbox/Radio
-        'checkbox_bg': 'SystemButtonFace',
-        'checkbox_fg': 'SystemButtonText',
-        'checkbox_select': 'SystemWindow',
+        'checkbox_bg': '#f0f0f0',
+        'checkbox_fg': '#000000',
+        'checkbox_select': '#ffffff',
         # Scrollbar
-        'scrollbar_bg': 'SystemScrollbar',
-        'scrollbar_fg': 'SystemButtonFace',
+        'scrollbar_bg': '#c8c8c8',
+        'scrollbar_fg': '#f0f0f0',
         # Splash screen
-        'splash_bg': 'SystemButtonFace',
-        'splash_fg': 'SystemButtonText',
+        'splash_bg': '#f0f0f0',
+        'splash_fg': '#000000',
         'splash_muted_fg': '#444444',
     },
 }
@@ -724,7 +724,7 @@ DARK_BTN_ACTIVE_BG = '#222222'
 DARK_SELECT_BG = '#333333'
 DARK_INSERT_BG = '#ffffff'
 
-LIGHT_BG = 'SystemButtonFace'
+LIGHT_BG = '#f0f0f0'
 LIGHT_FG = 'black'
 
 # =============================================================================
@@ -1177,10 +1177,10 @@ def ask_color_with_persistence(initial_color: str = '#FFFFFF',
                                 title: str = 'Choose color',
                                 parent=None) -> Optional[str]:
     """
-    Open Windows color chooser dialog with persistent custom color swatches.
+    Open color chooser dialog with persistent custom color swatches.
     
-    Uses Windows ChooseColor API via ctypes to support custom color persistence.
-    Falls back to tkinter.colorchooser if ctypes fails.
+    On Windows, uses the native ChooseColor API for custom color persistence.
+    On macOS/Linux, falls back to tkinter's built-in color chooser.
     
     Args:
         initial_color: Starting color (hex string like '#RRGGBB')
@@ -1190,10 +1190,9 @@ def ask_color_with_persistence(initial_color: str = '#FFFFFF',
     Returns:
         Selected color as hex string, or None if cancelled
     """
-    import ctypes
-    from ctypes import wintypes
-    
     try:
+        import ctypes
+        from ctypes import wintypes
         # Convert hex colors to COLORREF (DWORD: 0x00BBGGRR)
         def hex_to_colorref(hex_color: str) -> int:
             """Convert '#RRGGBB' to Windows COLORREF (0x00BBGGRR)."""
@@ -1773,7 +1772,7 @@ def apply_theme_to_existing_widgets(win, _default_fg: str = None) -> None:
                     # Normalize color for comparison - skip semantic colors
                     if current_fg and current_fg.lower() not in (
                         _default_fg.lower(), 'black', '#000000', 'white', '#ffffff',
-                        'gray', 'grey', '#808080', 'systemwindowtext', 'systembuttontext'
+                        'gray', 'grey', '#808080'
                     ):
                         # Semantic color - only update background, preserve foreground
                         widget.config(bg=get_color('label_bg'))

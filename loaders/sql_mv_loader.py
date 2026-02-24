@@ -1094,10 +1094,20 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     # Preserve taskbar icon and branding
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("hoonywise.hoonytools")
+    except Exception:
+        pass
+    try:
         icon_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
         builder_window.iconbitmap(default=icon_path)
     except Exception as e:
-        logger.warning(f"⚠️ Failed to set taskbar icon: {e}")
+        logger.warning(f"Failed to set taskbar icon: {e}")
+    try:
+        icon_png = ASSETS_PATH / "assets" / "hoonywise_300.png"
+        _icon_img = tk.PhotoImage(file=icon_png)
+        builder_window.iconphoto(False, _icon_img)
+        builder_window._icon_img = _icon_img
+    except Exception:
+        pass
 
     tk.Label(builder_window, text="Enter SQL to turn into a MATERIALIZED VIEW:", font=("Arial", 11, "bold")).pack(pady=(10, 5))
 

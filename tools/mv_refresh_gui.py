@@ -90,8 +90,18 @@ def run_mv_refresh_gui(parent=None, on_finish=None):
     
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("hoonywise.hoonytools")
+    except Exception:
+        pass
+    try:
         icon_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
         root.iconbitmap(default=icon_path)
+    except Exception:
+        pass
+    try:
+        icon_png = ASSETS_PATH / "assets" / "hoonywise_300.png"
+        _icon_img = tk.PhotoImage(file=icon_png)
+        root.iconphoto(False, _icon_img)
+        root._icon_img = _icon_img
     except Exception:
         pass
 

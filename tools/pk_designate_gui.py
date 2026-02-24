@@ -488,7 +488,10 @@ def main(parent=None, schema_choice=None, on_finish=None):
             except Exception:
                 pass
         tooltip = Toplevel(widget)
-        tooltip.wm_overrideredirect(True)
+        try:
+            tooltip.wm_overrideredirect(True)
+        except Exception:
+            pass
         label = Label(tooltip, text=text, bg='#ffffe0', relief='solid', bd=1, padx=4, pady=2)
         label.pack()
         tooltip.wm_geometry(f'+{x}+{y}')

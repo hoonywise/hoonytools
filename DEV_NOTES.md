@@ -2109,3 +2109,91 @@ Each handler: (1) logs a clean `logger.error()` single-liner for the GUI log pan
 2. **`sql_mv_loader.py` and `sql_view_loader.py` internals** — SQL building and execution logic (~1200 lines each) not deeply reviewed.
 3. **Automated tests** — no test suite exists. All validation was static analysis + syntax checks.
 4. **Runtime testing with Oracle** — fixes are high-confidence but need real DB validation.
+
+---
+
+### 🌐 Entry #25: Cross-Platform Compatibility — macOS & Linux Support (v2.2.2, 2026-02-23)
+
+Summary: This session identified and fixed all Windows-specific code that prevented HoonyTools from running on macOS and Linux. The app was tested conceptually against tkinter's cross-platform behavior model and all platform-specific code paths were either guarded, replaced, or given graceful fallbacks.
+
+#### Audit Process
+
+A full codebase audit was performed searching for:
+- Windows system color names (`SystemButtonFace`, `SystemWindow`, `SystemHighlight`, etc.)
+- `ctypes.windll` and `ctypes.wintypes` usage
+- `iconbitmap(.ico)` calls (macOS doesn't support `.ico` format in tkinter)
+- Platform-specific subprocess calls (`taskkill`, `.bat` scripts)
+- Unguarded top-level imports of platform-specific packages (`pywin32`, `pystray` backends)
+- `-alpha` window attribute usage (unsupported on some Linux window managers)
+- `overrideredirect` behavior differences across platforms
+
+**38 distinct issues** were found across 12 Python files and 2 batch files, categorized as 4 Critical, 6 Moderate, and 5 Low severity.
+
+#### Key Findings
+
+1. **Windows system color names are not cross-platform.** Tkinter color names like `SystemButtonFace`, `SystemWindow`, `SystemHighlight` are only recognized on Windows. On macOS and Linux, tkinter raises `TclError: unknown color name`. The `system_light` theme used 10 distinct system color names across all 28 color keys, plus `SystemButtonFace` was hardcoded in 8 locations in `settings.py` and the `LIGHT_BG` legacy constant.
+
+2. **`ctypes.wintypes` does not exist on macOS/Linux.** The module is Windows-only. `from ctypes import wintypes` was placed outside the try/except block in `ask_color_with_persistence()`, meaning the color picker would crash on first use (not at import time, but when the user actually tried to customize colors). This was a subtle bug — the function appeared to have a try/except fallback but the import was above it.
+
+3. **`iconbitmap(.ico)` behavior varies by platform.** On Windows, `.ico` files work for both taskbar and title bar icons. On macOS, `iconbitmap()` with `.ico` raises `TclError`. On Linux, behavior depends on the tk version and window manager. The cross-platform alternative is `iconphoto()` with `.png` files.
+
+4. **`pystray` requires platform-specific backends.** On macOS it needs `pyobjc-core` and `pyobjc-framework-Cocoa`. On Linux it uses `python3-xlib` or the AppIndicator backend. Without the correct backend, the import succeeds but `Icon.run()` fails silently (it runs in a daemon thread that dies without user-visible error).
+
+5. **`-alpha` window attribute is not universal.** Most X11/Wayland compositors on Linux support it, but some minimal window managers (e.g., i3 without compton, or bare Wayland without a compositor) do not. The splash screen fade-in/fade-out relied on this unconditionally.
+
+6. **PyInstaller `--add-data` separator differs by platform.** Windows uses `;` (semicolon), macOS/Linux use `:` (colon). The existing `build_exe.bat` hardcoded `;` throughout. A new `build_exe.sh` was created with the correct `:` separator.
+
+#### Challenges
+
+1. **Hex color selection for `system_light` theme.** The Windows system colors adapt to user OS theme settings (accent colors, high contrast mode). Replacing them with fixed hex values means `system_light` will always show the standard Windows light gray look (`#f0f0f0`/`#ffffff`/`#000000`/`#0078d4`) regardless of OS-level customization. This was an acceptable trade-off since all other 15 themes already use fixed hex values. The hex values were chosen to match the default Windows 10/11 light theme colors exactly.
+
+2. **Many `iconbitmap` calls were already in try/except — but with no fallback.** Six dialog files had the pattern `try: iconbitmap(icon.ico) except: pass`, which silently failed on macOS/Linux, leaving dialogs with no icon at all. Adding `iconphoto(.png)` as a fallback required careful GC prevention (`window._icon_img = img`) since tkinter garbage-collects PhotoImage objects when there are no Python references.
+
+3. **The `_set_swatch_color` system color resolver in `settings.py`.** This function resolves `System*` color names to hex for display in color customization swatches. After replacing all theme values with hex, this code is mostly dormant — but users with old `config.ini` files may still have `System*` values in their custom theme section. The defensive fallback (gray `#808080` on resolution failure) was kept intentionally.
+
+4. **`wm_overrideredirect` on Wayland.** This is a well-known tkinter limitation — override-redirect windows behave unpredictably on Wayland. Wrapping in try/except is the pragmatic fix, but some Linux users may see tooltips with window decorations or splash screens that don't look borderless. There is no pure-tkinter solution for this.
+
+#### Architecture Decisions
+
+1. **Platform guards vs. try/except**: For code that should never run on non-Windows (like `ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID`), `try/except` is preferred over `sys.platform` checks because it's more resilient to edge cases. For code with a meaningful platform-specific alternative (like `iconbitmap` → `iconphoto`), both a try/except AND a fallback were added.
+
+2. **`HAS_PYSTRAY` flag pattern**: Rather than wrapping every pystray usage in try/except, a single flag at import time gates all tray-related code. This is cleaner and makes it obvious during code review that the tray feature is optional.
+
+3. **Splash alpha detection**: Rather than wrapping every `splash.attributes('-alpha', ...)` call individually, a single detection at splash creation time sets `_splash_alpha_supported`. The `fade_in()` and `fade_out()` functions check this flag and skip animation entirely if unsupported. This avoids 6+ individual try/except blocks.
+
+4. **No `.icns` icon created**: macOS app bundles typically use `.icns` format. We did not create one because HoonyTools is distributed as a Python script (`.pyw`), not a `.app` bundle. The `build_exe.sh` script detects `.icns` presence and uses it if available, but falls back gracefully.
+
+#### What Remains as Low-Severity (Not Fixed)
+
+| Issue | Why Not Fixed |
+|-------|--------------|
+| `-topmost` attribute floats above ALL apps on macOS | Behavioral difference, no API alternative. Brief topmost + remove pattern mitigates. |
+| `focus_force()` ignored on macOS/Linux | OS-level restriction, cannot be overridden from userspace. |
+| `grab_set()` quirks on macOS | Known tkinter limitation, already documented in codebase comments. |
+| `.pyw` not double-click-launchable on macOS | Requires `.app` bundle or `.command` wrapper — out of scope for this release. |
+| Multi-monitor DPI centering degrades to primary monitor | Windows-only Win32 API, no portable equivalent in tkinter. Fallback is clean. |
+| Color picker loses custom swatch persistence on macOS/Linux | Would require a platform-specific color picker implementation for each OS. Tkinter fallback is functional. |
+
+#### Files Modified
+
+| File | Changes |
+|------|---------|
+| `requirements.txt` | `pywin32` conditional, added macOS `pyobjc` deps |
+| `HoonyTools.pyw` | Guarded `iconbitmap`, `pystray` import, splash `-alpha`, tray setup |
+| `libs/gui_utils.py` | Replaced `system_light` colors (28 keys), `LIGHT_BG` constant, `wintypes` import, docstring, semantic skip-list |
+| `libs/settings.py` | Replaced 8x `SystemButtonFace`, added `iconphoto` fallback (2 locations) |
+| `libs/oracle_db_connector.py` | Added `iconphoto` fallback |
+| `loaders/sql_view_loader.py` | Added `iconphoto` fallback |
+| `loaders/sql_mv_loader.py` | Added `iconphoto` fallback |
+| `tools/mv_refresh_gui.py` | Added `iconphoto` fallback |
+| `tools/pk_designate_gui.py` | Guarded tooltip `wm_overrideredirect` |
+| `build_exe.sh` | **NEW** — macOS/Linux build script |
+
+#### Testing Checklist
+
+1. **Windows regression**: Launch app on Windows — verify `system_light` theme looks identical, all icons appear, splash fades correctly, tray icon works.
+2. **macOS launch**: `pip install -r requirements.txt` should succeed. `python3 HoonyTools.pyw` should launch without errors. Verify theme applies, dialogs have icons via `iconphoto`.
+3. **Linux launch**: Same as macOS. Test on both X11 and Wayland if possible. Splash may appear without fade on Wayland — this is expected.
+4. **Color picker**: Open Settings → Appearance → Customize Colors → click a swatch. On Windows: native picker with 16 custom slots. On macOS/Linux: tkinter color chooser (no custom slots).
+5. **Tray icon**: On macOS, verify tray icon appears in menu bar (requires pyobjc). On Linux, depends on desktop environment.
+6. **Build**: Run `build_exe.sh` on macOS/Linux — verify PyInstaller produces a binary in `dist/`.

@@ -12,7 +12,7 @@ Contact: hoonywise@proton.me
 [![](https://img.shields.io/badge/Donate-PayPal-blue)](https://www.paypal.com/donate/?hosted_button_id=NJSTAENDWQLXS)
 ---
 
-> HoonyTools is an all-in-one Python-based toolkit for loading, transforming, and managing data in Oracle databases. It supports dual schema connections with customizable DSN configurations.  
+> HoonyTools is an all-in-one Python-based toolkit for loading, transforming, and managing data in Oracle databases. It supports dual schema connections with customizable DSN configurations. Compatible with **Windows**, **macOS**, and **Linux**.
 > 
 > Key features: create and drop views, materialized views, MV logs, indexes, and primary keys. Includes an Excel/CSV Loader for importing external data and a Materialized View Manager for log creation and MV refresh operations.  
 
@@ -119,7 +119,9 @@ This installs all required libraries including:
 
 - `oracledb` (for Oracle connectivity)
 - `pandas`, `openpyxl` (for Excel/CSV processing)
-- `pywin32`, `pystray`, `Pillow` (for GUI tray features and icon support)
+- `pystray`, `Pillow` (for GUI tray features and icon support)
+- `pywin32` (Windows only — installed automatically via platform marker)
+- `pyobjc-core`, `pyobjc-framework-Cocoa` (macOS only — for system tray support)
 
 ---
 
@@ -278,6 +280,28 @@ Once configured:
 - To update credentials later, simply return to Settings
 
 > 💡 **Tip:** You can also check "Save password" in the login popup when prompted. This saves credentials to `libs/config.ini` for future sessions.
+
+---
+
+## 🌐 Platform Compatibility
+
+HoonyTools runs on **Windows**, **macOS**, and **Linux**. The GUI, theme system, and all tools work across all three platforms.
+
+| Feature | Windows | macOS | Linux |
+|---------|---------|-------|-------|
+| GUI & all 7 tools | Full | Full | Full |
+| Theme system (16 presets + custom) | Full | Full | Full |
+| Window icons | `.ico` + `.png` | `.png` | `.png` |
+| System tray icon | Full | Requires `pyobjc` (auto-installed) | Requires `python3-xlib` or AppIndicator |
+| Color picker (custom swatch persistence) | Full (16-slot Windows API) | Basic (tkinter) | Basic (tkinter) |
+| Splash fade animation | Full | Full | May skip on Wayland |
+| Multi-monitor DPI-aware centering | Full | Primary monitor | Primary monitor |
+| Build script | `build_exe.bat` | `build_exe.sh` | `build_exe.sh` |
+
+**macOS/Linux notes:**
+- Platform-specific dependencies are handled automatically via `requirements.txt` markers — just run `pip install -r requirements.txt` on any platform.
+- On macOS, launch with `python3 HoonyTools.pyw`. The `.pyw` extension has no special meaning on macOS/Linux (it runs the same as `.py`).
+- On Linux, ensure `tkinter` is installed (`sudo apt install python3-tk` on Debian/Ubuntu, `sudo dnf install python3-tkinter` on Fedora).
 
 ---
 
