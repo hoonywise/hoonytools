@@ -137,7 +137,7 @@ def _build_connections_panel(parent_frame, entry_refs, button_frame):
         The built frame
     """
     # Main container
-    container = tk.Frame(parent_frame, bg='SystemButtonFace')
+    container = tk.Frame(parent_frame, bg='#f0f0f0')
     container.pack(fill='both', expand=True, padx=10, pady=10)
 
     # Schema 1 LabelFrame
@@ -301,7 +301,7 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
     from libs import gui_utils
     
     # Main container
-    container = tk.Frame(parent_frame, bg='SystemButtonFace')
+    container = tk.Frame(parent_frame, bg='#f0f0f0')
     container.pack(fill='both', expand=True, padx=10, pady=10)
 
     # Theme LabelFrame
@@ -683,11 +683,21 @@ class CustomizeColorsDialog:
         self.win.resizable(True, True)
         self.win.minsize(450, 500)
         
-        # Set icon
+        # Set icon (Windows taskbar .ico + cross-platform .png fallback)
         try:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("hoonywise.hoonytools")
+        except Exception:
+            pass
+        try:
             icon_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
             self.win.iconbitmap(default=icon_path)
+        except Exception:
+            pass
+        try:
+            icon_png = ASSETS_PATH / "assets" / "hoonywise_300.png"
+            _icon_img = tk.PhotoImage(file=icon_png)
+            self.win.iconphoto(False, _icon_img)
+            self.win._icon_img = _icon_img
         except Exception:
             pass
         
@@ -1021,11 +1031,21 @@ def show_settings(parent=None):
     win.resizable(True, True)
     win.minsize(550, 400)
 
-    # Set icon
+    # Set icon (Windows taskbar .ico + cross-platform .png fallback)
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("hoonywise.hoonytools")
+    except Exception:
+        pass
+    try:
         icon_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
         win.iconbitmap(default=icon_path)
+    except Exception:
+        pass
+    try:
+        icon_png = ASSETS_PATH / "assets" / "hoonywise_300.png"
+        _icon_img = tk.PhotoImage(file=icon_png)
+        win.iconphoto(False, _icon_img)
+        win._icon_img = _icon_img
     except Exception:
         pass
 
@@ -1071,10 +1091,10 @@ def show_settings(parent=None):
     status_separator = tk.Frame(win, height=1, bg='#c0c0c0')
     status_separator.pack(side='bottom', fill='x')
 
-    status_frame = tk.Frame(win, bg='SystemButtonFace')
+    status_frame = tk.Frame(win, bg='#f0f0f0')
     status_frame.pack(side='bottom', fill='x')
 
-    status_label = tk.Label(status_frame, text='', fg='#005a9e', bg='SystemButtonFace', anchor='w', font=('TkDefaultFont', 9, 'bold'))
+    status_label = tk.Label(status_frame, text='', fg='#005a9e', bg='#f0f0f0', anchor='w', font=('TkDefaultFont', 9, 'bold'))
     status_label.pack(side='left', padx=10, pady=(5, 5))
 
     # Store status label reference for use in _save()
@@ -1090,7 +1110,7 @@ def show_settings(parent=None):
     # --------------------------------------------------------------------------
     # Left pane: Category list (dark mode compatible)
     # --------------------------------------------------------------------------
-    category_frame = tk.Frame(main_paned, width=150, bg='SystemButtonFace')
+    category_frame = tk.Frame(main_paned, width=150, bg='#f0f0f0')
     category_frame.pack_propagate(False)
 
     # Create Treeview for categories
@@ -1119,15 +1139,15 @@ def show_settings(parent=None):
     # --------------------------------------------------------------------------
     # Right pane: Content area (default grey, scrollable)
     # --------------------------------------------------------------------------
-    content_outer_frame = tk.Frame(main_paned, bg='SystemButtonFace')
+    content_outer_frame = tk.Frame(main_paned, bg='#f0f0f0')
 
     # Canvas for scrolling
-    content_canvas = tk.Canvas(content_outer_frame, bg='SystemButtonFace', highlightthickness=0)
+    content_canvas = tk.Canvas(content_outer_frame, bg='#f0f0f0', highlightthickness=0)
     content_scrollbar = ttk.Scrollbar(content_outer_frame, orient='vertical', command=content_canvas.yview)
     content_canvas.configure(yscrollcommand=content_scrollbar.set)
 
     # Inner frame that holds actual content
-    content_inner_frame = tk.Frame(content_canvas, bg='SystemButtonFace')
+    content_inner_frame = tk.Frame(content_canvas, bg='#f0f0f0')
     canvas_window = content_canvas.create_window((0, 0), window=content_inner_frame, anchor='nw')
 
     # Update scroll region when content changes
@@ -1187,7 +1207,7 @@ def show_settings(parent=None):
     # --------------------------------------------------------------------------
     # Button frame (will be packed inside content by category builder)
     # --------------------------------------------------------------------------
-    button_frame = tk.Frame(content_inner_frame, bg='SystemButtonFace')
+    button_frame = tk.Frame(content_inner_frame, bg='#f0f0f0')
 
     # Button handlers
     def _validate():

@@ -96,10 +96,16 @@ def _show_login_dialog(schema='schema1', parent=None):
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("hoonywise.hoonytools")
     except Exception:
         pass
-
     try:
         icon_path = ASSETS_PATH / "assets" / "hoonywise_gui.ico"
         login_window.iconbitmap(default=icon_path)
+    except Exception:
+        pass
+    try:
+        icon_png = ASSETS_PATH / "assets" / "hoonywise_300.png"
+        _icon_img = tk.PhotoImage(file=icon_png)
+        login_window.iconphoto(False, _icon_img)
+        login_window._icon_img = _icon_img
     except Exception:
         pass
 

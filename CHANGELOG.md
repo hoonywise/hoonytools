@@ -4,6 +4,67 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## 🌐 v2.2.2 — Cross-Platform Compatibility: macOS & Linux Support (2026-02-23)
+
+This release removes all Windows-specific dependencies from the runtime code path, making HoonyTools compatible with macOS and Linux in addition to Windows. The GUI, theme system, icon handling, splash screen, system tray, and build pipeline are all now cross-platform.
+
+### Fixed (Critical — Previously crashed on macOS/Linux)
+
+- **`pywin32` blocked installation**: `pip install -r requirements.txt` failed on macOS/Linux because `pywin32` is Windows-only. Now conditional: `pywin32; sys_platform == 'win32'`
+- **Unguarded `iconbitmap(.ico)` crashed on startup**: `root.iconbitmap(default=...)` at main window creation was not inside a try/except or platform check. macOS tkinter does not support `.ico` format here → `TclError` crash. Now guarded with `sys.platform.startswith("win")`
+- **`ctypes.wintypes` import crashed color picker**: `from ctypes import wintypes` was outside the try/except block in `ask_color_with_persistence()`. On macOS/Linux, `ctypes.wintypes` does not exist → `ImportError` when opening the color customizer. Moved inside the existing try/except block
+- **Windows system colors incompatible**: The `system_light` theme used Windows-only tkinter color names (`SystemButtonFace`, `SystemWindow`, `SystemHighlight`, etc.) that are not recognized on macOS/Linux. Replaced all 28 color values with cross-platform hex equivalents
+
+### Fixed (Moderate — Feature loss or degraded behavior)
+
+- **`pystray` import failure**: Top-level `import pystray` would crash if the platform backend was missing. Now wrapped in try/except with `HAS_PYSTRAY` flag; tray icon setup is skipped gracefully when unavailable
+- **Splash screen transparency**: `splash.attributes('-alpha', ...)` can fail on some Linux window managers (e.g., Wayland compositors). Added `_splash_alpha_supported` detection; fade-in/fade-out animation is skipped gracefully on unsupported platforms (splash displays at full opacity)
+- **Dialog windows had no icon on macOS/Linux**: All 6 dialog files used `iconbitmap(.ico)` which silently failed on non-Windows. Added `iconphoto(.png)` cross-platform fallback using `hoonywise_300.png` so dialog windows display the app icon on all platforms
+- **Tooltip `wm_overrideredirect` on Wayland**: Override-redirect windows can fail on Linux Wayland sessions. Wrapped in try/except for robustness
+
+### Added
+
+- **macOS pystray dependencies**: Added `pyobjc-core` and `pyobjc-framework-Cocoa` as macOS-conditional dependencies in `requirements.txt` for system tray icon support
+- **`build_exe.sh`**: New macOS/Linux build script — shell equivalent of `build_exe.bat` with `:` separator for PyInstaller `--add-data`, `pkill` instead of `taskkill`, `.icns` icon detection on macOS, and Unix-compatible paths
+
+### Changed
+
+- **`system_light` theme**: All 28 color keys now use portable hex values instead of Windows system color names. Visual appearance is virtually identical to the previous Windows-native look
+- **`LIGHT_BG` legacy constant**: Changed from `'SystemButtonFace'` to `'#f0f0f0'`
+- **Settings dialog**: Replaced 8 hardcoded `bg='SystemButtonFace'` references with `bg='#f0f0f0'`
+- **Color picker docstring**: Updated to document cross-platform behavior (Windows native API with tkinter fallback on macOS/Linux)
+- **Semantic color skip-list**: Removed `'systemwindowtext'` and `'systembuttontext'` from `apply_theme_to_existing_widgets()` since those values no longer appear in themes
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `requirements.txt` | `pywin32` conditional, added `pyobjc-core` + `pyobjc-framework-Cocoa` for macOS |
+| `HoonyTools.pyw` | Guarded `iconbitmap`, guarded `pystray` import with `HAS_PYSTRAY`, splash `-alpha` detection, tray setup guard |
+| `libs/gui_utils.py` | Replaced `system_light` theme colors, updated `LIGHT_BG`, moved `wintypes` import, updated docstring, cleaned semantic skip-list |
+| `libs/settings.py` | Replaced 8x `SystemButtonFace`, added `iconphoto` fallback (2 locations), split icon try/except blocks |
+| `libs/oracle_db_connector.py` | Added `iconphoto(.png)` cross-platform fallback for login dialog |
+| `loaders/sql_view_loader.py` | Added `iconphoto(.png)` fallback, split icon try/except blocks |
+| `loaders/sql_mv_loader.py` | Added `iconphoto(.png)` fallback, split icon try/except blocks |
+| `tools/mv_refresh_gui.py` | Added `iconphoto(.png)` fallback, split icon try/except blocks |
+| `tools/pk_designate_gui.py` | Guarded tooltip `wm_overrideredirect` with try/except |
+| `build_exe.sh` | **NEW** — macOS/Linux PyInstaller build script |
+
+### Platform Compatibility
+
+| Feature | Windows | macOS | Linux |
+|---------|---------|-------|-------|
+| GUI & all tools | Full | Full | Full |
+| Theme system (16 presets + custom) | Full | Full | Full |
+| Window icons | `.ico` taskbar + `.png` title bar | `.png` only | `.png` only |
+| System tray icon | Full | Requires `pyobjc` | Requires `python3-xlib` or AppIndicator |
+| Color picker custom swatches | 16-slot persistence via Windows API | Basic tkinter picker (no persistence) | Basic tkinter picker (no persistence) |
+| Splash fade animation | Full | Full | May skip on Wayland |
+| Multi-monitor DPI centering | Full (Win32 API) | Primary monitor only | Primary monitor only |
+| Build script | `build_exe.bat` | `build_exe.sh` | `build_exe.sh` |
+
+---
+
 ## 🔧 v2.2.1 — Deep Code Review: 26 Bug Fixes Across All Tools (2026-02-22)
 
 This release delivers two rounds of comprehensive code review targeting cross-tool interaction bugs, data integrity issues, resource leaks, and UI reliability problems. All changes are minimal, targeted fixes verified with syntax checks.
