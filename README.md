@@ -26,28 +26,31 @@ Contact: hoonywise@proton.me
 
 ### Both EXE and Python PYW Versions Available
 
-HoonyTools now runs either as a standalone EXE or directly as a Python GUI app.
+HoonyTools is distributed in two formats from the [Releases](https://github.com/hoonywise/HoonyTools/releases) page:
 
-**First-Time Setup:**
+| Download | For | Requires |
+|----------|-----|----------|
+| `HoonyTools_vX.X.X.zip` | End users | Nothing — standalone EXE inside |
+| `HoonyTools_vX.X.X_python.zip` | Developers / PYW users | Python 3.13+ |
 
-- EXE users:
+**EXE users (Windows):**
 
-1. Download the latest `HoonyTools.exe` from the [Releases](https://github.com/hoonywise/HoonyTools/releases) page.
-2. Place the file in a folder of your choice.
-3. Launch the app by double-clicking `HoonyTools.exe`.
+1. Download `HoonyTools_vX.X.X.zip` from [Releases](https://github.com/hoonywise/HoonyTools/releases).
+2. Unzip to a folder of your choice.
+3. Double-click `HoonyTools.exe` to launch.
 
-- PYW users:
+**PYW users (Windows, macOS, Linux):**
 
-1. Download the latest `HoonyTools_vX.X.X_python.zip` from the [Releases](https://github.com/hoonywise/HoonyTools/releases) page.
-2. Unzip the file to a folder of your choice.
-3. Ensure [Python 3.13+](https://www.python.org/downloads/) is installed
+1. Download `HoonyTools_vX.X.X_python.zip` from [Releases](https://github.com/hoonywise/HoonyTools/releases).
+2. Unzip to a folder of your choice.
+3. Ensure [Python 3.13+](https://www.python.org/downloads/) is installed.
 4. Open a terminal in the unzipped folder and run:  
    ```
    pip install -r requirements.txt
    ```
-5. Launch the app by double-clicking `HoonyTools.pyw'.
-
-✅ This launches the GUI with **no terminal window**
+5. Launch the app:
+   - **Windows**: Double-click `HoonyTools.pyw` (launches with no terminal window)
+   - **macOS / Linux**: Run `python3 HoonyTools.pyw`
 
 ---
 
@@ -60,7 +63,7 @@ After unzipping `HoonyTools_vX.X.X_python.zip`, you should see:
 ```
 HoonyTools/
 ├── HoonyTools.pyw                  # Main launcher (double-click this)
-├── README.txt                      # Quickstart user guide
+├── README.md                       # This file
 ├── LICENSE.md                      # Licensing terms
 ├── CHANGELOG.md                    # Release notes
 ├── requirements.txt                # (Optional) Python modules if running from source)
@@ -94,7 +97,7 @@ HoonyTools/
 
 ## 🛠️ Setup Requirements
 
-To run HoonyTools, you’ll need the following installed and configured:
+To run HoonyTools python package, you’ll need the following installed and configured (exe does not require any additional setup):
 
 ---
 
@@ -166,9 +169,11 @@ If you can connect via `sqlplus`, HoonyTools will work too.
 
 ## 🚀 How to Launch
 
-Simply double-click `HoonyTools.pyw` or 'HoonyTools.exe' to launch the application.
+- **Windows (EXE)**: Double-click `HoonyTools.exe`
+- **Windows (PYW)**: Double-click `HoonyTools.pyw`
+- **macOS / Linux**: Run `python3 HoonyTools.pyw`
 
-This file opens without a terminal window and starts the GUI immediately.
+All methods launch the GUI immediately with no terminal window (on Windows).
 
 ---
 
@@ -314,14 +319,21 @@ A cross-platform Python build script is included for building standalone binarie
 # Build EXE + package source ZIP (most common)
 python build_pkg.py 2.2.2
 
-# Build a standalone binary only
+# Build a standalone binary only (no ZIP)
 python build_pkg.py exe
 
 # Package source ZIP only (skip EXE build)
 python build_pkg.py 2.2.2 --mode package
 ```
 
-> Platform-specific scripts (`build_exe.bat`, `build_exe.sh`, `build_pkg.bat`) are also available for Windows and macOS/Linux respectively.
+Running `python build_pkg.py 2.2.2` produces two release ZIPs in `dist/`:
+
+| Output | Contents | For |
+|--------|----------|-----|
+| `HoonyTools_v2.2.2.zip` | `HoonyTools.exe` + `README.md` + `LICENSE.md` | End users |
+| `HoonyTools_v2.2.2_python.zip` | Full Python source tree | Developers / PYW users |
+
+> A Windows-specific `build_exe.bat` is also available for building the EXE only.
 
 ---
 
