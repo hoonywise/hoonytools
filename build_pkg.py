@@ -3,9 +3,14 @@
 HoonyTools Build & Package Script (Cross-Platform)
 
 Usage:
-    python build_pkg.py 2.2.2              Build EXE + package source ZIP (most common)
-    python build_pkg.py exe                Build PyInstaller binary only
-    python build_pkg.py 2.2.2 --mode package   Package source ZIP only (skip EXE build)
+    python build_pkg.py 2.2.2                  Build EXE ZIP + source ZIP (most common)
+    python build_pkg.py exe                    Build PyInstaller binary only (no ZIP)
+    python build_pkg.py 2.2.2 --mode package   Source ZIP only (skip EXE build)
+    python build_pkg.py 2.2.2 --mode exe       EXE ZIP only (skip source ZIP)
+
+Output (for 'python build_pkg.py 2.2.2'):
+    dist/HoonyTools_v2.2.2.zip              EXE + README + LICENSE (for end users)
+    dist/HoonyTools_v2.2.2_python.zip       Python source tree (for developers)
 
 Replaces the platform-specific build_exe.bat, build_exe.sh, and build_pkg.bat
 with a single cross-platform Python script using only stdlib modules.
@@ -188,8 +193,8 @@ def _create_zip(source_dir: Path, zip_path: Path, arc_prefix: str) -> None:
 # Build commands
 # ---------------------------------------------------------------------------
 
-def cmd_exe() -> bool:
-    """Build the PyInstaller binary. Returns True on success."""
+def cmd_exe(version: str | None = None) -> bool:
+    """Build the PyInstaller binary. Optionally zip it with version label."""
     _print_header("HoonyTools — Build EXE")
 
     print(f"  Platform:  {platform.system()} {platform.machine()}")
@@ -254,6 +259,23 @@ def cmd_exe() -> bool:
             _print_step("Removed HoonyTools.spec")
         size_mb = exe_path.stat().st_size / (1024 * 1024) if exe_path.is_file() else 0
         _print_step(f"Build succeeded: {exe_path}" + (f" ({size_mb:.1f} MB)" if size_mb else ""))
+
+        # Package the EXE into a versioned ZIP if version was provided
+        if version and exe_path.is_file():
+            dist_dir = SOURCE_DIR / "dist"
+            exe_zip_name = f"HoonyTools_v{version}.zip"
+            exe_zip_path = dist_dir / exe_zip_name
+            if exe_zip_path.exists():
+                exe_zip_path.unlink()
+            _print_step(f"Creating EXE ZIP: {exe_zip_name}")
+            with zipfile.ZipFile(exe_zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+                zf.write(exe_path, exe_path.name)
+                for extra in ["README.md", "LICENSE.md"]:
+                    extra_path = SOURCE_DIR / extra
+                    if extra_path.is_file():
+                        zf.write(extra_path, extra)
+            zip_mb = exe_zip_path.stat().st_size / (1024 * 1024)
+            _print_step(f"EXE ZIP created: {exe_zip_path} ({zip_mb:.1f} MB)")
     else:
         print("  WARNING: Binary not found in dist/ — leaving HoonyTools.spec for inspection.")
 
@@ -308,8 +330,8 @@ def cmd_package(version: str) -> bool:
 
 
 def cmd_all(version: str) -> bool:
-    """Build EXE then package source ZIP."""
-    success = cmd_exe()
+    """Build EXE (+ EXE ZIP) then package source ZIP."""
+    success = cmd_exe(version=version)
     if not success:
         print("\n  EXE build failed — skipping packaging step.")
         return False
@@ -329,7 +351,7 @@ examples:
   python build_pkg.py 2.2.2                    Build EXE + package source ZIP
   python build_pkg.py exe                      Build PyInstaller binary only
   python build_pkg.py 2.2.2 --mode package     Package source ZIP only
-  python build_pkg.py 2.2.2 --mode exe         Build EXE only (version ignored)
+  python build_pkg.py 2.2.2 --mode exe         Build EXE + EXE ZIP only
 """,
     )
     parser.add_argument(
@@ -357,7 +379,7 @@ examples:
 
     # Execute
     if mode == "exe":
-        success = cmd_exe()
+        success = cmd_exe(version=version)
     elif mode == "package":
         if not version:
             version = prompt_version()
