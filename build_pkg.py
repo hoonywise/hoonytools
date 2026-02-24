@@ -330,11 +330,23 @@ def cmd_package(version: str) -> bool:
 
 
 def cmd_all(version: str) -> bool:
-    """Build EXE (+ EXE ZIP) then package source ZIP."""
+    """Build EXE ZIP + source ZIP. Removes the raw EXE after zipping."""
     success = cmd_exe(version=version)
     if not success:
         print("\n  EXE build failed — skipping packaging step.")
         return False
+
+    # Remove the raw EXE — only the ZIPs are the final artifacts
+    dist_dir = SOURCE_DIR / "dist"
+    for raw in ["HoonyTools.exe", "HoonyTools", "HoonyTools.app"]:
+        raw_path = dist_dir / raw
+        if raw_path.is_file():
+            raw_path.unlink()
+            _print_step(f"Removed raw binary: {raw}")
+        elif raw_path.is_dir():
+            shutil.rmtree(raw_path, ignore_errors=True)
+            _print_step(f"Removed raw binary: {raw}")
+
     return cmd_package(version)
 
 
