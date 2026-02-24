@@ -64,6 +64,7 @@ HoonyTools/
 ├── LICENSE.md                      # Licensing terms
 ├── CHANGELOG.md                    # Release notes
 ├── requirements.txt                # (Optional) Python modules if running from source)
+├── build_pkg.py                    # Cross-platform build & package script
 ├── libs/                           # Shared utility modules (Oracle, config, logging, etc.)
 │   ├── config.ini                  # Created at first login if "Save password" is checked
 │   ├── paths.py                    # Filepaths for domain-specific folders
@@ -296,12 +297,31 @@ HoonyTools runs on **Windows**, **macOS**, and **Linux**. The GUI, theme system,
 | Color picker (custom swatch persistence) | Full (16-slot Windows API) | Basic (tkinter) | Basic (tkinter) |
 | Splash fade animation | Full | Full | May skip on Wayland |
 | Multi-monitor DPI-aware centering | Full | Primary monitor | Primary monitor |
-| Build script | `build_exe.bat` | `build_exe.sh` | `build_exe.sh` |
+| Build script | `build_exe.bat` or `build_pkg.py` | `build_pkg.py` | `build_pkg.py` |
 
 **macOS/Linux notes:**
 - Platform-specific dependencies are handled automatically via `requirements.txt` markers — just run `pip install -r requirements.txt` on any platform.
 - On macOS, launch with `python3 HoonyTools.pyw`. The `.pyw` extension has no special meaning on macOS/Linux (it runs the same as `.py`).
 - On Linux, ensure `tkinter` is installed (`sudo apt install python3-tk` on Debian/Ubuntu, `sudo dnf install python3-tkinter` on Fedora).
+
+---
+
+## 🔨 Building & Packaging
+
+A cross-platform Python build script is included for building standalone binaries and packaging source releases.
+
+```bash
+# Build a standalone binary (PyInstaller)
+python build_pkg.py exe
+
+# Package source files into a release ZIP
+python build_pkg.py package --version 2.2.2
+
+# Build binary + package source ZIP in one step
+python build_pkg.py all --version 2.2.2
+```
+
+> Platform-specific scripts (`build_exe.bat`, `build_exe.sh`, `build_pkg.bat`) are also available for Windows and macOS/Linux respectively.
 
 ---
 
