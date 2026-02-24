@@ -311,14 +311,14 @@ HoonyTools runs on **Windows**, **macOS**, and **Linux**. The GUI, theme system,
 A cross-platform Python build script is included for building standalone binaries and packaging source releases.
 
 ```bash
-# Build a standalone binary (PyInstaller)
+# Build EXE + package source ZIP (most common)
+python build_pkg.py 2.2.2
+
+# Build a standalone binary only
 python build_pkg.py exe
 
-# Package source files into a release ZIP
-python build_pkg.py package --version 2.2.2
-
-# Build binary + package source ZIP in one step
-python build_pkg.py all --version 2.2.2
+# Package source ZIP only (skip EXE build)
+python build_pkg.py 2.2.2 --mode package
 ```
 
 > Platform-specific scripts (`build_exe.bat`, `build_exe.sh`, `build_pkg.bat`) are also available for Windows and macOS/Linux respectively.

@@ -3,9 +3,9 @@
 HoonyTools Build & Package Script (Cross-Platform)
 
 Usage:
-    python build_pkg.py exe                        Build PyInstaller binary
-    python build_pkg.py package --version 2.2.2    Package source into release ZIP
-    python build_pkg.py all --version 2.2.2        Build EXE then package source ZIP
+    python build_pkg.py 2.2.2              Build EXE + package source ZIP (most common)
+    python build_pkg.py exe                Build PyInstaller binary only
+    python build_pkg.py 2.2.2 --mode package   Package source ZIP only (skip EXE build)
 
 Replaces the platform-specific build_exe.bat, build_exe.sh, and build_pkg.bat
 with a single cross-platform Python script using only stdlib modules.
@@ -273,7 +273,7 @@ def cmd_package(version: str) -> bool:
 
     # Prepare staging directory
     if staging.exists():
-        shutil.rmtree(staging)
+        shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True, exist_ok=True)
     dist_dir.mkdir(parents=True, exist_ok=True)
 
@@ -326,36 +326,46 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
-  python build_pkg.py exe                        Build PyInstaller binary
-  python build_pkg.py package --version 2.2.2    Package source into release ZIP
-  python build_pkg.py all --version 2.2.2        Build EXE then package source ZIP
+  python build_pkg.py 2.2.2                    Build EXE + package source ZIP
+  python build_pkg.py exe                      Build PyInstaller binary only
+  python build_pkg.py 2.2.2 --mode package     Package source ZIP only
+  python build_pkg.py 2.2.2 --mode exe         Build EXE only (version ignored)
 """,
     )
     parser.add_argument(
-        "mode",
-        choices=["exe", "package", "all"],
-        help="Build mode: exe (binary), package (source ZIP), all (both)",
+        "target",
+        help="Version number (e.g., 2.2.2) to build & package, or 'exe' to only build the binary",
     )
     parser.add_argument(
-        "--version",
-        dest="version",
+        "--mode",
+        choices=["exe", "package", "all"],
         default=None,
-        help="Version number (e.g., 2.2.2) — required for 'package' and 'all'",
+        help="Override build mode (default: 'all' when version given, 'exe' when target is 'exe')",
     )
 
     args = parser.parse_args()
 
-    if args.mode == "exe":
+    # Determine mode and version from the positional argument
+    if args.target.lower() == "exe":
+        # python build_pkg.py exe
+        mode = args.mode or "exe"
+        version = None
+    else:
+        # python build_pkg.py 2.2.2 [--mode ...]
+        version = sanitize_version(args.target)
+        mode = args.mode or "all"
+
+    # Execute
+    if mode == "exe":
         success = cmd_exe()
-    elif args.mode in ("package", "all"):
-        if args.version:
-            version = sanitize_version(args.version)
-        else:
+    elif mode == "package":
+        if not version:
             version = prompt_version()
-        if args.mode == "package":
-            success = cmd_package(version)
-        else:
-            success = cmd_all(version)
+        success = cmd_package(version)
+    elif mode == "all":
+        if not version:
+            version = prompt_version()
+        success = cmd_all(version)
     else:
         parser.print_help()
         success = False
