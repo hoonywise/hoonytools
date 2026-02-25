@@ -468,7 +468,6 @@ def stream_logs():
 def show_splash():
     # Load saved theme before showing splash
     from libs import gui_utils
-from libs.compat import Button
     from configparser import ConfigParser
     from pathlib import Path
     gui_utils.load_theme_from_config()
