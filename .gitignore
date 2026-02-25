@@ -27,6 +27,7 @@ dist/
 build_exe.bat
 build_pkg.bat
 build_exe.sh
+pkg_utils_old/
 
 # VS Code workspace/settings
 .vscode/
