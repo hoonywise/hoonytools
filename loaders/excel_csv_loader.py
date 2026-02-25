@@ -7,7 +7,8 @@ import time
 import threading
 import queue as _queue
 import tkinter as tk
-from tkinter import Tk, filedialog, simpledialog, Toplevel, Label, Checkbutton, IntVar, Button, Entry
+from tkinter import Tk, filedialog, simpledialog, Toplevel, Label, Checkbutton, IntVar, Entry
+from libs.compat import Button
 from libs.table_utils import create_index_if_columns_exist
 from typing import Any, Dict
 
@@ -302,7 +303,7 @@ def show_load_mode_dialog(parent, schema, table_name, df_columns):
     """Block-button dialog: Append | Replace | Upsert | Preview | Cancel
     Returns same dict structure as previous implementations, or None.
     """
-    from tkinter import Toplevel, Frame, Button, Label
+    from tkinter import Toplevel, Frame, Label
     from tkinter import messagebox, simpledialog
 
     logger.info(f"Opening button-based load mode dialog for {schema}.{table_name}")
@@ -861,7 +862,7 @@ def format_sql_for_display(sql: str) -> str:
 
 
 def show_sql_preview(parent, title, summary, sql):
-    from tkinter import Toplevel, Text, Scrollbar, RIGHT, Y, BOTH, END, Label, Button, Frame, HORIZONTAL, X
+    from tkinter import Toplevel, Text, Scrollbar, RIGHT, Y, BOTH, END, Label, Frame, HORIZONTAL, X
     from tkinter import filedialog, messagebox
 
     pv = Toplevel(parent) if parent is not None else Toplevel()
@@ -1261,7 +1262,7 @@ def replace_table_with_df(conn, cursor, root, schema, table_name, df):
 
 # ==== SHEET SELECTOR DIALOG ====
 def select_sheets_gui(file, sheets):
-    from tkinter import Toplevel, Label, IntVar, Entry, Button, Checkbutton, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, BOTH, Y
+    from tkinter import Toplevel, Label, IntVar, Entry, Checkbutton, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, BOTH, Y
 
     result = {}
 
@@ -1815,7 +1816,7 @@ def load_files_gui(parent=None, schema_choice='user', on_status_change=None, on_
         Used to refresh object panes in the main GUI.
     """
     import math
-    from tkinter import Toplevel, Frame, Label, Button, Entry, StringVar, IntVar
+    from tkinter import Toplevel, Frame, Label, Entry, StringVar, IntVar
     from tkinter import Listbox, Scrollbar, filedialog
     from tkinter.constants import LEFT, RIGHT, BOTH, Y, END, EXTENDED
     try:

@@ -5,6 +5,7 @@ import re
 from libs.oracle_db_connector import get_db_connection
 from libs import session
 from libs import gui_utils
+from libs.compat import Button
 import ctypes
 from libs.paths import ASSETS_PATH
 
@@ -176,9 +177,9 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
 
         btnf = tk.Frame(dlg)
         btnf.pack(pady=8)
-        btn1 = tk.Button(btnf, text="Create Logs & Continue", command=on_ok, width=18)
-        btn2 = tk.Button(btnf, text="Skip Logs & Continue", command=on_skip, width=18)
-        btn3 = tk.Button(btnf, text="Cancel", command=on_cancel, width=10)
+        btn1 = Button(btnf, text="Create Logs & Continue", command=on_ok, width=18)
+        btn2 = Button(btnf, text="Skip Logs & Continue", command=on_skip, width=18)
+        btn3 = Button(btnf, text="Cancel", command=on_cancel, width=10)
         btn1.pack(side="left", padx=6)
         btn2.pack(side="left", padx=6)
         btn3.pack(side="left", padx=6)
@@ -476,8 +477,8 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         btns_deps = tk.Frame(dlg)
         btns_deps.pack(padx=12, anchor='w')
         
-        btn_copy = tk.Button(btns_deps, text='Copy list', command=copy_deps, width=10)
-        btn_save = tk.Button(btns_deps, text='Save list', command=save_deps, width=10)
+        btn_copy = Button(btns_deps, text='Copy list', command=copy_deps, width=10)
+        btn_save = Button(btns_deps, text='Save list', command=save_deps, width=10)
         btn_copy.pack(side='left', padx=(0,6))
         btn_save.pack(side='left')
 
@@ -562,8 +563,8 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         btn_row = tk.Frame(center_stack)
         btn_row.pack(side='top', pady=(0,6))
         
-        btn_reuse = tk.Button(btn_row, text=reuse_label, command=do_reuse, width=26)
-        btn_cancel_dlg = tk.Button(btn_row, text="Cancel", command=do_cancel, width=10)
+        btn_reuse = Button(btn_row, text=reuse_label, command=do_reuse, width=26)
+        btn_cancel_dlg = Button(btn_row, text="Cancel", command=do_cancel, width=10)
         btn_reuse.pack(side='left', padx=(0,6))
         btn_cancel_dlg.pack(side='left')
 
@@ -576,7 +577,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
         ack_cb = tk.Checkbutton(controls_row, text=f"I understand this will affect the {len(deps)} listed materialized view(s).", variable=ack_var)
         ack_cb.pack(side='left')
         
-        drop_btn = tk.Button(controls_row, text="Drop & Recreate", command=do_drop, width=18)
+        drop_btn = Button(controls_row, text="Drop & Recreate", command=do_drop, width=18)
         drop_btn.pack(side='left', padx=(12,0))
         drop_btn.config(state='disabled')
 
@@ -1143,7 +1144,7 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     mv_name_entry.bind('<KeyRelease>', _force_uppercase)
 
     # Import SQL button - theme colors are inherited from option database
-    btn_import_sql = tk.Button(name_row, text="Import SQL", command=load_sql_from_file, width=10)
+    btn_import_sql = Button(name_row, text="Import SQL", command=load_sql_from_file, width=10)
     btn_import_sql.pack(side="left", padx=(10, 0))
 
     # Row 1: Parameter frames (centered)
@@ -1187,8 +1188,8 @@ def run_sql_mv_loader(parent=None, on_finish=None, use_dwh=False):
     btn_frame.pack()
 
     # Create buttons - theme colors are inherited from option database
-    btn_create_mv = tk.Button(btn_frame, text="Create", command=on_submit, width=10)
-    btn_cancel_mv = tk.Button(btn_frame, text="Close", command=on_cancel, width=10)
+    btn_create_mv = Button(btn_frame, text="Create", command=on_submit, width=10)
+    btn_cancel_mv = Button(btn_frame, text="Close", command=on_cancel, width=10)
     btn_create_mv.pack(side="left", padx=10)
     btn_cancel_mv.pack(side="left", padx=10)
 

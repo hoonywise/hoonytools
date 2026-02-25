@@ -12,6 +12,7 @@ import sys
 
 from libs.paths import PROJECT_PATH as BASE_PATH
 from libs import session
+from libs.compat import Button
 
 # Constants
 ASSETS_PATH = BASE_PATH
@@ -362,7 +363,7 @@ def _build_appearance_panel(parent_frame, entry_refs, button_frame):
         dialog = CustomizeColorsDialog(parent_frame.winfo_toplevel(), base_preset)
     
     # Customize button (now enabled)
-    customize_btn = tk.Button(
+    customize_btn = Button(
         theme_row,
         text="Customize...",
         command=_on_customize
@@ -777,7 +778,7 @@ class CustomizeColorsDialog:
         btn_frame.pack(fill='x', pady=(10, 0))
         
         # Reset button on left
-        reset_btn = tk.Button(
+        reset_btn = Button(
             btn_frame,
             text="Reset to Preset",
             command=self._on_reset
@@ -785,13 +786,13 @@ class CustomizeColorsDialog:
         reset_btn.pack(side='left')
         
         # OK, Cancel, Apply on right
-        apply_btn = tk.Button(btn_frame, text="Apply", width=8, command=self._on_apply)
+        apply_btn = Button(btn_frame, text="Apply", width=8, command=self._on_apply)
         apply_btn.pack(side='right', padx=(5, 0))
         
-        cancel_btn = tk.Button(btn_frame, text="Cancel", width=8, command=self._on_cancel)
+        cancel_btn = Button(btn_frame, text="Cancel", width=8, command=self._on_cancel)
         cancel_btn.pack(side='right', padx=(5, 0))
         
-        ok_btn = tk.Button(btn_frame, text="OK", width=8, command=self._on_ok)
+        ok_btn = Button(btn_frame, text="OK", width=8, command=self._on_ok)
         ok_btn.pack(side='right', padx=(5, 0))
         
         # Store button refs for theming
@@ -1429,9 +1430,9 @@ def show_settings(parent=None):
                     pass
 
     # Create buttons
-    btn_ok = tk.Button(button_frame, text="OK", width=8, command=_on_ok)
-    btn_cancel = tk.Button(button_frame, text="Cancel", width=8, command=_on_cancel)
-    btn_apply = tk.Button(button_frame, text="Apply", width=8, command=_on_apply)
+    btn_ok = Button(button_frame, text="OK", width=8, command=_on_ok)
+    btn_cancel = Button(button_frame, text="Cancel", width=8, command=_on_cancel)
+    btn_apply = Button(button_frame, text="Apply", width=8, command=_on_apply)
 
     # Pack buttons to the right
     btn_apply.pack(side='right', padx=(5, 0))

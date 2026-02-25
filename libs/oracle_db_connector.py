@@ -11,6 +11,7 @@ import threading
 from libs import session
 import queue
 from libs import abort_manager
+from libs.compat import Button
 from configparser import ConfigParser
 from libs.paths import PROJECT_PATH as BASE_PATH
 
@@ -256,9 +257,9 @@ def _show_login_dialog(schema='schema1', parent=None):
 
     btn_frame = tk.Frame(frame, pady=10)
     btn_frame.grid(row=4, columnspan=2)
-    btn_login = tk.Button(btn_frame, text="Login", command=submit, width=10)
+    btn_login = Button(btn_frame, text="Login", command=submit, width=10)
     btn_login.pack(side="left", padx=5)
-    btn_cancel = tk.Button(btn_frame, text="Cancel", command=cancel, width=10)
+    btn_cancel = Button(btn_frame, text="Cancel", command=cancel, width=10)
     btn_cancel.pack(side="left", padx=5)
 
     # Apply dark mode styling to buttons if active

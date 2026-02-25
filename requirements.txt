@@ -6,3 +6,4 @@ pywin32; sys_platform == 'win32'
 pystray
 pyobjc-core; sys_platform == 'darwin'
 pyobjc-framework-Cocoa; sys_platform == 'darwin'
+tkmacosx; sys_platform == 'darwin'

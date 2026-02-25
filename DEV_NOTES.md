@@ -2197,3 +2197,104 @@ A full codebase audit was performed searching for:
 4. **Color picker**: Open Settings → Appearance → Customize Colors → click a swatch. On Windows: native picker with 16 custom slots. On macOS/Linux: tkinter color chooser (no custom slots).
 5. **Tray icon**: On macOS, verify tray icon appears in menu bar (requires pyobjc). On Linux, depends on desktop environment.
 6. **Build**: Run `build_exe.sh` on macOS/Linux — verify PyInstaller produces a binary in `dist/`.
+
+---
+
+### Entry #26: macOS Button Theming via tkmacosx (v2.2.3, 2026-02-24)
+
+Summary: On macOS, `tkinter.Button` ignores all color configuration (`bg`, `fg`, `activebackground`, `activeforeground`) due to the Aqua/Cocoa backend. This means all 96 buttons across the app render as white/native gray regardless of the selected theme. This entry documents the fix using `tkmacosx.Button`.
+
+#### Root Cause
+
+The macOS tkinter backend (Tk Aqua/Cocoa) deliberately ignores button color properties to enforce native platform look-and-feel. This is a known, long-standing behavior of Tk on macOS — not a bug, but a design choice by the Tk maintainers. There is no configuration flag, theme setting, or workaround within standard tkinter to override this.
+
+The `tkmacosx` package (v1.0.5+) provides a `Button` class that is a `tk.Canvas` subclass. It draws the button manually on a Canvas widget, bypassing the native Aqua renderer entirely. This allows `bg`, `fg`, and all color properties to work correctly.
+
+#### Solution: libs/compat.py
+
+A thin compatibility wrapper was created at `libs/compat.py`:
+
+```python
+import sys
+import tkinter as tk
+
+if sys.platform == "darwin":
+    try:
+        from tkmacosx import Button
+    except ImportError:
+        Button = tk.Button  # fallback -- colors won't apply
+else:
+    Button = tk.Button
+```
+
+All 10 source files that create Button widgets now import from `libs.compat` instead of `tkinter`.
+
+#### Two Button Coding Patterns
+
+The codebase had two patterns for creating buttons:
+
+1. **`tk.Button(`** — Used in files that `import tkinter as tk` (6 files, 46 instances). Fix: add `from libs.compat import Button` and replace `tk.Button(` with `Button(`.
+
+2. **Bare `Button(`** — Used in files that `from tkinter import ... Button` (4 files, 45 instances). Fix: remove `Button` from the tkinter import and add `from libs.compat import Button`. The bare `Button(` calls don't need changing.
+
+One file (`object_cleanup_gui.py`) used both patterns and needed both fixes.
+
+`excel_csv_loader.py` had 4 import sites (1 top-level + 3 function-scoped `from tkinter import ... Button`). All 4 had `Button` removed; the module-level `from libs.compat import Button` covers all function scopes.
+
+#### Theme Walker Fix
+
+The `apply_theme_to_existing_widgets()` function in `gui_utils.py` identifies widget types using `widget.winfo_class()`, which returns the Tk class name as a string. Standard `tkinter.Button` returns `'Button'`, but `tkmacosx.Button` returns `'Canvas'` (since it's a Canvas subclass).
+
+Without a fix, `tkmacosx.Button` widgets would hit the `Canvas` branch and receive generic Canvas styling (`window_bg` background, no foreground) instead of proper button theming.
+
+Fix: Import the compat `Button` class and add an `isinstance()` check in the `Canvas` branch:
+
+```python
+elif class_name == 'Canvas':
+    if _CompatButton is not None and isinstance(widget, _CompatButton):
+        apply_theme_to_button(widget)
+    else:
+        widget.config(bg=get_color('window_bg'), highlightthickness=0)
+```
+
+The import uses try/except to avoid circular imports or missing-module crashes:
+
+```python
+try:
+    from libs.compat import Button as _CompatButton
+except ImportError:
+    _CompatButton = None
+```
+
+#### What About tk.Menu?
+
+macOS also ignores color configuration on `tk.Menu` popups — they always render with native styling. This was NOT fixed because:
+1. Native menus are what macOS users expect
+2. There is no `tkmacosx` equivalent for Menu
+3. The menu is only used in the custom menu bar (2 entries: File, View)
+
+#### Testing Checklist
+
+1. **Windows regression**: Launch app — all buttons should look identical to before (compat.py re-exports `tk.Button` unchanged on Windows)
+2. **macOS with tkmacosx**: `pip install tkmacosx` then launch — buttons should show correct theme colors
+3. **macOS without tkmacosx**: Launch without installing — buttons render as native gray (same as before, no crash)
+4. **Theme switching**: Switch themes while app is running — all buttons should update colors including custom menu bar buttons
+5. **Dark theme**: Verify button text is readable (light text on dark background)
+
+#### Files Modified
+
+| File | Changes |
+|------|---------|
+| `libs/compat.py` | **NEW** |
+| `requirements.txt` | Added `tkmacosx; sys_platform == 'darwin'` |
+| `libs/gui_utils.py` | Import `_CompatButton`, `isinstance()` check in theme walker |
+| `HoonyTools.pyw` | Import + 11x replacement |
+| `libs/settings.py` | Import + 8x replacement |
+| `libs/oracle_db_connector.py` | Import + 2x replacement |
+| `tools/mv_refresh_gui.py` | Import + 11x replacement |
+| `loaders/sql_view_loader.py` | Import + 3x replacement |
+| `loaders/sql_mv_loader.py` | Import + 11x replacement |
+| `tools/pk_designate_gui.py` | Import change (9 bare instances) |
+| `tools/index_gui.py` | Import change (4 bare instances) |
+| `loaders/excel_csv_loader.py` | Import change at 4 sites (27 bare instances) |
+| `tools/object_cleanup_gui.py` | Import change + 5x replacement (10 total) |

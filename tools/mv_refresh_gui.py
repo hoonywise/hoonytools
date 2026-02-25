@@ -12,6 +12,7 @@ import re
 
 # Theme support
 from libs import gui_utils
+from libs.compat import Button
 
 logger = logging.getLogger(__name__)
 
@@ -148,9 +149,9 @@ def run_mv_refresh_gui(parent=None, on_finish=None):
 
     user_btn_frame = tk.Frame(user_frame)
     user_btn_frame.pack(fill="x")
-    btn_refresh_user = tk.Button(user_btn_frame, text="Refresh", width=8, command=lambda: load_user_mviews())
+    btn_refresh_user = Button(user_btn_frame, text="Refresh", width=8, command=lambda: load_user_mviews())
     btn_refresh_user.pack(side="left")
-    btn_reset_user = tk.Button(user_btn_frame, text="Reset", width=8, command=lambda: (mview_listbox_user.selection_clear(0, tk.END), on_select(None, source='user')))
+    btn_reset_user = Button(user_btn_frame, text="Reset", width=8, command=lambda: (mview_listbox_user.selection_clear(0, tk.END), on_select(None, source='user')))
     btn_reset_user.pack(side="left", padx=(6, 0))
 
     mview_listbox_user = tk.Listbox(user_frame, width=40, height=14, selectmode=tk.EXTENDED, exportselection=False)
@@ -171,9 +172,9 @@ def run_mv_refresh_gui(parent=None, on_finish=None):
 
     dwh_btn_frame = tk.Frame(dwh_frame)
     dwh_btn_frame.pack(fill="x")
-    btn_refresh_dwh = tk.Button(dwh_btn_frame, text="Refresh", width=8, command=lambda: refresh_dwh_mviews())
+    btn_refresh_dwh = Button(dwh_btn_frame, text="Refresh", width=8, command=lambda: refresh_dwh_mviews())
     btn_refresh_dwh.pack(side="left")
-    btn_reset_dwh = tk.Button(dwh_btn_frame, text="Reset", width=8, command=lambda: (mview_listbox_dwh.selection_clear(0, tk.END), on_select(None, source='dwh')))
+    btn_reset_dwh = Button(dwh_btn_frame, text="Reset", width=8, command=lambda: (mview_listbox_dwh.selection_clear(0, tk.END), on_select(None, source='dwh')))
     btn_reset_dwh.pack(side="left", padx=(6, 0))
 
     mview_listbox_dwh = tk.Listbox(dwh_frame, width=40, height=14, selectmode=tk.EXTENDED, exportselection=False)
@@ -947,7 +948,7 @@ def run_mv_refresh_gui(parent=None, on_finish=None):
                                         except Exception:
                                             pass
 
-                                btn_debug = tk.Button(dlg, text='Show debug info', command=show_diag)
+                                btn_debug = Button(dlg, text='Show debug info', command=show_diag)
                                 btn_debug.pack(padx=12, anchor='w', pady=(4,0))
 
                                 ack = tk.BooleanVar(value=False)
@@ -976,9 +977,9 @@ def run_mv_refresh_gui(parent=None, on_finish=None):
                                 btnf = tk.Frame(dlg)
                                 btnf.pack(pady=8)
                                 
-                                btn_reuse = tk.Button(btnf, text=f"Reuse Existing Log - {meta_info.get('existing_type','UNKNOWN')}", command=do_reuse, width=26)
-                                btn_cancel_dlg = tk.Button(btnf, text="Cancel", command=do_cancel, width=10)
-                                btn_drop = tk.Button(btnf, text="Drop & Recreate", command=do_drop, width=14)
+                                btn_reuse = Button(btnf, text=f"Reuse Existing Log - {meta_info.get('existing_type','UNKNOWN')}", command=do_reuse, width=26)
+                                btn_cancel_dlg = Button(btnf, text="Cancel", command=do_cancel, width=10)
+                                btn_drop = Button(btnf, text="Drop & Recreate", command=do_drop, width=14)
                                 btn_reuse.pack(side='left', padx=(0,6))
                                 btn_cancel_dlg.pack(side='left', padx=6)
                                 btn_drop.pack(side='left', padx=6)
@@ -1115,10 +1116,10 @@ def run_mv_refresh_gui(parent=None, on_finish=None):
             except Exception:
                 pass
 
-    btn_refresh_mv = tk.Button(btn_frame, text="Refresh MV", command=do_refresh)
-    btn_create_logs = tk.Button(btn_frame, text="Create Logs", command=do_create_logs)
+    btn_refresh_mv = Button(btn_frame, text="Refresh MV", command=do_refresh)
+    btn_create_logs = Button(btn_frame, text="Create Logs", command=do_create_logs)
     # Close button - command will be configured after on_close is defined
-    btn_close = tk.Button(btn_frame, text="Close", width=10)
+    btn_close = Button(btn_frame, text="Close", width=10)
     # Close button on the far right, with larger space separating it from the action buttons
     btn_close.pack(side="right", padx=6)
     btn_refresh_mv.pack(side="right", padx=(6, 20))

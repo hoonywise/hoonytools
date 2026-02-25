@@ -126,6 +126,7 @@ This installs all required libraries including:
 - `pystray`, `Pillow` (for GUI tray features and icon support)
 - `pywin32` (Windows only — installed automatically via platform marker)
 - `pyobjc-core`, `pyobjc-framework-Cocoa` (macOS only — for system tray support)
+- `tkmacosx` (macOS only — for themed button colors; macOS tkinter ignores button bg/fg natively)
 
 ---
 

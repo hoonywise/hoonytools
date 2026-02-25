@@ -11,6 +11,13 @@ from typing import Callable, List, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
+# Import the cross-platform Button so the theme walker can detect tkmacosx.Button
+# (which reports winfo_class() == 'Canvas' instead of 'Button')
+try:
+    from libs.compat import Button as _CompatButton
+except ImportError:
+    _CompatButton = None
+
 # =============================================================================
 # Theme Constants
 # =============================================================================
@@ -1811,7 +1818,11 @@ def apply_theme_to_existing_widgets(win, _default_fg: str = None) -> None:
                 apply_theme_to_scrollbar(widget)
                 
             elif class_name == 'Canvas':
-                widget.config(bg=get_color('window_bg'), highlightthickness=0)
+                # tkmacosx.Button is Canvas-based; theme it as a Button
+                if _CompatButton is not None and isinstance(widget, _CompatButton):
+                    apply_theme_to_button(widget)
+                else:
+                    widget.config(bg=get_color('window_bg'), highlightthickness=0)
                 
         except Exception as e:
             logger.debug(f"Could not apply theme to {widget}: {e}")

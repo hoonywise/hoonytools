@@ -7,7 +7,8 @@ try:
 except Exception:
     ttk = None
 from pathlib import Path
-from tkinter import Toplevel, Listbox, Scrollbar, Button, Label, Entry, StringVar, Checkbutton, IntVar
+from tkinter import Toplevel, Listbox, Scrollbar, Label, Entry, StringVar, Checkbutton, IntVar
+from libs.compat import Button
 from tkinter.constants import MULTIPLE, END, LEFT, RIGHT, Y, BOTH
 from libs.paths import PROJECT_PATH as base_path
 

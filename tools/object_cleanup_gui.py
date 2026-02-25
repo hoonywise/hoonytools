@@ -1,5 +1,6 @@
 import logging
-from tkinter import Toplevel, Label, Checkbutton, IntVar, Button, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, Y, BOTH
+from tkinter import Toplevel, Label, Checkbutton, IntVar, Frame, Canvas, Scrollbar, VERTICAL, RIGHT, LEFT, Y, BOTH
+from libs.compat import Button
 from tkinter import _default_root
 try:
     import tkinter.ttk as ttk
@@ -482,8 +483,8 @@ def delete_dwh_rows(table_filter, label, prompt_label, parent_window=None):
 
             btn_frame = tk.Frame(win)
             btn_frame.pack(pady=5)
-            btn_ok_dlg = tk.Button(btn_frame, text="OK", width=10, command=submit)
-            btn_cancel_dlg = tk.Button(btn_frame, text="Cancel", width=10, command=cancel)
+            btn_ok_dlg = Button(btn_frame, text="OK", width=10, command=submit)
+            btn_cancel_dlg = Button(btn_frame, text="Cancel", width=10, command=cancel)
             btn_ok_dlg.pack(side="left", padx=5)
             btn_cancel_dlg.pack(side="left", padx=5)
 
@@ -655,14 +656,14 @@ def _show_error_dialog(parent, obj_name, obj_type, error_msg, remaining=0):
         result['choice'] = 'force'
         dlg.destroy()
     
-    btn_stop = tk.Button(btn_frame, text="Stop", width=10, command=stop)
-    btn_skip = tk.Button(btn_frame, text="Skip", width=10, command=skip)
+    btn_stop = Button(btn_frame, text="Stop", width=10, command=stop)
+    btn_skip = Button(btn_frame, text="Skip", width=10, command=skip)
     btn_stop.pack(side="left", padx=5)
     btn_skip.pack(side="left", padx=5)
     
     # Only show Force option for TABLEs (CASCADE CONSTRAINTS)
     if obj_type.upper() == 'TABLE':
-        force_btn = tk.Button(btn_frame, text="Force Drop", width=12, command=force)
+        force_btn = Button(btn_frame, text="Force Drop", width=12, command=force)
         force_btn.pack(side="left", padx=5)
         # Add tooltip explaining what Force does - use semantic gray foreground
         tk.Label(dlg, text="Force Drop: Drops table with CASCADE CONSTRAINTS", font=("Arial", 8), fg="gray").pack()

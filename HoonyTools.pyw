@@ -19,8 +19,9 @@ import random
 import webbrowser
 from configparser import ConfigParser
 from libs import gui_utils
+from libs.compat import Button
 
-APP_VERSION = "2.2.2"
+APP_VERSION = "2.2.3"
 
 
 # Theme helpers
@@ -467,6 +468,7 @@ def stream_logs():
 def show_splash():
     # Load saved theme before showing splash
     from libs import gui_utils
+from libs.compat import Button
     from configparser import ConfigParser
     from pathlib import Path
     gui_utils.load_theme_from_config()
@@ -624,9 +626,9 @@ def launch_tool_gui():
     verse_btn_bar = tk.Frame(verse_labelframe)
     verse_btn_bar.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
     
-    verse_prev_btn = tk.Button(verse_btn_bar, text="Previous", width=10)
+    verse_prev_btn = Button(verse_btn_bar, text="Previous", width=10)
     verse_prev_btn.pack(side="left", padx=(0, 8))
-    verse_next_btn = tk.Button(verse_btn_bar, text="Next", width=10)
+    verse_next_btn = Button(verse_btn_bar, text="Next", width=10)
     verse_next_btn.pack(side="left", padx=(0, 8))
 
     # Verse history for Previous/Next navigation
@@ -862,11 +864,11 @@ def launch_tool_gui():
         # Top bar: Refresh, Load, Drop buttons
         top_bar = tk.Frame(frame)
         top_bar.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
-        refresh_btn = tk.Button(top_bar, text="Refresh", width=10)
+        refresh_btn = Button(top_bar, text="Refresh", width=10)
         refresh_btn.pack(side="left", padx=(0, 8))
-        load_btn = tk.Button(top_bar, text="Load", width=10)
+        load_btn = Button(top_bar, text="Load", width=10)
         load_btn.pack(side="left", padx=(0, 8))
-        drop_btn = tk.Button(top_bar, text="Drop", width=10)
+        drop_btn = Button(top_bar, text="Drop", width=10)
         drop_btn.pack(side="left", padx=(0, 8))
         status_lbl = tk.Label(top_bar, text="", font=("Arial", 8), fg=getattr(parent.master, "_dark_theme", {}).get("muted", "#444444"))
         status_lbl.pack(side="left")
@@ -874,13 +876,13 @@ def launch_tool_gui():
         # Second button row: View, M.View, P.Key, Index
         btn_row2 = tk.Frame(frame)
         btn_row2.pack(fill="x", anchor="n", padx=8, pady=(0, 8))
-        view_btn = tk.Button(btn_row2, text="View", width=10)
+        view_btn = Button(btn_row2, text="View", width=10)
         view_btn.pack(side="left", padx=(0, 8))
-        mv_btn = tk.Button(btn_row2, text="M.View", width=10)
+        mv_btn = Button(btn_row2, text="M.View", width=10)
         mv_btn.pack(side="left", padx=(0, 8))
-        pk_btn = tk.Button(btn_row2, text="P.Key", width=10)
+        pk_btn = Button(btn_row2, text="P.Key", width=10)
         pk_btn.pack(side="left", padx=(0, 8))
-        index_btn = tk.Button(btn_row2, text="Index", width=10)
+        index_btn = Button(btn_row2, text="Index", width=10)
         index_btn.pack(side="left", padx=(0, 8))
 
         # Content area (treeview + scrollbar)
@@ -2304,7 +2306,7 @@ def launch_tool_gui():
 
         def _mb(label_text, menu_items):
             # Use a Button instead of Menubutton for more reliable styling
-            mb = tk.Button(f, text=label_text, relief='flat', padx=6, pady=2)
+            mb = Button(f, text=label_text, relief='flat', padx=6, pady=2)
             m = tk.Menu(f, tearoff=0)
             for item in menu_items:
                 # item is a tuple: (type, label, command)

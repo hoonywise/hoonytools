@@ -4,6 +4,7 @@ import logging
 from libs.oracle_db_connector import get_db_connection
 from libs import session
 from libs import gui_utils
+from libs.compat import Button
 import ctypes
 from libs.paths import ASSETS_PATH
 
@@ -277,7 +278,7 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
     view_name_entry.bind('<KeyRelease>', _force_uppercase)
 
     # Import SQL button - theme colors are inherited from option database
-    btn_import_sql = tk.Button(name_row, text="Import SQL", command=load_sql_from_file, width=10)
+    btn_import_sql = Button(name_row, text="Import SQL", command=load_sql_from_file, width=10)
     btn_import_sql.pack(side="left", padx=(10, 0))
 
     # Options row - checkboxes for view options (centered)
@@ -296,8 +297,8 @@ def run_sql_view_loader(parent=None, on_finish=None, use_dwh=False):
     btn_frame.pack()
 
     # Create buttons - theme colors are inherited from option database
-    btn_create = tk.Button(btn_frame, text="Create", command=on_submit, width=10)
-    btn_cancel = tk.Button(btn_frame, text="Close", command=on_cancel, width=10)
+    btn_create = Button(btn_frame, text="Create", command=on_submit, width=10)
+    btn_cancel = Button(btn_frame, text="Close", command=on_cancel, width=10)
     btn_create.pack(side="left", padx=10)
     btn_cancel.pack(side="left", padx=10)
 

@@ -4,6 +4,48 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## v2.2.3 — macOS Button Theming via tkmacosx (2026-02-24)
+
+On macOS, the native Aqua/Cocoa backend causes `tkinter.Button` to completely ignore `bg`, `fg`, `activebackground`, and `activeforeground` configuration. All buttons render as white/native gray regardless of the selected theme.
+
+This release introduces `libs/compat.py`, a cross-platform Button wrapper that uses `tkmacosx.Button` (a Canvas-based drop-in replacement) on macOS and the standard `tkinter.Button` on Windows/Linux. All 96 Button instances across 10 source files now use the compat wrapper. The theme walker in `gui_utils.py` was updated to detect `tkmacosx.Button` (which reports `winfo_class() == 'Canvas'`) via `isinstance()` check.
+
+### Added
+
+- **`libs/compat.py`**: New cross-platform Button compatibility module. Exports `Button` class -- `tkmacosx.Button` on macOS (with fallback to `tk.Button` if not installed), `tk.Button` on Windows/Linux
+- **`tkmacosx` dependency**: Added `tkmacosx; sys_platform == 'darwin'` to `requirements.txt`
+
+### Changed
+
+- **96 Button instances updated across 10 files**: All `tk.Button(` and bare `Button(` (from tkinter) calls now use `from libs.compat import Button`
+- **Theme walker** (`libs/gui_utils.py`): `apply_theme_to_existing_widgets()` now detects `tkmacosx.Button` widgets (which report as `'Canvas'` via `winfo_class()`) and routes them to `apply_theme_to_button()` instead of the generic Canvas handler
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `libs/compat.py` | **NEW** -- Cross-platform Button wrapper |
+| `requirements.txt` | Added `tkmacosx; sys_platform == 'darwin'` |
+| `libs/gui_utils.py` | Import `_CompatButton`, `isinstance()` check in Canvas branch of theme walker |
+| `HoonyTools.pyw` | `from libs.compat import Button`, replaced 11x `tk.Button(` |
+| `libs/settings.py` | `from libs.compat import Button`, replaced 8x `tk.Button(` |
+| `libs/oracle_db_connector.py` | `from libs.compat import Button`, replaced 2x `tk.Button(` |
+| `tools/mv_refresh_gui.py` | `from libs.compat import Button`, replaced 11x `tk.Button(` |
+| `loaders/sql_view_loader.py` | `from libs.compat import Button`, replaced 3x `tk.Button(` |
+| `loaders/sql_mv_loader.py` | `from libs.compat import Button`, replaced 11x `tk.Button(` |
+| `tools/pk_designate_gui.py` | Moved `Button` import from tkinter to `libs.compat` (9 instances) |
+| `tools/index_gui.py` | Moved `Button` import from tkinter to `libs.compat` (4 instances) |
+| `loaders/excel_csv_loader.py` | Moved `Button` import from tkinter to `libs.compat` (27 instances, 4 import sites) |
+| `tools/object_cleanup_gui.py` | Mixed: moved `Button` import + replaced 5x `tk.Button(` (10 total) |
+
+### Platform Compatibility Update
+
+| Feature | Windows | macOS | Linux |
+|---------|---------|-------|-------|
+| Button theming (bg/fg colors) | Full | Full (via `tkmacosx`) | Full |
+
+---
+
 ## v2.2.2 — Cross-Platform Compatibility: macOS & Linux Support (2026-02-23)
 
 This release removes all Windows-specific dependencies from the runtime code path, making HoonyTools compatible with macOS and Linux in addition to Windows. The GUI, theme system, icon handling, splash screen, system tray, and build pipeline are all now cross-platform.
