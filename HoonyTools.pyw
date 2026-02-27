@@ -21,7 +21,7 @@ from configparser import ConfigParser
 from libs import gui_utils
 from libs.compat import Button
 
-APP_VERSION = "2.2.3"
+APP_VERSION = "2.2.4"
 
 
 # Theme helpers

@@ -2298,3 +2298,42 @@ macOS also ignores color configuration on `tk.Menu` popups — they always rende
 | `tools/index_gui.py` | Import change (4 bare instances) |
 | `loaders/excel_csv_loader.py` | Import change at 4 sites (27 bare instances) |
 | `tools/object_cleanup_gui.py` | Import change + 5x replacement (10 total) |
+
+---
+
+### Entry #27: Fix Squished macOS Buttons — tkmacosx Width/Height Unit Mismatch (v2.2.4, 2026-02-27)
+
+Summary: After v2.2.3 introduced `tkmacosx.Button` on macOS for color theming, all buttons with explicit `width` appeared squished (near-invisible). The root cause is a unit mismatch: `tkmacosx.Button` interprets `width`/`height` as **pixels**, while `tk.Button` interprets them as **character/line counts**.
+
+#### Root Cause
+
+`tkmacosx.Button` is a Canvas-based widget and uses pixel dimensions natively. Standard `tk.Button` uses character units for width (number of `0`-width characters) and line units for height. When callers pass `width=10` expecting 10 characters (~126px), tkmacosx renders a 10-pixel-wide button — essentially invisible.
+
+Additionally, `tkmacosx.Button` defaults to `padx=1, pady=1` vs `tk.Button`'s more generous padding, making buttons look tighter even when auto-sized.
+
+#### Solution
+
+Extended the existing `libs/compat.py` wrapper to subclass `tkmacosx.Button` instead of re-exporting it directly. The subclass intercepts `width` and `height` in `__init__` and converts them:
+
+- **Width**: `char_count * font.measure("0") + 2 * padx`
+- **Height**: `line_count * font.metrics("linespace") + 2 * pady`
+
+Key design decisions:
+- **Only convert when explicitly provided** — if `width`/`height` are omitted, tkmacosx auto-sizes correctly and no conversion is needed
+- **Font-aware measurement** — uses the button's own `font` kwarg (or `TkDefaultFont` as fallback) for accurate pixel calculation via `tkinter.font.Font`
+- **Default padding** — `padx=7, pady=3` applied via `setdefault()` to match `tk.Button` visual appearance without overriding explicit caller values
+- **Subclass preserves isinstance()** — the `isinstance(widget, _CompatButton)` check in `gui_utils.py`'s theme walker still works because our `Button` subclasses `tkmacosx.Button`
+
+#### Challenge: Font Resolution
+
+`tkinter.font.Font` can be constructed from various specs — a `Font` instance, a string name (`"TkDefaultFont"`), or a tuple (`("Helvetica", 12)`). The `_resolve_font()` helper handles all cases with a try/except fallback to `TkDefaultFont`, ensuring measurement never crashes even with unusual font specs.
+
+#### Side Finding: PyCharm "Cannot Connect to Database"
+
+During this session, investigated why the app fails to connect to Oracle when launched from PyCharm but works from the terminal. Root cause: PyCharm does not source the user's shell profile (`.zshrc`), so environment variables like `DYLD_LIBRARY_PATH` (needed by Oracle Instant Client in Thick mode) are missing. The fix is purely a PyCharm Run Configuration change — add `DYLD_LIBRARY_PATH` pointing to the Instant Client directory. No code change needed.
+
+#### Files Modified
+
+| File | Changes |
+|------|---------|
+| `libs/compat.py` | Replaced direct `tkmacosx.Button` import with `Button` subclass + `_resolve_font()` helper |

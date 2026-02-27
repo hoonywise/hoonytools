@@ -4,6 +4,32 @@ All notable changes to **HoonyTools** will be documented in this file.
 
 ---
 
+## v2.2.4 — Fix Squished macOS Buttons (2026-02-27)
+
+`tkmacosx.Button` interprets `width` and `height` as **pixels**, while `tk.Button` interprets them as **character/line units**. This caused all macOS buttons with explicit `width` (e.g. `width=10`) to render at ~10 pixels wide instead of ~126 pixels — appearing squished or near-invisible.
+
+### Fixed
+
+- **Squished buttons on macOS**: Wrapped `tkmacosx.Button` in `libs/compat.py` with a subclass that automatically converts character-unit `width`/`height` to pixel values using font measurement (`font.measure("0")` for width, `font.metrics("linespace")` for height)
+- **Tight button padding**: `tkmacosx.Button` defaults to `padx=1, pady=1`, making buttons look cramped vs native `tk.Button`. The wrapper now defaults to `padx=7, pady=3` to match the standard button appearance
+
+### Technical Details
+
+- Conversion formula: `width_px = char_count * font.measure("0") + 2 * padx`
+- Height formula: `height_px = line_count * font.metrics("linespace") + 2 * pady`
+- Buttons without explicit `width`/`height` are left untouched (tkmacosx auto-sizes correctly)
+- Custom font specs are resolved for accurate measurement; falls back to `TkDefaultFont`
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `libs/compat.py` | Replaced direct `tkmacosx.Button` re-export with `Button` subclass that converts character units to pixels |
+
+No changes to any consumer files — all 10+ files already import via `from libs.compat import Button`, and the subclass preserves `isinstance()` compatibility.
+
+---
+
 ## v2.2.3 — macOS Button Theming via tkmacosx (2026-02-24)
 
 On macOS, the native Aqua/Cocoa backend causes `tkinter.Button` to completely ignore `bg`, `fg`, `activebackground`, and `activeforeground` configuration. All buttons render as white/native gray regardless of the selected theme.
